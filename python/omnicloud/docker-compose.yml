@@ -1,0 +1,558 @@
+# OmniCloud - Multi-Cloud Infrastructure Orchestration Platform
+# Terminal Bench v2 - Distinguished Engineer RL Environment
+version: '3.8'
+
+services:
+  # ===========================================
+  # Infrastructure Services
+  # ===========================================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: omnicloud-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: omnicloud-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  postgres-infra:
+    image: postgres:16-alpine
+    container_name: omnicloud-postgres-infra
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: infra_db
+      POSTGRES_USER: omnicloud
+      POSTGRES_PASSWORD: omnicloud_secret
+    volumes:
+      - postgres_infra_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicloud -d infra_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-tenants:
+    image: postgres:16-alpine
+    container_name: omnicloud-postgres-tenants
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: tenants_db
+      POSTGRES_USER: omnicloud
+      POSTGRES_PASSWORD: omnicloud_secret
+    volumes:
+      - postgres_tenants_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicloud -d tenants_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-billing:
+    image: postgres:16-alpine
+    container_name: omnicloud-postgres-billing
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: billing_db
+      POSTGRES_USER: omnicloud
+      POSTGRES_PASSWORD: omnicloud_secret
+    volumes:
+      - postgres_billing_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicloud -d billing_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-audit:
+    image: postgres:16-alpine
+    container_name: omnicloud-postgres-audit
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: audit_db
+      POSTGRES_USER: omnicloud
+      POSTGRES_PASSWORD: omnicloud_secret
+    volumes:
+      - postgres_audit_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicloud -d audit_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: omnicloud-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  consul:
+    image: hashicorp/consul:1.16
+    container_name: omnicloud-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.11
+    container_name: omnicloud-etcd
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      ETCD_NAME: etcd-1
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd-1=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: omnicloud-etcd-cluster
+    volumes:
+      - etcd_data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: omnicloud-vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: omnicloud-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      
+      VAULT_ADDR: http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: omnicloud-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: omnicloud
+      MINIO_ROOT_PASSWORD: omnicloud_secret
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Application Services
+  # ===========================================
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: omnicloud-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVICE_NAME=gateway
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/0
+      
+      - ETCD_URL=https://etcd:2379
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=omnicloud-root-token
+    depends_on:
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+    
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: omnicloud-auth
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVICE_NAME=auth
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-tenants:5432/tenants_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/1
+      - ETCD_URL=https://etcd:2379
+      - JWT_SECRET=omnicloud_jwt_secret_key_that_should_be_rotated
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=omnicloud-root-token
+    depends_on:
+      postgres-tenants:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
+  tenants:
+    build:
+      context: .
+      dockerfile: services/tenants/Dockerfile
+    container_name: omnicloud-tenants
+    ports:
+      - "8002:8000"
+    environment:
+      - SERVICE_NAME=tenants
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-tenants:5432/tenants_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/2
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      postgres-tenants:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  compute:
+    build:
+      context: .
+      dockerfile: services/compute/Dockerfile
+    container_name: omnicloud-compute
+    ports:
+      - "8003:8000"
+    environment:
+      - SERVICE_NAME=compute
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/3
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  network:
+    build:
+      context: .
+      dockerfile: services/network/Dockerfile
+    container_name: omnicloud-network
+    ports:
+      - "8004:8000"
+    environment:
+      - SERVICE_NAME=network
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/4
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  storage:
+    build:
+      context: .
+      dockerfile: services/storage/Dockerfile
+    container_name: omnicloud-storage
+    ports:
+      - "8005:8000"
+    environment:
+      - SERVICE_NAME=storage
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/5
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=omnicloud
+      - MINIO_SECRET_KEY=omnicloud_secret
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  dns:
+    build:
+      context: .
+      dockerfile: services/dns/Dockerfile
+    container_name: omnicloud-dns
+    ports:
+      - "8006:8000"
+    environment:
+      - SERVICE_NAME=dns
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/6
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  loadbalancer:
+    build:
+      context: .
+      dockerfile: services/loadbalancer/Dockerfile
+    container_name: omnicloud-loadbalancer
+    ports:
+      - "8007:8000"
+    environment:
+      - SERVICE_NAME=loadbalancer
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/7
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  secrets:
+    build:
+      context: .
+      dockerfile: services/secrets/Dockerfile
+    container_name: omnicloud-secrets
+    ports:
+      - "8008:8000"
+    environment:
+      - SERVICE_NAME=secrets
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/8
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=omnicloud-root-token
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+
+  config:
+    build:
+      context: .
+      dockerfile: services/config/Dockerfile
+    container_name: omnicloud-config
+    ports:
+      - "8009:8000"
+    environment:
+      - SERVICE_NAME=config
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/9
+      - ETCD_URL=https://etcd:2379
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=omnicloud-root-token
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+
+  deploy:
+    build:
+      context: .
+      dockerfile: services/deploy/Dockerfile
+    container_name: omnicloud-deploy
+    ports:
+      - "8010:8000"
+    environment:
+      - SERVICE_NAME=deploy
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-infra:5432/infra_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      
+      - CELERY_BROKER_URL=redis://redis:6379/15
+      - REDIS_URL=redis://redis:6379/10
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      postgres-infra:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  monitor:
+    build:
+      context: .
+      dockerfile: services/monitor/Dockerfile
+    container_name: omnicloud-monitor
+    ports:
+      - "8011:8000"
+    environment:
+      - SERVICE_NAME=monitor
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/11
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  billing:
+    build:
+      context: .
+      dockerfile: services/billing/Dockerfile
+    container_name: omnicloud-billing
+    ports:
+      - "8012:8000"
+    environment:
+      - SERVICE_NAME=billing
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-billing:5432/billing_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/12
+    depends_on:
+      postgres-billing:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  audit:
+    build:
+      context: .
+      dockerfile: services/audit/Dockerfile
+    container_name: omnicloud-audit
+    ports:
+      - "8013:8000"
+    environment:
+      - SERVICE_NAME=audit
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-audit:5432/audit_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      postgres-audit:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  compliance:
+    build:
+      context: .
+      dockerfile: services/compliance/Dockerfile
+    container_name: omnicloud-compliance
+    ports:
+      - "8014:8000"
+    environment:
+      - SERVICE_NAME=compliance
+      - DATABASE_URL=postgresql://omnicloud:omnicloud_secret@postgres-audit:5432/audit_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/13
+      - ETCD_URL=https://etcd:2379
+    depends_on:
+      postgres-audit:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+
+volumes:
+  postgres_infra_data:
+  postgres_tenants_data:
+  postgres_billing_data:
+  postgres_audit_data:
+  redis_data:
+  consul_data:
+  etcd_data:
+  minio_data:
+
+networks:
+  default:
+    name: omnicloud-network

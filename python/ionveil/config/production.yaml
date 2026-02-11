@@ -1,0 +1,45 @@
+# IonVeil Production Configuration
+# This file is loaded AFTER environment variables due to BUG L08,
+# silently overwriting env-var overrides.
+
+service_name: ionveil
+environment: production
+debug: false
+
+db:
+  host: postgres
+  port: 5432
+  name: ionveil
+  user: postgres
+  password: postgres
+  pool_min: 5
+  pool_max: 20
+  statement_timeout_ms: 30000
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+  pool_size: 20
+
+kafka:
+  bootstrap_servers: kafka:9092
+  group_id: ionveil-production
+  auto_offset_reset: earliest
+  max_poll_records: 500
+
+consul:
+  host: consul
+  port: 8500
+  token: ""
+
+logging:
+  level: INFO
+  format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+feature_flags:
+  enable_advanced_routing: true
+  enable_kafka_events: true
+  enable_compliance_reporting: true
+  enable_analytics_pipeline: true
+  enable_celery_workers: false

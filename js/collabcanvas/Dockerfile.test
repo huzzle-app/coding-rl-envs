@@ -1,0 +1,30 @@
+# CollabCanvas Test Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache python3 make g++ git
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm ci
+
+# Copy application code
+COPY . .
+
+# Initialize git for state management
+RUN git config --global user.email "agent@collabcanvas.test" && \
+    git config --global user.name "RL Agent" && \
+    git init && \
+    git add -A && \
+    git commit -m "Initial buggy state" || true
+
+# Create non-root user
+RUN adduser -D -u 1000 testuser && chown -R testuser:testuser /app
+USER testuser
+
+# Run tests
+CMD ["npm", "test"]

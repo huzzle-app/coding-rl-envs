@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "transitcore"
+description = "Debug a Java intermodal dispatch and capacity command platform with 1094 tests"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "java"
+
+[agent]
+timeout_sec = 43200.0
+
+[verifier]
+timeout_sec = 1800.0

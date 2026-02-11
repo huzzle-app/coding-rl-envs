@@ -1,0 +1,165 @@
+# NexusTrade RL Environment Configuration
+# Terminal Bench v2 - Distributed Trading Platform
+
+environment:
+  name: "NexusTrade"
+  version: "2.0.0"
+  difficulty: "Principal/Staff Engineer"
+  estimated_time: "8-16 hours"
+  max_steps: 200
+
+# Bug configuration
+bugs:
+  total: 90
+  categories:
+    distributed_consensus:
+      prefix: "A"
+      count: 8
+      ids: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"]
+    event_sourcing:
+      prefix: "B"
+      count: 8
+      ids: ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]
+    service_communication:
+      prefix: "C"
+      count: 7
+      ids: ["C1", "C2", "C3", "C4", "C5", "C6", "C7"]
+    database_transactions:
+      prefix: "D"
+      count: 10
+      ids: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"]
+    authentication_chain:
+      prefix: "E"
+      count: 6
+      ids: ["E1", "E2", "E3", "E4", "E5", "E6"]
+    trading_logic:
+      prefix: "F"
+      count: 8
+      ids: ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"]
+    risk_management:
+      prefix: "G"
+      count: 6
+      ids: ["G1", "G2", "G3", "G4", "G5", "G6"]
+    caching_performance:
+      prefix: "H"
+      count: 6
+      ids: ["H1", "H2", "H3", "H4", "H5", "H6"]
+    security:
+      prefix: "I"
+      count: 8
+      ids: ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8"]
+    observability:
+      prefix: "J"
+      count: 5
+      ids: ["J1", "J2", "J3", "J4", "J5"]
+    configuration:
+      prefix: "K"
+      count: 8
+      ids: ["K1", "K2", "K3", "K4", "K5", "K6", "K7", "K8"]
+    setup_hell:
+      prefix: "L"
+      count: 10
+      ids: ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10"]
+
+# Tests configuration
+tests:
+  total: 500
+  categories:
+    unit:
+      weight: 1.0
+      files:
+        - "tests/unit/test_trading_logic.py"
+        - "tests/unit/test_risk_management.py"
+    integration:
+      weight: 1.5
+      files:
+        - "tests/integration/test_service_communication.py"
+    contract:
+      weight: 2.0
+      files: []
+    chaos:
+      weight: 3.0
+      files:
+        - "tests/chaos/test_distributed_consensus.py"
+    security:
+      weight: 2.5
+      files:
+        - "tests/security/test_vulnerabilities.py"
+    performance:
+      weight: 2.0
+      files: []
+    system:
+      weight: 3.0
+      files: []
+
+# Reward function configuration
+reward:
+  type: "very_sparse"
+  thresholds: [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+  rewards: [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
+  components:
+    base_reward_weight: 0.70
+    service_isolation_weight: 0.15
+    chaos_test_weight: 0.10
+    efficiency_weight: 0.05
+  regression_penalty: -0.15
+  service_isolation_bonus: 0.02
+  chaos_test_bonus: 0.10
+
+# Services
+services:
+  - name: "gateway"
+    path: "services/gateway"
+    framework: "FastAPI"
+    port: 8000
+  - name: "auth"
+    path: "services/auth"
+    framework: "Django"
+    port: 8001
+  - name: "users"
+    path: "services/users"
+    framework: "Django"
+    port: 8002
+  - name: "orders"
+    path: "services/orders"
+    framework: "Django"
+    port: 8003
+  - name: "matching"
+    path: "services/matching"
+    framework: "Python"
+    port: 8004
+  - name: "risk"
+    path: "services/risk"
+    framework: "Django"
+    port: 8005
+  - name: "settlement"
+    path: "services/settlement"
+    framework: "Django"
+    port: 8006
+  - name: "market-data"
+    path: "services/market-data"
+    framework: "FastAPI"
+    port: 8007
+  - name: "notifications"
+    path: "services/notifications"
+    framework: "Celery"
+    port: 8008
+  - name: "audit"
+    path: "services/audit"
+    framework: "Django"
+    port: 8009
+
+# Infrastructure
+infrastructure:
+  kafka:
+    version: "3.6"
+    topics: ["orders", "trades", "events", "notifications", "audit"]
+  postgresql:
+    version: "15"
+    databases: ["orders", "users", "audit"]
+  redis:
+    version: "7"
+    usage: ["caching", "pub-sub", "distributed-locks"]
+  consul:
+    version: "1.16"
+    usage: ["service-discovery", "leader-election", "kv-store"]

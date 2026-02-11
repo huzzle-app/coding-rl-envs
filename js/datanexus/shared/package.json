@@ -1,0 +1,7 @@
+{
+  "name": "@datanexus/shared",
+  "version": "1.0.0",
+  "description": "Shared modules for DataNexus services",
+  "main": "index.js",
+  "dependencies": {}
+}

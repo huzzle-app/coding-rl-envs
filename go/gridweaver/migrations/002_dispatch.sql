@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS dispatch_plans (
+  id TEXT PRIMARY KEY,
+  region TEXT NOT NULL,
+  generation_mw DOUBLE PRECISION NOT NULL,
+  reserve_mw DOUBLE PRECISION NOT NULL,
+  curtailment_mw DOUBLE PRECISION NOT NULL DEFAULT 0
+);

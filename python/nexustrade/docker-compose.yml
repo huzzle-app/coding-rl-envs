@@ -1,0 +1,347 @@
+# NexusTrade - Distributed Trading Platform
+# Terminal Bench v2 - 10x Harder RL Environment
+version: '3.8'
+
+services:
+  # ===========================================
+  # Infrastructure Services
+  # ===========================================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: nexustrade-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: nexustrade-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  postgres-orders:
+    image: postgres:15-alpine
+    container_name: nexustrade-postgres-orders
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: orders_db
+      POSTGRES_USER: nexustrade
+      POSTGRES_PASSWORD: nexustrade_secret
+    volumes:
+      - postgres_orders_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexustrade -d orders_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-users:
+    image: postgres:15-alpine
+    container_name: nexustrade-postgres-users
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: nexustrade
+      POSTGRES_PASSWORD: nexustrade_secret
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexustrade -d users_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-audit:
+    image: postgres:15-alpine
+    container_name: nexustrade-postgres-audit
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: audit_db
+      POSTGRES_USER: nexustrade
+      POSTGRES_PASSWORD: nexustrade_secret
+    volumes:
+      - postgres_audit_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexustrade -d audit_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexustrade-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  consul:
+    image: hashicorp/consul:1.16
+    container_name: nexustrade-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Application Services
+  # ===========================================
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: nexustrade-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVICE_NAME=gateway
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: nexustrade-auth
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVICE_NAME=auth
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-users:5432/users_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/1
+      - JWT_SECRET=super_secret_key_that_should_be_rotated
+      
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+
+  users:
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
+    container_name: nexustrade-users
+    ports:
+      - "8002:8000"
+    environment:
+      - SERVICE_NAME=users
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-users:5432/users_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/2
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  orders:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    container_name: nexustrade-orders
+    ports:
+      - "8003:8000"
+    environment:
+      - SERVICE_NAME=orders
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-orders:5432/orders_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/3
+    depends_on:
+      postgres-orders:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      auth:
+        condition: service_started
+
+  matching:
+    build:
+      context: .
+      dockerfile: services/matching/Dockerfile
+    container_name: nexustrade-matching
+    ports:
+      - "8004:8000"
+    environment:
+      - SERVICE_NAME=matching
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/4
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      orders:
+        condition: service_started
+
+  risk:
+    build:
+      context: .
+      dockerfile: services/risk/Dockerfile
+    container_name: nexustrade-risk
+    ports:
+      - "8005:8000"
+    environment:
+      - SERVICE_NAME=risk
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-orders:5432/orders_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/5
+    depends_on:
+      postgres-orders:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  settlement:
+    build:
+      context: .
+      dockerfile: services/settlement/Dockerfile
+    container_name: nexustrade-settlement
+    ports:
+      - "8006:8000"
+    environment:
+      - SERVICE_NAME=settlement
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-orders:5432/orders_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/6
+    depends_on:
+      postgres-orders:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      matching:
+        condition: service_started
+
+  market-data:
+    build:
+      context: .
+      dockerfile: services/market-data/Dockerfile
+    container_name: nexustrade-market-data
+    ports:
+      - "8007:8000"
+    environment:
+      - SERVICE_NAME=market-data
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/7
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notifications:
+    build:
+      context: .
+      dockerfile: services/notifications/Dockerfile
+    container_name: nexustrade-notifications
+    ports:
+      - "8008:8000"
+    environment:
+      - SERVICE_NAME=notifications
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/8
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  audit:
+    build:
+      context: .
+      dockerfile: services/audit/Dockerfile
+    container_name: nexustrade-audit
+    ports:
+      - "8009:8000"
+    environment:
+      - SERVICE_NAME=audit
+      - DATABASE_URL=postgresql://nexustrade:nexustrade_secret@postgres-audit:5432/audit_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    depends_on:
+      postgres-audit:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+volumes:
+  postgres_orders_data:
+  postgres_users_data:
+  postgres_audit_data:
+  redis_data:
+  consul_data:
+
+networks:
+  default:
+    name: nexustrade-network

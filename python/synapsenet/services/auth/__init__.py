@@ -1,0 +1,1 @@
+"""SynapseNet auth service."""

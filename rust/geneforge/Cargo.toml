@@ -1,0 +1,39 @@
+[package]
+name = "geneforge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "genomics_tests"
+path = "tests/genomics_tests.rs"
+
+[[test]]
+name = "pipeline_edges_tests"
+path = "tests/pipeline_edges_tests.rs"
+
+[[test]]
+name = "quality_edges_tests"
+path = "tests/quality_edges_tests.rs"
+
+[[test]]
+name = "fault_injection_tests"
+path = "tests/fault_injection_tests.rs"
+
+[[test]]
+name = "clinical_flow_tests"
+path = "tests/clinical_flow_tests.rs"
+
+[[test]]
+name = "chaos_replay_tests"
+path = "tests/chaos_replay_tests.rs"
+
+[[test]]
+name = "services_contracts"
+path = "tests/services_contracts.rs"
+
+[dependencies]
+
+[dev-dependencies]

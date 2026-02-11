@@ -1,0 +1,277 @@
+cmake_minimum_required(VERSION 3.20)
+project(obsidianmesh LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(obsidianmesh
+  src/allocator.cpp
+  src/routing.cpp
+  src/policy.cpp
+  src/security.cpp
+  src/resilience.cpp
+  src/queue.cpp
+  src/statistics.cpp
+  src/workflow.cpp
+  src/model.cpp
+  src/contracts.cpp
+  src/config.cpp
+  src/concurrency.cpp
+  src/events.cpp
+  src/telemetry.cpp
+)
+
+target_include_directories(obsidianmesh PUBLIC include)
+
+add_executable(obsidianmesh_tests tests/test_main.cpp)
+target_link_libraries(obsidianmesh_tests PRIVATE obsidianmesh)
+
+enable_testing()
+
+# Allocator tests
+add_test(NAME allocator_capacity COMMAND obsidianmesh_tests allocator_capacity)
+add_test(NAME allocator_batch COMMAND obsidianmesh_tests allocator_batch)
+add_test(NAME allocator_berth_conflict COMMAND obsidianmesh_tests allocator_berth_conflict)
+add_test(NAME allocator_available_slots COMMAND obsidianmesh_tests allocator_available_slots)
+add_test(NAME allocator_cost_estimation COMMAND obsidianmesh_tests allocator_cost_estimation)
+add_test(NAME allocator_cost_allocation COMMAND obsidianmesh_tests allocator_cost_allocation)
+add_test(NAME allocator_turnaround COMMAND obsidianmesh_tests allocator_turnaround)
+add_test(NAME allocator_validation COMMAND obsidianmesh_tests allocator_validation)
+add_test(NAME allocator_weighted COMMAND obsidianmesh_tests allocator_weighted)
+add_test(NAME allocator_berth_utilization COMMAND obsidianmesh_tests allocator_berth_utilization)
+add_test(NAME allocator_rounding COMMAND obsidianmesh_tests allocator_rounding)
+add_test(NAME allocator_cost_per_unit COMMAND obsidianmesh_tests allocator_cost_per_unit)
+add_test(NAME allocator_normalize_urgency COMMAND obsidianmesh_tests allocator_normalize_urgency)
+add_test(NAME allocator_priority_score COMMAND obsidianmesh_tests allocator_priority_score)
+add_test(NAME allocator_over_capacity COMMAND obsidianmesh_tests allocator_over_capacity)
+
+# Routing tests
+add_test(NAME routing_blocked COMMAND obsidianmesh_tests routing_blocked)
+add_test(NAME routing_channel_score COMMAND obsidianmesh_tests routing_channel_score)
+add_test(NAME routing_transit_time COMMAND obsidianmesh_tests routing_transit_time)
+add_test(NAME routing_multi_leg COMMAND obsidianmesh_tests routing_multi_leg)
+add_test(NAME routing_table COMMAND obsidianmesh_tests routing_table)
+add_test(NAME routing_cost COMMAND obsidianmesh_tests routing_cost)
+add_test(NAME routing_weighted_score COMMAND obsidianmesh_tests routing_weighted_score)
+add_test(NAME routing_best_route COMMAND obsidianmesh_tests routing_best_route)
+add_test(NAME routing_failover COMMAND obsidianmesh_tests routing_failover)
+add_test(NAME routing_distance COMMAND obsidianmesh_tests routing_distance)
+add_test(NAME routing_normalize_latency COMMAND obsidianmesh_tests routing_normalize_latency)
+add_test(NAME routing_fuel_efficiency COMMAND obsidianmesh_tests routing_fuel_efficiency)
+add_test(NAME routing_total_fees COMMAND obsidianmesh_tests routing_total_fees)
+add_test(NAME routing_knots_conversion COMMAND obsidianmesh_tests routing_knots_conversion)
+add_test(NAME routing_penalty COMMAND obsidianmesh_tests routing_penalty)
+
+# Policy tests
+add_test(NAME policy_escalation COMMAND obsidianmesh_tests policy_escalation)
+add_test(NAME policy_deescalation COMMAND obsidianmesh_tests policy_deescalation)
+add_test(NAME policy_engine_lifecycle COMMAND obsidianmesh_tests policy_engine_lifecycle)
+add_test(NAME policy_sla COMMAND obsidianmesh_tests policy_sla)
+add_test(NAME policy_sla_percentage COMMAND obsidianmesh_tests policy_sla_percentage)
+add_test(NAME policy_metadata COMMAND obsidianmesh_tests policy_metadata)
+add_test(NAME policy_weight_ordering COMMAND obsidianmesh_tests policy_weight_ordering)
+add_test(NAME policy_escalation_threshold COMMAND obsidianmesh_tests policy_escalation_threshold)
+add_test(NAME policy_risk_score COMMAND obsidianmesh_tests policy_risk_score)
+add_test(NAME policy_grace_period COMMAND obsidianmesh_tests policy_grace_period)
+add_test(NAME policy_retries_default COMMAND obsidianmesh_tests policy_retries_default)
+add_test(NAME policy_cooldown COMMAND obsidianmesh_tests policy_cooldown)
+
+# Queue tests
+add_test(NAME queue_hard_limit COMMAND obsidianmesh_tests queue_hard_limit)
+add_test(NAME queue_priority COMMAND obsidianmesh_tests queue_priority)
+add_test(NAME queue_drain COMMAND obsidianmesh_tests queue_drain)
+add_test(NAME queue_health_check COMMAND obsidianmesh_tests queue_health_check)
+add_test(NAME queue_wait_estimation COMMAND obsidianmesh_tests queue_wait_estimation)
+add_test(NAME queue_batch_enqueue COMMAND obsidianmesh_tests queue_batch_enqueue)
+add_test(NAME queue_priority_boost COMMAND obsidianmesh_tests queue_priority_boost)
+add_test(NAME queue_fairness COMMAND obsidianmesh_tests queue_fairness)
+add_test(NAME queue_requeue COMMAND obsidianmesh_tests queue_requeue)
+add_test(NAME queue_weighted_wait COMMAND obsidianmesh_tests queue_weighted_wait)
+add_test(NAME queue_pressure_ratio COMMAND obsidianmesh_tests queue_pressure_ratio)
+add_test(NAME queue_drain_pct COMMAND obsidianmesh_tests queue_drain_pct)
+
+# Security tests
+add_test(NAME security_signature COMMAND obsidianmesh_tests security_signature)
+add_test(NAME security_manifest COMMAND obsidianmesh_tests security_manifest)
+add_test(NAME security_path_sanitise COMMAND obsidianmesh_tests security_path_sanitise)
+add_test(NAME security_origin COMMAND obsidianmesh_tests security_origin)
+add_test(NAME security_token_format COMMAND obsidianmesh_tests security_token_format)
+add_test(NAME security_password_strength COMMAND obsidianmesh_tests security_password_strength)
+add_test(NAME security_masking COMMAND obsidianmesh_tests security_masking)
+add_test(NAME security_hmac COMMAND obsidianmesh_tests security_hmac)
+add_test(NAME security_rate_limit_key COMMAND obsidianmesh_tests security_rate_limit_key)
+add_test(NAME security_session_expiry COMMAND obsidianmesh_tests security_session_expiry)
+add_test(NAME security_header_sanitize COMMAND obsidianmesh_tests security_header_sanitize)
+add_test(NAME security_permissions COMMAND obsidianmesh_tests security_permissions)
+add_test(NAME security_ip_allowlist COMMAND obsidianmesh_tests security_ip_allowlist)
+add_test(NAME security_password_hash COMMAND obsidianmesh_tests security_password_hash)
+
+# Resilience tests
+add_test(NAME replay_latest COMMAND obsidianmesh_tests replay_latest)
+add_test(NAME replay_convergence COMMAND obsidianmesh_tests replay_convergence)
+add_test(NAME resilience_checkpoint COMMAND obsidianmesh_tests resilience_checkpoint)
+add_test(NAME resilience_circuit_breaker COMMAND obsidianmesh_tests resilience_circuit_breaker)
+add_test(NAME resilience_dedup COMMAND obsidianmesh_tests resilience_dedup)
+add_test(NAME resilience_replay_window COMMAND obsidianmesh_tests resilience_replay_window)
+add_test(NAME resilience_event_ordering COMMAND obsidianmesh_tests resilience_event_ordering)
+add_test(NAME resilience_idempotent COMMAND obsidianmesh_tests resilience_idempotent)
+add_test(NAME resilience_compact COMMAND obsidianmesh_tests resilience_compact)
+add_test(NAME resilience_retry_backoff COMMAND obsidianmesh_tests resilience_retry_backoff)
+add_test(NAME resilience_should_trip COMMAND obsidianmesh_tests resilience_should_trip)
+add_test(NAME resilience_jitter COMMAND obsidianmesh_tests resilience_jitter)
+add_test(NAME resilience_half_open_calls COMMAND obsidianmesh_tests resilience_half_open_calls)
+add_test(NAME resilience_failure_window COMMAND obsidianmesh_tests resilience_failure_window)
+add_test(NAME resilience_recovery_rate COMMAND obsidianmesh_tests resilience_recovery_rate)
+add_test(NAME resilience_checkpoint_interval COMMAND obsidianmesh_tests resilience_checkpoint_interval)
+add_test(NAME resilience_degradation COMMAND obsidianmesh_tests resilience_degradation)
+add_test(NAME resilience_bulkhead COMMAND obsidianmesh_tests resilience_bulkhead)
+add_test(NAME resilience_state_duration COMMAND obsidianmesh_tests resilience_state_duration)
+add_test(NAME resilience_fallback COMMAND obsidianmesh_tests resilience_fallback)
+add_test(NAME resilience_cascade COMMAND obsidianmesh_tests resilience_cascade)
+
+# Statistics tests
+add_test(NAME percentile_sparse COMMAND obsidianmesh_tests percentile_sparse)
+add_test(NAME stats_descriptive COMMAND obsidianmesh_tests stats_descriptive)
+add_test(NAME stats_variance COMMAND obsidianmesh_tests stats_variance)
+add_test(NAME stats_response_tracker COMMAND obsidianmesh_tests stats_response_tracker)
+add_test(NAME stats_moving_average COMMAND obsidianmesh_tests stats_moving_average)
+add_test(NAME stats_heatmap COMMAND obsidianmesh_tests stats_heatmap)
+add_test(NAME stats_weighted_mean COMMAND obsidianmesh_tests stats_weighted_mean)
+add_test(NAME stats_ema COMMAND obsidianmesh_tests stats_ema)
+add_test(NAME stats_min_max_normalize COMMAND obsidianmesh_tests stats_min_max_normalize)
+add_test(NAME stats_covariance COMMAND obsidianmesh_tests stats_covariance)
+add_test(NAME stats_correlation COMMAND obsidianmesh_tests stats_correlation)
+add_test(NAME stats_sum_of_squares COMMAND obsidianmesh_tests stats_sum_of_squares)
+add_test(NAME stats_iqr COMMAND obsidianmesh_tests stats_iqr)
+add_test(NAME stats_rate_of_change COMMAND obsidianmesh_tests stats_rate_of_change)
+add_test(NAME stats_z_score COMMAND obsidianmesh_tests stats_z_score)
+
+# Workflow tests
+add_test(NAME workflow_graph COMMAND obsidianmesh_tests workflow_graph)
+add_test(NAME workflow_shortest_path COMMAND obsidianmesh_tests workflow_shortest_path)
+add_test(NAME workflow_engine COMMAND obsidianmesh_tests workflow_engine)
+add_test(NAME workflow_terminal COMMAND obsidianmesh_tests workflow_terminal)
+add_test(NAME workflow_audit COMMAND obsidianmesh_tests workflow_audit)
+add_test(NAME workflow_transition_count COMMAND obsidianmesh_tests workflow_transition_count)
+add_test(NAME workflow_time_in_state COMMAND obsidianmesh_tests workflow_time_in_state)
+add_test(NAME workflow_parallel_count COMMAND obsidianmesh_tests workflow_parallel_count)
+add_test(NAME workflow_state_distribution COMMAND obsidianmesh_tests workflow_state_distribution)
+add_test(NAME workflow_bottleneck COMMAND obsidianmesh_tests workflow_bottleneck)
+add_test(NAME workflow_completion_pct COMMAND obsidianmesh_tests workflow_completion_pct)
+add_test(NAME workflow_cancel_from_any COMMAND obsidianmesh_tests workflow_cancel_from_any)
+add_test(NAME workflow_estimated_completion COMMAND obsidianmesh_tests workflow_estimated_completion)
+add_test(NAME workflow_state_age COMMAND obsidianmesh_tests workflow_state_age)
+add_test(NAME workflow_batch_register COMMAND obsidianmesh_tests workflow_batch_register)
+add_test(NAME workflow_valid_path COMMAND obsidianmesh_tests workflow_valid_path)
+add_test(NAME workflow_throughput COMMAND obsidianmesh_tests workflow_throughput)
+add_test(NAME workflow_chain_length COMMAND obsidianmesh_tests workflow_chain_length)
+add_test(NAME workflow_merge_histories COMMAND obsidianmesh_tests workflow_merge_histories)
+
+# Model tests
+add_test(NAME model_urgency COMMAND obsidianmesh_tests model_urgency)
+add_test(NAME model_vessel_manifest COMMAND obsidianmesh_tests model_vessel_manifest)
+add_test(NAME model_batch_creation COMMAND obsidianmesh_tests model_batch_creation)
+add_test(NAME model_validation COMMAND obsidianmesh_tests model_validation)
+add_test(NAME model_classify_severity COMMAND obsidianmesh_tests model_classify_severity)
+add_test(NAME model_severity_label COMMAND obsidianmesh_tests model_severity_label)
+add_test(NAME model_weight_class COMMAND obsidianmesh_tests model_weight_class)
+add_test(NAME model_crew_estimation COMMAND obsidianmesh_tests model_crew_estimation)
+add_test(NAME model_hazmat_surcharge COMMAND obsidianmesh_tests model_hazmat_surcharge)
+add_test(NAME model_eta COMMAND obsidianmesh_tests model_eta)
+
+# Contract tests
+add_test(NAME contracts_exposed COMMAND obsidianmesh_tests contracts_exposed)
+add_test(NAME contracts_service_defs COMMAND obsidianmesh_tests contracts_service_defs)
+add_test(NAME contracts_url COMMAND obsidianmesh_tests contracts_url)
+add_test(NAME contracts_validation COMMAND obsidianmesh_tests contracts_validation)
+add_test(NAME contracts_topo_order COMMAND obsidianmesh_tests contracts_topo_order)
+add_test(NAME contracts_health_endpoint COMMAND obsidianmesh_tests contracts_health_endpoint)
+add_test(NAME contracts_dependency_depth COMMAND obsidianmesh_tests contracts_dependency_depth)
+add_test(NAME contracts_critical_path COMMAND obsidianmesh_tests contracts_critical_path)
+add_test(NAME contracts_port_collision COMMAND obsidianmesh_tests contracts_port_collision)
+add_test(NAME contracts_summary_format COMMAND obsidianmesh_tests contracts_summary_format)
+
+# Config tests
+add_test(NAME config_defaults COMMAND obsidianmesh_tests config_defaults)
+add_test(NAME config_validate COMMAND obsidianmesh_tests config_validate)
+add_test(NAME config_endpoint_validation COMMAND obsidianmesh_tests config_endpoint_validation)
+add_test(NAME config_env_normalization COMMAND obsidianmesh_tests config_env_normalization)
+add_test(NAME config_feature_flags COMMAND obsidianmesh_tests config_feature_flags)
+add_test(NAME config_priority_ordering COMMAND obsidianmesh_tests config_priority_ordering)
+
+# Concurrency tests
+add_test(NAME concurrency_barrier COMMAND obsidianmesh_tests concurrency_barrier)
+add_test(NAME concurrency_merge_counts COMMAND obsidianmesh_tests concurrency_merge_counts)
+add_test(NAME concurrency_partition COMMAND obsidianmesh_tests concurrency_partition)
+add_test(NAME concurrency_atomic_counter COMMAND obsidianmesh_tests concurrency_atomic_counter)
+add_test(NAME concurrency_registry COMMAND obsidianmesh_tests concurrency_registry)
+add_test(NAME concurrency_fan_out_merge COMMAND obsidianmesh_tests concurrency_fan_out_merge)
+add_test(NAME concurrency_cycle_detection COMMAND obsidianmesh_tests concurrency_cycle_detection)
+add_test(NAME concurrency_work_stealing COMMAND obsidianmesh_tests concurrency_work_stealing)
+
+# Events tests
+add_test(NAME events_time_sorting COMMAND obsidianmesh_tests events_time_sorting)
+add_test(NAME events_dedup COMMAND obsidianmesh_tests events_dedup)
+add_test(NAME events_time_window COMMAND obsidianmesh_tests events_time_window)
+add_test(NAME events_count_by_kind COMMAND obsidianmesh_tests events_count_by_kind)
+add_test(NAME events_log_eviction COMMAND obsidianmesh_tests events_log_eviction)
+add_test(NAME events_gap_detection COMMAND obsidianmesh_tests events_gap_detection)
+add_test(NAME events_batch_by_time COMMAND obsidianmesh_tests events_batch_by_time)
+add_test(NAME events_rate COMMAND obsidianmesh_tests events_rate)
+
+# Telemetry tests
+add_test(NAME telemetry_error_rate COMMAND obsidianmesh_tests telemetry_error_rate)
+add_test(NAME telemetry_latency_bucket COMMAND obsidianmesh_tests telemetry_latency_bucket)
+add_test(NAME telemetry_throughput COMMAND obsidianmesh_tests telemetry_throughput)
+add_test(NAME telemetry_health_score COMMAND obsidianmesh_tests telemetry_health_score)
+add_test(NAME telemetry_threshold_check COMMAND obsidianmesh_tests telemetry_threshold_check)
+add_test(NAME telemetry_aggregate COMMAND obsidianmesh_tests telemetry_aggregate)
+add_test(NAME telemetry_uptime COMMAND obsidianmesh_tests telemetry_uptime)
+add_test(NAME telemetry_alerting COMMAND obsidianmesh_tests telemetry_alerting)
+
+# Integration tests
+add_test(NAME flow_integration COMMAND obsidianmesh_tests flow_integration)
+add_test(NAME end_to_end_dispatch COMMAND obsidianmesh_tests end_to_end_dispatch)
+add_test(NAME config_registry_workflow COMMAND obsidianmesh_tests config_registry_workflow)
+add_test(NAME event_driven_workflow COMMAND obsidianmesh_tests event_driven_workflow)
+add_test(NAME telemetry_collection_flow COMMAND obsidianmesh_tests telemetry_collection_flow)
+
+# Latent bug tests
+add_test(NAME latent_accumulated_utilization COMMAND obsidianmesh_tests latent_accumulated_utilization)
+add_test(NAME latent_active_route_count COMMAND obsidianmesh_tests latent_active_route_count)
+add_test(NAME latent_transition_key COMMAND obsidianmesh_tests latent_transition_key)
+add_test(NAME latent_token_expiry_spread COMMAND obsidianmesh_tests latent_token_expiry_spread)
+
+# Domain logic bug tests
+add_test(NAME domain_berth_fee COMMAND obsidianmesh_tests domain_berth_fee)
+add_test(NAME domain_sla_breach COMMAND obsidianmesh_tests domain_sla_breach)
+add_test(NAME domain_weather_eta COMMAND obsidianmesh_tests domain_weather_eta)
+add_test(NAME domain_hazmat_crew COMMAND obsidianmesh_tests domain_hazmat_crew)
+
+# Multi-step bug tests
+add_test(NAME multistep_normalize_timestamps COMMAND obsidianmesh_tests multistep_normalize_timestamps)
+add_test(NAME multistep_event_bursts COMMAND obsidianmesh_tests multistep_event_bursts)
+add_test(NAME multistep_reliability_score COMMAND obsidianmesh_tests multistep_reliability_score)
+add_test(NAME multistep_select_reliable COMMAND obsidianmesh_tests multistep_select_reliable)
+
+# State machine bug tests
+add_test(NAME statemachine_escalation_cooldown COMMAND obsidianmesh_tests statemachine_escalation_cooldown)
+add_test(NAME statemachine_transition_sequence COMMAND obsidianmesh_tests statemachine_transition_sequence)
+add_test(NAME statemachine_circuit_breaker_recovery COMMAND obsidianmesh_tests statemachine_circuit_breaker_recovery)
+
+# Concurrency bug tests
+add_test(NAME concurrency_safe_counter_overflow COMMAND obsidianmesh_tests concurrency_safe_counter_overflow)
+add_test(NAME concurrency_parallel_merge COMMAND obsidianmesh_tests concurrency_parallel_merge)
+add_test(NAME concurrency_queue_merge COMMAND obsidianmesh_tests concurrency_queue_merge)
+add_test(NAME concurrency_event_trim COMMAND obsidianmesh_tests concurrency_event_trim)
+
+# Integration bug tests
+add_test(NAME integration_dispatch_route_score COMMAND obsidianmesh_tests integration_dispatch_route_score)
+add_test(NAME integration_policy_queue_limit COMMAND obsidianmesh_tests integration_policy_queue_limit)
+add_test(NAME integration_health_composite COMMAND obsidianmesh_tests integration_health_composite)
+add_test(NAME integration_checkpoint_replay COMMAND obsidianmesh_tests integration_checkpoint_replay)
+add_test(NAME integration_priority_aging COMMAND obsidianmesh_tests integration_priority_aging)
+add_test(NAME integration_cascade_depth COMMAND obsidianmesh_tests integration_cascade_depth)
+
+# Hyper-matrix parametric test (12500 scenarios)
+add_test(NAME hyper_matrix COMMAND obsidianmesh_tests hyper_matrix)

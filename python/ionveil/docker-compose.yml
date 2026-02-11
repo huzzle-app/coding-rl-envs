@@ -1,0 +1,232 @@
+services:
+  # Infrastructure
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ionveil
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    ports: ["5440:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-audit:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ionveil_audit
+    ports: ["5441:5432"]
+    volumes:
+      - pgdata_audit:/var/lib/postgresql/data
+
+  postgres-analytics:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ionveil_analytics
+    ports: ["5442:5432"]
+    volumes:
+      - pgdata_analytics:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    command: redis-server --maxclients 1
+    ports: ["6400:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+
+  kafka:
+    image: bitnami/kafka:3.6
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_CFG_MESSAGE_MAX_BYTES: "1048576"
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  consul:
+    image: hashicorp/consul:1.17
+    command: agent -dev -client=0.0.0.0
+    ports: ["8500:8500"]
+
+  # Application Services
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.gateway.app
+    ports: ["8080:8080"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_DB_NAME: ionveil
+      IONVEIL_DB_PASSWORD: postgres
+      IONVEIL_REDIS_URL: redis://redis:6379
+      IONVEIL_KAFKA_BOOTSTRAP: kafka:9092
+      IONVEIL_CONSUL_URL: http://consul:8500
+      IONVEIL_CONFIG_FILE: /app/config/production.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.auth.tokens
+    ports: ["8081:8081"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_JWT_SECRET: "supersecret"
+      IONVEIL_REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dispatch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.dispatch.engine
+    ports: ["8082:8082"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_KAFKA_BOOTSTRAP: kafka:9092
+      IONVEIL_REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  routing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.routing.optimizer
+    ports: ["8083:8083"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  incidents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.incidents.lifecycle
+    ports: ["8084:8084"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  resources:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.resources.tracker
+    ports: ["8085:8085"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  notifications:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.notifications.channels
+    ports: ["8086:8086"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.analytics.metrics
+    ports: ["8087:8087"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres-analytics
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_DB_NAME: ionveil_analytics
+    depends_on:
+      postgres-analytics:
+        condition: service_started
+
+  compliance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.compliance.sla
+    ports: ["8088:8088"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres-audit
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_DB_NAME: ionveil_audit
+    depends_on:
+      postgres-audit:
+        condition: service_started
+
+  audit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m services.audit.event_store
+    ports: ["8089:8089"]
+    environment:
+      IONVEIL_ENV: production
+      IONVEIL_DB_HOST: postgres
+      IONVEIL_DB_PORT: "5432"
+      IONVEIL_KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  pgdata_audit:
+  pgdata_analytics:

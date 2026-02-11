@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS dispatch_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  route_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS capacity_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  inflight BIGINT NOT NULL,
+  backlog BIGINT NOT NULL,
+  version BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

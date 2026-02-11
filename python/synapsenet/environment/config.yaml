@@ -1,0 +1,202 @@
+# SynapseNet RL Environment Configuration
+# Terminal Bench v2 - AI/ML Model Serving & Training Platform
+
+environment:
+  name: "SynapseNet"
+  version: "2.0.0"
+  difficulty: "Distinguished Engineer"
+  estimated_time: "24-48 hours"
+  max_steps: 300
+
+# Bug configuration
+bugs:
+  total: 120
+  categories:
+    setup_hell:
+      prefix: "L"
+      count: 15
+      ids: ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10", "L11", "L12", "L13", "L14", "L15"]
+    ml_pipeline:
+      prefix: "M"
+      count: 10
+      ids: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10"]
+    distributed_training:
+      prefix: "A"
+      count: 10
+      ids: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"]
+    model_serving:
+      prefix: "B"
+      count: 10
+      ids: ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10"]
+    feature_store:
+      prefix: "C"
+      count: 8
+      ids: ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+    data_pipeline:
+      prefix: "D"
+      count: 10
+      ids: ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"]
+    experiment_tracking:
+      prefix: "E"
+      count: 8
+      ids: ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"]
+    database_transactions:
+      prefix: "F"
+      count: 10
+      ids: ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10"]
+    authentication_rbac:
+      prefix: "G"
+      count: 6
+      ids: ["G1", "G2", "G3", "G4", "G5", "G6"]
+    caching_performance:
+      prefix: "H"
+      count: 8
+      ids: ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8"]
+    security:
+      prefix: "I"
+      count: 10
+      ids: ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8", "I9", "I10"]
+    observability:
+      prefix: "J"
+      count: 7
+      ids: ["J1", "J2", "J3", "J4", "J5", "J6", "J7"]
+    configuration:
+      prefix: "K"
+      count: 8
+      ids: ["K1", "K2", "K3", "K4", "K5", "K6", "K7", "K8"]
+
+# Tests configuration
+tests:
+  total: 760
+  categories:
+    unit:
+      weight: 1.0
+      files:
+        - "tests/unit/test_ml_pipeline.py"
+        - "tests/unit/test_model_serving.py"
+        - "tests/unit/test_feature_store.py"
+        - "tests/unit/test_experiment_tracking.py"
+    integration:
+      weight: 1.5
+      files:
+        - "tests/integration/test_service_communication.py"
+        - "tests/integration/test_training_pipeline.py"
+    contract:
+      weight: 2.0
+      files:
+        - "tests/contract/test_api_contracts.py"
+    chaos:
+      weight: 3.0
+      files:
+        - "tests/chaos/test_distributed_training.py"
+        - "tests/chaos/test_model_serving.py"
+    security:
+      weight: 2.5
+      files:
+        - "tests/security/test_vulnerabilities.py"
+    performance:
+      weight: 2.0
+      files:
+        - "tests/performance/test_inference_latency.py"
+    system:
+      weight: 3.0
+      files:
+        - "tests/system/test_end_to_end.py"
+
+# Reward function configuration
+reward:
+  type: "very_sparse"
+  thresholds: [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+  rewards: [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
+  components:
+    base_reward_weight: 0.65
+    service_isolation_weight: 0.15
+    ml_pipeline_weight: 0.15
+    efficiency_weight: 0.05
+  regression_penalty: -0.15
+  service_isolation_bonus: 0.02
+  ml_pipeline_bonus: 0.10
+
+# Services
+services:
+  - name: "gateway"
+    path: "services/gateway"
+    framework: "FastAPI"
+    port: 8000
+  - name: "auth"
+    path: "services/auth"
+    framework: "Django"
+    port: 8001
+  - name: "models"
+    path: "services/models"
+    framework: "FastAPI"
+    port: 8002
+  - name: "registry"
+    path: "services/registry"
+    framework: "Django"
+    port: 8003
+  - name: "training"
+    path: "services/training"
+    framework: "Celery/FastAPI"
+    port: 8004
+  - name: "inference"
+    path: "services/inference"
+    framework: "FastAPI"
+    port: 8005
+  - name: "features"
+    path: "services/features"
+    framework: "Django"
+    port: 8006
+  - name: "pipeline"
+    path: "services/pipeline"
+    framework: "Celery/FastAPI"
+    port: 8007
+  - name: "experiments"
+    path: "services/experiments"
+    framework: "Django"
+    port: 8008
+  - name: "monitoring"
+    path: "services/monitoring"
+    framework: "FastAPI"
+    port: 8009
+  - name: "scheduler"
+    path: "services/scheduler"
+    framework: "Django"
+    port: 8010
+  - name: "workers"
+    path: "services/workers"
+    framework: "Celery"
+    port: 8011
+  - name: "storage"
+    path: "services/storage"
+    framework: "FastAPI"
+    port: 8012
+  - name: "webhooks"
+    path: "services/webhooks"
+    framework: "Django"
+    port: 8013
+  - name: "admin"
+    path: "services/admin"
+    framework: "Django"
+    port: 8014
+
+# Infrastructure
+infrastructure:
+  kafka:
+    version: "3.6"
+    topics: ["model-events", "training-jobs", "predictions", "feature-updates", "experiments", "notifications", "audit"]
+  postgresql:
+    version: "15"
+    databases: ["models_db", "users_db", "experiments_db", "metrics_db"]
+  redis:
+    version: "7"
+    usage: ["caching", "pub-sub", "distributed-locks", "model-cache"]
+  consul:
+    version: "1.16"
+    usage: ["service-discovery", "leader-election", "kv-store"]
+  minio:
+    version: "latest"
+    usage: ["model-artifacts", "datasets", "checkpoints"]
+  elasticsearch:
+    version: "8"
+    usage: ["model-search", "experiment-search", "log-aggregation"]

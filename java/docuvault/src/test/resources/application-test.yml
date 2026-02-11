@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:docuvault_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+  flyway:
+    enabled: false
+  cache:
+    type: simple
+  data:
+    redis:
+      repositories:
+        enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+max:
+  file:
+    size: "10485760"
+
+jwt:
+  secret: docuvault-secret-key-for-jwt-token-generation-minimum-256-bits-long
+  expiration: 86400000
+
+upload:
+  directory: /tmp/docuvault/test-uploads

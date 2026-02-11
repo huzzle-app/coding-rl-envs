@@ -1,0 +1,73 @@
+# Docker Compose for running tests (Terminal Bench v2)
+# Usage: docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: talentflow-test-db
+    environment:
+      POSTGRES_DB: talentflow_test
+      POSTGRES_USER: talentflow
+      POSTGRES_PASSWORD: talentflow
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U talentflow -d talentflow_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: talentflow-test-redis
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: talentflow-test-runner
+    command: >
+      sh -c "
+        echo '=== TalentFlow Test Runner ===' &&
+        echo 'Waiting for services...' &&
+        sleep 5 &&
+        echo 'Running migrations...' &&
+        python manage.py migrate --noinput 2>&1 || echo 'Migration failed (expected with bugs)' &&
+        echo '' &&
+        echo '=== Running pytest ===' &&
+        pytest -v --tb=short -x --timeout=60 2>&1;
+        TEST_EXIT=$$?;
+        echo '';
+        echo '=== Test run complete ===';
+        exit $$TEST_EXIT
+      "
+    environment:
+      - DJANGO_SETTINGS_MODULE=talentflow.settings.testing
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=talentflow_test
+      - POSTGRES_USER=talentflow
+      - POSTGRES_PASSWORD=talentflow
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_TASK_ALWAYS_EAGER=true
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+networks:
+  default:
+    name: talentflow-test-network

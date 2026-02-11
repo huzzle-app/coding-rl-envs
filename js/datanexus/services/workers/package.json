@@ -1,0 +1,13 @@
+{
+  "name": "@datanexus/workers",
+  "version": "1.0.0",
+  "description": "DataNexus workers service",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@datanexus/shared": "1.0.0"
+  }
+}

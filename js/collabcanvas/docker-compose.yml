@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: collabcanvas-db
+    environment:
+      POSTGRES_USER: collabcanvas
+      POSTGRES_PASSWORD: collabcanvas_dev
+      POSTGRES_DB: collabcanvas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collabcanvas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: collabcanvas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: collabcanvas-app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: collabcanvas
+      DB_USER: collabcanvas
+      DB_PASSWORD: collabcanvas_dev
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: dev-secret-change-in-production
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./uploads:/app/uploads
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: collabcanvas-test
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: collabcanvas_test
+      DB_USER: collabcanvas
+      DB_PASSWORD: collabcanvas_dev
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: test-secret
+    command: npm test
+    profiles:
+      - test
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: collabcanvas-network

@@ -1,0 +1,2 @@
+SERVICE_NAME=notifications
+API_VERSION=v1

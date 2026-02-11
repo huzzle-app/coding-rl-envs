@@ -1,0 +1,266 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+      - ETCD_ENDPOINTS=http://etcd:2379
+    depends_on:
+      - nats
+      - redis
+      - etcd
+    networks:
+      - quantumcore
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_auth
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=development_secret_change_in_production
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - quantumcore
+
+  orders:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_orders
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - nats
+      - redis
+    networks:
+      - quantumcore
+
+  matching:
+    build:
+      context: .
+      dockerfile: services/matching/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - RUST_LOG=info
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - nats
+      - redis
+    networks:
+      - quantumcore
+
+  risk:
+    build:
+      context: .
+      dockerfile: services/risk/Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_risk
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - nats
+      - redis
+    networks:
+      - quantumcore
+
+  positions:
+    build:
+      context: .
+      dockerfile: services/positions/Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_positions
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+      - ETCD_ENDPOINTS=http://etcd:2379
+    depends_on:
+      - postgres
+      - nats
+      - redis
+      - etcd
+    networks:
+      - quantumcore
+
+  market:
+    build:
+      context: .
+      dockerfile: services/market/Dockerfile
+    ports:
+      - "8006:8006"
+    environment:
+      - RUST_LOG=info
+      - NATS_URL=nats://nats:4222
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=my-super-secret-auth-token
+    depends_on:
+      - nats
+      - influxdb
+    networks:
+      - quantumcore
+
+  portfolio:
+    build:
+      context: .
+      dockerfile: services/portfolio/Dockerfile
+    ports:
+      - "8007:8007"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_portfolio
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - nats
+      - redis
+    networks:
+      - quantumcore
+
+  ledger:
+    build:
+      context: .
+      dockerfile: services/ledger/Dockerfile
+    ports:
+      - "8008:8008"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_ledger
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - postgres
+      - nats
+    networks:
+      - quantumcore
+
+  alerts:
+    build:
+      context: .
+      dockerfile: services/alerts/Dockerfile
+    ports:
+      - "8009:8009"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/quantumcore_alerts
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - nats
+      - redis
+    networks:
+      - quantumcore
+
+  # Infrastructure
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-databases.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quantumcore
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quantumcore
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quantumcore
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=quantumcore
+      - DOCKER_INFLUXDB_INIT_BUCKET=market_data
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-super-secret-auth-token
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - quantumcore
+
+  etcd:
+    image: bitnami/etcd:3.5
+    ports:
+      - "2379:2379"
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    volumes:
+      - etcd_data:/bitnami/etcd
+    networks:
+      - quantumcore
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:
+  influxdb_data:
+  etcd_data:
+
+networks:
+  quantumcore:
+    driver: bridge

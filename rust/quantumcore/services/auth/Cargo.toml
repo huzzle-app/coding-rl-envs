@@ -1,0 +1,25 @@
+[package]
+name = "auth-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+shared = { path = "../../shared" }
+tokio.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+uuid = { version = "1.6", features = ["v4", "serde"] }
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+subtle.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4"

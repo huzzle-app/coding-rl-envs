@@ -1,0 +1,8 @@
+gateway=8150
+routing=8151
+policy=8152
+resilience=8153
+analytics=8154
+audit=8155
+notifications=8156
+security=8157

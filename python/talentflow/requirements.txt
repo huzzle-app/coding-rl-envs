@@ -1,0 +1,54 @@
+# TalentFlow Requirements
+
+Django>=4.2,<5.0
+djangorestframework>=3.14
+django-oauth-toolkit>=2.3
+
+# Celery
+celery>=5.3
+django-celery-beat>=2.5
+django-celery-results>=2.5
+
+# Redis
+redis>=4.5
+django-redis>=5.2.0
+hiredis>=2.0
+
+# PostgreSQL - Note: uses psycopg2-binary for Docker
+psycopg2-binary>=2.9
+
+# Authentication
+PyJWT>=2.8
+cryptography>=41.0
+python-jose>=3.3
+
+# Utilities
+python-dateutil>=2.8
+pytz>=2023.3
+
+# Image processing
+Pillow>=9.0
+lxml>=4.9
+
+# Testing
+pytest>=7.4
+pytest-django>=4.5
+pytest-asyncio>=0.21
+pytest-cov>=4.1
+pytest-xdist>=3.3
+pytest-timeout>=2.1
+factory-boy>=3.3
+Faker>=19.0
+freezegun>=1.2
+responses>=0.23
+hypothesis>=6.82
+pytest-mock>=3.11
+pytest-randomly>=3.12
+
+# Development
+django-debug-toolbar>=4.0
+django-extensions>=3.2
+ipython>=8.0
+
+# HTTP client
+requests>=2.28

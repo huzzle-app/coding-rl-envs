@@ -1,0 +1,13 @@
+FROM rust:latest
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY . .
+
+CMD ["cargo", "test", "--workspace", "--no-fail-fast", "--", "--test-threads=4"]

@@ -1,0 +1,1 @@
+"""SynapseNet admin service."""

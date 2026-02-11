@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - CACHEFORGE_PORT=6380
+      - CACHEFORGE_MAX_MEMORY=256mb
+      - CACHEFORGE_LOG_LEVEL=debug
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/cacheforge_test
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cacheforge_test
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cacheforge_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cacheforge_test
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cacheforge_test
+
+networks:
+  cacheforge_test:
+    driver: bridge

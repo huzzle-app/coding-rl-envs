@@ -1,0 +1,142 @@
+{
+  "version": "2.0",
+  "description": "Curriculum metadata for RL training on Terminal Bench v2 environments",
+
+  "difficulty_order": [
+    "senior",
+    "principal",
+    "distinguished",
+    "ultra-principal",
+    "hyper-principal",
+    "apex-principal"
+  ],
+
+  "recommended_order": [
+    {"env": "python/talentflow", "tier": "senior", "tests": 250, "hours": "4-8"},
+    {"env": "js/collabcanvas", "tier": "senior", "tests": 200, "hours": "4-8"},
+    {"env": "go/cloudvault", "tier": "senior", "tests": 300, "hours": "4-8"},
+    {"env": "csharp/healthlink", "tier": "senior", "tests": 280, "hours": "4-8"},
+    {"env": "cpp/cacheforge", "tier": "senior", "tests": 220, "hours": "4-8"},
+    {"env": "kotlin/pulsemap", "tier": "senior", "tests": 240, "hours": "4-8"},
+    {"env": "java/docuvault", "tier": "senior", "tests": 260, "hours": "4-8"},
+    {"env": "ruby/taskforge", "tier": "senior", "tests": 230, "hours": "4-8"},
+    {"env": "rust/vaultfs", "tier": "senior", "tests": 270, "hours": "4-8"},
+
+    {"env": "python/synapsenet", "tier": "principal", "tests": 800, "hours": "8-20"},
+    {"env": "python/nexustrade", "tier": "principal", "tests": 750, "hours": "8-20"},
+    {"env": "python/omnicloud", "tier": "principal", "tests": 900, "hours": "8-20"},
+    {"env": "js/cloudmatrix", "tier": "principal", "tests": 700, "hours": "8-20"},
+    {"env": "js/datanexus", "tier": "principal", "tests": 850, "hours": "8-20"},
+    {"env": "js/mediaflow", "tier": "principal", "tests": 780, "hours": "8-20"},
+    {"env": "go/atlasdispatch", "tier": "principal", "tests": 720, "hours": "8-20"},
+    {"env": "go/quorumledger", "tier": "principal", "tests": 680, "hours": "8-20"},
+    {"env": "ruby/shopstream", "tier": "principal", "tests": 640, "hours": "8-20"},
+    {"env": "java/fleetpulse", "tier": "principal", "tests": 710, "hours": "8-20"},
+    {"env": "java/transitcore", "tier": "principal", "tests": 1094, "hours": "8-20"},
+    {"env": "kotlin/mindvault", "tier": "principal", "tests": 690, "hours": "8-20"},
+    {"env": "csharp/eventhorizon", "tier": "principal", "tests": 820, "hours": "8-20"},
+    {"env": "rust/aerolith", "tier": "principal", "tests": 760, "hours": "8-20"},
+    {"env": "rust/geneforge", "tier": "principal", "tests": 810, "hours": "8-20"},
+    {"env": "cpp/signalstream", "tier": "principal", "tests": 740, "hours": "8-20"},
+
+    {"env": "js/fluxrail", "tier": "distinguished", "tests": 2200, "hours": "20-40"},
+    {"env": "js/signaldock", "tier": "distinguished", "tests": 2100, "hours": "20-40"},
+    {"env": "go/gridweaver", "tier": "distinguished", "tests": 2500, "hours": "20-40"},
+    {"env": "go/incidentmesh", "tier": "distinguished", "tests": 2300, "hours": "20-40"},
+    {"env": "rust/polariscore", "tier": "distinguished", "tests": 2400, "hours": "20-40"},
+    {"env": "rust/quantumcore", "tier": "distinguished", "tests": 2600, "hours": "20-40"},
+
+    {"env": "go/tradeengine", "tier": "ultra-principal", "tests": 5100, "hours": "40-70"},
+    {"env": "ruby/clearledger", "tier": "ultra-principal", "tests": 4800, "hours": "40-70"},
+    {"env": "ruby/mercuryledger", "tier": "ultra-principal", "tests": 5200, "hours": "40-70"},
+    {"env": "rust/tensorforge", "tier": "ultra-principal", "tests": 5500, "hours": "40-70"},
+    {"env": "rust/vectorharbor", "tier": "ultra-principal", "tests": 4900, "hours": "40-70"},
+
+    {"env": "python/aetherops", "tier": "hyper-principal", "tests": 7152, "hours": "70-140"},
+    {"env": "python/heliosops", "tier": "hyper-principal", "tests": 7000, "hours": "70-140"},
+    {"env": "kotlin/nimbusflow", "tier": "hyper-principal", "tests": 9261, "hours": "70-140"},
+    {"env": "csharp/aegiscore", "tier": "hyper-principal", "tests": 9261, "hours": "70-140"},
+    {"env": "cpp/chronomesh", "tier": "hyper-principal", "tests": 9257, "hours": "70-140"},
+    {"env": "java/vertexgrid", "tier": "hyper-principal", "tests": 9200, "hours": "70-140"},
+
+    {"env": "python/ionveil", "tier": "apex-principal", "tests": 12462, "hours": "120-168"},
+    {"env": "python/latticeforge", "tier": "apex-principal", "tests": 15270, "hours": "120-168"},
+    {"env": "js/nebulachain", "tier": "apex-principal", "tests": 9213, "hours": "120-168"},
+    {"env": "go/ironfleet", "tier": "apex-principal", "tests": 9213, "hours": "120-168"},
+    {"env": "ruby/opalcommand", "tier": "apex-principal", "tests": 9263, "hours": "120-168"},
+    {"env": "kotlin/helixops", "tier": "apex-principal", "tests": 12000, "hours": "120-168"},
+    {"env": "csharp/strataguard", "tier": "apex-principal", "tests": 9261, "hours": "120-168"},
+    {"env": "cpp/obsidianmesh", "tier": "apex-principal", "tests": 12678, "hours": "120-168"}
+  ],
+
+  "tier_config": {
+    "senior": {
+      "estimated_steps": 500,
+      "max_steps": 2000,
+      "reward_thresholds": 5,
+      "initial_pass_rate": "10-30%"
+    },
+    "principal": {
+      "estimated_steps": 2000,
+      "max_steps": 8000,
+      "reward_thresholds": 8,
+      "initial_pass_rate": "5-15%"
+    },
+    "distinguished": {
+      "estimated_steps": 5000,
+      "max_steps": 20000,
+      "reward_thresholds": 8,
+      "initial_pass_rate": "3-10%"
+    },
+    "ultra-principal": {
+      "estimated_steps": 10000,
+      "max_steps": 40000,
+      "reward_thresholds": 8,
+      "initial_pass_rate": "2-8%"
+    },
+    "hyper-principal": {
+      "estimated_steps": 20000,
+      "max_steps": 80000,
+      "reward_thresholds": 8,
+      "initial_pass_rate": "1-5%"
+    },
+    "apex-principal": {
+      "estimated_steps": 50000,
+      "max_steps": 200000,
+      "reward_thresholds": 10,
+      "initial_pass_rate": "0.5-3%"
+    }
+  },
+
+  "language_groups": {
+    "python": ["talentflow", "synapsenet", "nexustrade", "omnicloud", "aetherops", "heliosops", "ionveil", "latticeforge"],
+    "javascript": ["collabcanvas", "cloudmatrix", "datanexus", "mediaflow", "fluxrail", "signaldock", "nebulachain"],
+    "go": ["cloudvault", "atlasdispatch", "quorumledger", "gridweaver", "incidentmesh", "tradeengine", "ironfleet"],
+    "ruby": ["taskforge", "shopstream", "clearledger", "mercuryledger", "opalcommand"],
+    "rust": ["vaultfs", "aerolith", "geneforge", "polariscore", "quantumcore", "tensorforge", "vectorharbor"],
+    "java": ["docuvault", "fleetpulse", "transitcore", "vertexgrid"],
+    "kotlin": ["pulsemap", "mindvault", "nimbusflow", "helixops"],
+    "csharp": ["healthlink", "eventhorizon", "aegiscore", "strataguard"],
+    "cpp": ["cacheforge", "signalstream", "chronomesh", "obsidianmesh"]
+  },
+
+  "training_recommendations": {
+    "curriculum_learning": {
+      "enabled": true,
+      "description": "Start with senior tier, progress through difficulties",
+      "promotion_threshold": 0.85,
+      "demotion_threshold": 0.20
+    },
+    "multi_language": {
+      "enabled": true,
+      "description": "Train on multiple languages simultaneously for generalization",
+      "min_languages": 3
+    },
+    "reward_shaping": {
+      "early_training": "sublinear",
+      "mid_training": "linear",
+      "late_training": "sparse",
+      "description": "Use dense rewards early, transition to sparse for robustness"
+    }
+  }
+}

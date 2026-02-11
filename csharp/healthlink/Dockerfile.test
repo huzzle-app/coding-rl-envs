@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+
+WORKDIR /app
+
+# Copy solution and project files
+COPY HealthLink.sln .
+COPY src/HealthLink.Api/HealthLink.Api.csproj src/HealthLink.Api/
+COPY tests/HealthLink.Tests/HealthLink.Tests.csproj tests/HealthLink.Tests/
+RUN dotnet restore
+
+# Copy all source
+COPY src/ ./src/
+COPY tests/ ./tests/
+
+# Environment variables for test database connection
+ENV ConnectionStrings__DefaultConnection="Host=postgres;Port=5432;Database=healthlink;Username=healthlink;Password=healthlink"
+ENV ConnectionStrings__Redis="redis:6379"
+ENV ASPNETCORE_ENVIRONMENT=Test
+
+CMD ["dotnet", "test", "--logger", "trx;LogFileName=results.trx", "--no-restore"]

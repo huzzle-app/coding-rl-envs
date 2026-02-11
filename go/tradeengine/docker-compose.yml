@@ -1,0 +1,282 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: cmd/gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis:6379
+      - ETCD_ENDPOINTS=http://etcd:2379
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  matching:
+    build:
+      context: .
+      dockerfile: cmd/matching/Dockerfile
+    environment:
+      - PORT=8003
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  risk:
+    build:
+      context: .
+      dockerfile: cmd/risk/Dockerfile
+    environment:
+      - PORT=8004
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  positions:
+    build:
+      context: .
+      dockerfile: cmd/positions/Dockerfile
+    environment:
+      - PORT=8005
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  market:
+    build:
+      context: .
+      dockerfile: cmd/market/Dockerfile
+    environment:
+      - PORT=8006
+      - NATS_URL=nats://nats:4222
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=admin-token
+      - INFLUXDB_ORG=tradeengine
+      - INFLUXDB_BUCKET=market-data
+    depends_on:
+      nats:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  ledger:
+    build:
+      context: .
+      dockerfile: cmd/ledger/Dockerfile
+    environment:
+      - PORT=8008
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  auth:
+    build:
+      context: .
+      dockerfile: cmd/auth/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+      - JWT_SECRET=default-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  orders:
+    build:
+      context: .
+      dockerfile: cmd/orders/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+      - REDIS_URL=redis:6379
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  portfolio:
+    build:
+      context: .
+      dockerfile: cmd/portfolio/Dockerfile
+    ports:
+      - "8007:8007"
+    environment:
+      - PORT=8007
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+      - REDIS_URL=redis:6379
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  alerts:
+    build:
+      context: .
+      dockerfile: cmd/alerts/Dockerfile
+    ports:
+      - "8009:8009"
+    environment:
+      - PORT=8009
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/tradeengine?sslmode=disable
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - tradeengine
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["--js", "--sd=/data", "-m", "8222"]
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tradeengine
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tradeengine
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tradeengine
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tradeengine
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: adminpassword
+      DOCKER_INFLUXDB_INIT_ORG: tradeengine
+      DOCKER_INFLUXDB_INIT_BUCKET: market-data
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: admin-token
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tradeengine
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.11
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      ETCD_NAME: etcd0
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd0=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+    volumes:
+      - etcd_data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tradeengine
+
+volumes:
+  nats_data:
+  postgres_data:
+  redis_data:
+  influxdb_data:
+  etcd_data:
+
+networks:
+  tradeengine:
+    driver: bridge

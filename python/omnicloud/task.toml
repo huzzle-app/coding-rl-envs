@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "omnicloud"
+description = "Debug a multi-cloud Python infrastructure orchestration platform with microservices"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "python"
+
+[agent]
+timeout_sec = 57600.0
+
+[verifier]
+timeout_sec = 2700.0

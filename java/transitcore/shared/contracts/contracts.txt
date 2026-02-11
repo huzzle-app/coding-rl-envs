@@ -1,0 +1,2 @@
+required_fields=id,tenant_id,trace_id,created_at
+allowed_events=dispatch.accepted,capacity.shed,policy.override,audit.published

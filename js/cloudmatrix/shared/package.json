@@ -1,0 +1,7 @@
+{
+  "name": "@cloudmatrix/shared",
+  "version": "1.0.0",
+  "description": "Shared modules for CloudMatrix platform",
+  "main": "index.js",
+  "dependencies": {}
+}

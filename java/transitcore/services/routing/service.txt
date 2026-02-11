@@ -1,0 +1,2 @@
+SERVICE_NAME=routing
+API_VERSION=v1

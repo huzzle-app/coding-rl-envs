@@ -1,0 +1,12 @@
+services:
+  redis:
+    image: redis:7
+  nats:
+    image: nats:2.10
+    command: ["-js"]
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fluxrail

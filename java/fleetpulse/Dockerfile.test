@@ -1,0 +1,15 @@
+FROM maven:3.9-eclipse-temurin-21
+WORKDIR /app
+COPY pom.xml .
+COPY shared ./shared
+COPY gateway ./gateway
+COPY auth ./auth
+COPY vehicles ./vehicles
+COPY routes ./routes
+COPY dispatch ./dispatch
+COPY tracking ./tracking
+COPY billing ./billing
+COPY analytics ./analytics
+COPY notifications ./notifications
+COPY compliance ./compliance
+CMD ["mvn", "test", "-B", "--fail-at-end"]

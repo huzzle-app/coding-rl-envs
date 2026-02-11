@@ -1,0 +1,178 @@
+# OmniCloud Test Environment
+# Isolated test environment for running the full test suite
+version: '3.8'
+
+services:
+  # Infrastructure for testing
+  zookeeper-test:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    tmpfs:
+      - /var/lib/zookeeper/data
+      - /var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  kafka-test:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    depends_on:
+      zookeeper-test:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    tmpfs:
+      - /var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: omnicloud
+      POSTGRES_PASSWORD: test_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicloud"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  redis-test:
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  consul-test:
+    image: hashicorp/consul:1.16
+    command: agent -server -bootstrap-expect=1 -client=0.0.0.0 -ui
+    tmpfs:
+      - /consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  etcd-test:
+    image: quay.io/coreos/etcd:v3.5.11
+    environment:
+      ETCD_NAME: etcd-test
+      ETCD_DATA_DIR: /etcd-data
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-test:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-test:2380
+      ETCD_INITIAL_CLUSTER: etcd-test=http://etcd-test:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+    tmpfs:
+      - /etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  vault-test:
+    image: hashicorp/vault:1.15
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: test-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-test:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: omnicloud
+      MINIO_ROOT_PASSWORD: test_password
+    command: server /data --console-address ":9001"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Test runner
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      kafka-test:
+        condition: service_healthy
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      consul-test:
+        condition: service_healthy
+      etcd-test:
+        condition: service_healthy
+      vault-test:
+        condition: service_healthy
+      minio-test:
+        condition: service_healthy
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://omnicloud:test_password@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - CONSUL_HOST=consul-test
+      - ETCD_URL=http://etcd-test:2379
+      - VAULT_ADDR=http://vault-test:8200
+      - VAULT_TOKEN=test-root-token
+      - MINIO_ENDPOINT=minio-test:9000
+      - MINIO_ACCESS_KEY=omnicloud
+      - MINIO_SECRET_KEY=test_password
+      - TESTING=true
+    volumes:
+      - .:/app:ro
+      - test-results:/app/test-results
+    command: >
+      sh -c "
+        echo 'Waiting for services...' &&
+        sleep 5 &&
+        echo 'Running tests...' &&
+        python -m pytest tests/ -v --tb=short --junitxml=/app/test-results/results.xml 2>&1 | tee /app/test-results/output.txt;
+        exit_code=\$?;
+        echo 'Tests completed with exit code:' \$exit_code;
+        exit \$exit_code
+      "
+
+volumes:
+  test-results:
+
+networks:
+  default:
+    name: omnicloud-test-network

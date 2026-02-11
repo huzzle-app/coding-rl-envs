@@ -1,0 +1,157 @@
+# SynapseNet Test Environment
+# Isolated test environment for running the full test suite
+version: '3.8'
+
+services:
+  # Infrastructure for testing
+  zookeeper-test:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    user: root
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    tmpfs:
+      - /var/lib/zookeeper/data
+      - /var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  kafka-test:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    user: root
+    depends_on:
+      zookeeper-test:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    tmpfs:
+      - /var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:29092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: synapsenet
+      POSTGRES_PASSWORD: test_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapsenet"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  redis-test:
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  consul-test:
+    image: hashicorp/consul:1.16
+    command: agent -server -bootstrap-expect=1 -client=0.0.0.0 -ui
+    tmpfs:
+      - /consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-test:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: synapsenet
+      MINIO_ROOT_PASSWORD: synapsenet_secret
+    command: server /data --console-address ":9001"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  elasticsearch-test:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    tmpfs:
+      - /usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Test runner
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      kafka-test:
+        condition: service_healthy
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      consul-test:
+        condition: service_healthy
+      minio-test:
+        condition: service_healthy
+      elasticsearch-test:
+        condition: service_healthy
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://synapsenet:test_password@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - CONSUL_HOST=consul-test
+      - MINIO_ENDPOINT=minio-test:9000
+      - MINIO_ACCESS_KEY=synapsenet
+      - MINIO_SECRET_KEY=synapsenet_secret
+      - ELASTICSEARCH_URL=http://elasticsearch-test:9200
+      - TESTING=true
+    volumes:
+      - .:/app:ro
+      - test-results:/test-results
+    command: >
+      sh -c "
+        echo 'Waiting for services...' &&
+        sleep 5 &&
+        echo 'Running tests...' &&
+        python -m pytest tests/ -v --tb=short --junitxml=/test-results/results.xml 2>&1 | tee /test-results/output.txt;
+        exit_code=\$?;
+        echo 'Tests completed with exit code:' \$exit_code;
+        exit \$exit_code
+      "
+
+volumes:
+  test-results:
+
+networks:
+  default:
+    name: synapsenet-test-network

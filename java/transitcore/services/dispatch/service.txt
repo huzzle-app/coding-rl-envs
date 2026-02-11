@@ -1,0 +1,2 @@
+SERVICE_NAME=dispatch
+API_VERSION=v1

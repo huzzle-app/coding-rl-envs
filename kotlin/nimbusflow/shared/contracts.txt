@@ -1,0 +1,8 @@
+gateway=8160
+routing=8161
+policy=8162
+resilience=8163
+analytics=8164
+audit=8165
+notifications=8166
+security=8167

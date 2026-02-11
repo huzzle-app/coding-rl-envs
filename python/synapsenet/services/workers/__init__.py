@@ -1,0 +1,1 @@
+"""SynapseNet workers service."""

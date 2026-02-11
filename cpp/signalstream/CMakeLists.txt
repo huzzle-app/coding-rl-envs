@@ -1,0 +1,191 @@
+cmake_minimum_required(VERSION 3.20)
+project(signalstream LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(signalstream
+  src/config.cpp
+  src/ingest.cpp
+  src/router.cpp
+  src/aggregate.cpp
+  src/storage.cpp
+  src/query.cpp
+  src/alert.cpp
+  src/gateway.cpp
+  src/security.cpp
+  src/telemetry.cpp
+  src/concurrency.cpp
+  src/events.cpp
+  src/transform.cpp
+  src/memory.cpp
+)
+
+target_include_directories(signalstream PUBLIC include)
+
+add_executable(signalstream_tests tests/test_main.cpp)
+target_link_libraries(signalstream_tests PRIVATE signalstream)
+
+enable_testing()
+
+# Setup/Configuration tests (L bugs)
+add_test(NAME setup_static_init COMMAND signalstream_tests setup_static_init)
+add_test(NAME setup_service_registry COMMAND signalstream_tests setup_service_registry)
+add_test(NAME setup_db_config_validation COMMAND signalstream_tests setup_db_config_validation)
+add_test(NAME setup_health_check COMMAND signalstream_tests setup_health_check)
+add_test(NAME setup_config_singleton COMMAND signalstream_tests setup_config_singleton)
+
+# Concurrency tests (A bugs)
+add_test(NAME concurrency_aba_problem COMMAND signalstream_tests concurrency_aba_problem)
+add_test(NAME concurrency_memory_ordering COMMAND signalstream_tests concurrency_memory_ordering)
+add_test(NAME concurrency_false_sharing COMMAND signalstream_tests concurrency_false_sharing)
+add_test(NAME concurrency_data_race COMMAND signalstream_tests concurrency_data_race)
+add_test(NAME concurrency_spurious_wakeup COMMAND signalstream_tests concurrency_spurious_wakeup)
+add_test(NAME concurrency_reader_starvation COMMAND signalstream_tests concurrency_reader_starvation)
+add_test(NAME concurrency_tls_destruction COMMAND signalstream_tests concurrency_tls_destruction)
+add_test(NAME concurrency_mutex_exception COMMAND signalstream_tests concurrency_mutex_exception)
+add_test(NAME concurrency_writer_starvation COMMAND signalstream_tests concurrency_writer_starvation)
+add_test(NAME concurrency_spinlock_backoff COMMAND signalstream_tests concurrency_spinlock_backoff)
+add_test(NAME concurrency_thread_pool COMMAND signalstream_tests concurrency_thread_pool)
+add_test(NAME concurrency_atomic_counter COMMAND signalstream_tests concurrency_atomic_counter)
+
+# Memory tests (B bugs)
+add_test(NAME memory_alignment COMMAND signalstream_tests memory_alignment)
+add_test(NAME memory_use_after_free COMMAND signalstream_tests memory_use_after_free)
+add_test(NAME memory_string_view_dangling COMMAND signalstream_tests memory_string_view_dangling)
+add_test(NAME memory_iterator_invalidation COMMAND signalstream_tests memory_iterator_invalidation)
+add_test(NAME memory_array_delete COMMAND signalstream_tests memory_array_delete)
+add_test(NAME memory_padding_memcmp COMMAND signalstream_tests memory_padding_memcmp)
+add_test(NAME memory_buffer_management COMMAND signalstream_tests memory_buffer_management)
+
+# Smart pointer tests (C bugs)
+add_test(NAME smartptr_cycle COMMAND signalstream_tests smartptr_cycle)
+add_test(NAME smartptr_unique_copy COMMAND signalstream_tests smartptr_unique_copy)
+add_test(NAME smartptr_shared_from_this COMMAND signalstream_tests smartptr_shared_from_this)
+add_test(NAME smartptr_weak_expired COMMAND signalstream_tests smartptr_weak_expired)
+add_test(NAME smartptr_destructor_throw COMMAND signalstream_tests smartptr_destructor_throw)
+add_test(NAME smartptr_ownership COMMAND signalstream_tests smartptr_ownership)
+
+# Undefined behavior tests (D bugs)
+add_test(NAME ub_signed_overflow COMMAND signalstream_tests ub_signed_overflow)
+add_test(NAME ub_strict_aliasing COMMAND signalstream_tests ub_strict_aliasing)
+add_test(NAME ub_uninitialized COMMAND signalstream_tests ub_uninitialized)
+add_test(NAME ub_sequence_point COMMAND signalstream_tests ub_sequence_point)
+add_test(NAME ub_dangling_reference COMMAND signalstream_tests ub_dangling_reference)
+add_test(NAME ub_null_dereference COMMAND signalstream_tests ub_null_dereference)
+
+# Event/Distributed tests (E bugs)
+add_test(NAME event_ordering COMMAND signalstream_tests event_ordering)
+add_test(NAME event_idempotency COMMAND signalstream_tests event_idempotency)
+add_test(NAME event_subscription_leak COMMAND signalstream_tests event_subscription_leak)
+add_test(NAME event_snapshot_atomic COMMAND signalstream_tests event_snapshot_atomic)
+add_test(NAME event_compression_buffer COMMAND signalstream_tests event_compression_buffer)
+add_test(NAME event_dead_letter COMMAND signalstream_tests event_dead_letter)
+add_test(NAME event_publish_consume COMMAND signalstream_tests event_publish_consume)
+
+# Numerical tests (F bugs)
+add_test(NAME numerical_float_equality COMMAND signalstream_tests numerical_float_equality)
+add_test(NAME numerical_integer_overflow COMMAND signalstream_tests numerical_integer_overflow)
+add_test(NAME numerical_time_window COMMAND signalstream_tests numerical_time_window)
+add_test(NAME numerical_nan_handling COMMAND signalstream_tests numerical_nan_handling)
+add_test(NAME numerical_accumulate_type COMMAND signalstream_tests numerical_accumulate_type)
+add_test(NAME numerical_division_zero COMMAND signalstream_tests numerical_division_zero)
+add_test(NAME numerical_precision_loss COMMAND signalstream_tests numerical_precision_loss)
+add_test(NAME numerical_percentile COMMAND signalstream_tests numerical_percentile)
+add_test(NAME numerical_aggregates COMMAND signalstream_tests numerical_aggregates)
+
+# Database/Query tests (G bugs)
+add_test(NAME query_connection_leak COMMAND signalstream_tests query_connection_leak)
+add_test(NAME query_sql_injection COMMAND signalstream_tests query_sql_injection)
+add_test(NAME query_statement_leak COMMAND signalstream_tests query_statement_leak)
+add_test(NAME query_iterator_invalidation COMMAND signalstream_tests query_iterator_invalidation)
+add_test(NAME query_n_plus_one COMMAND signalstream_tests query_n_plus_one)
+add_test(NAME query_connection_string COMMAND signalstream_tests query_connection_string)
+add_test(NAME query_build COMMAND signalstream_tests query_build)
+add_test(NAME query_range COMMAND signalstream_tests query_range)
+
+# Distributed state tests (H bugs)
+add_test(NAME distributed_check_then_act COMMAND signalstream_tests distributed_check_then_act)
+add_test(NAME distributed_lock_lease COMMAND signalstream_tests distributed_lock_lease)
+add_test(NAME distributed_circuit_breaker COMMAND signalstream_tests distributed_circuit_breaker)
+add_test(NAME distributed_retry_backoff COMMAND signalstream_tests distributed_retry_backoff)
+add_test(NAME distributed_split_brain COMMAND signalstream_tests distributed_split_brain)
+add_test(NAME distributed_leader_election COMMAND signalstream_tests distributed_leader_election)
+
+# Security tests (I bugs)
+add_test(NAME security_buffer_overflow COMMAND signalstream_tests security_buffer_overflow)
+add_test(NAME security_path_traversal COMMAND signalstream_tests security_path_traversal)
+add_test(NAME security_rate_limit_bypass COMMAND signalstream_tests security_rate_limit_bypass)
+add_test(NAME security_jwt_none COMMAND signalstream_tests security_jwt_none)
+add_test(NAME security_timing_attack COMMAND signalstream_tests security_timing_attack)
+add_test(NAME security_weak_rng COMMAND signalstream_tests security_weak_rng)
+add_test(NAME security_cors_wildcard COMMAND signalstream_tests security_cors_wildcard)
+add_test(NAME security_password_hash COMMAND signalstream_tests security_password_hash)
+add_test(NAME security_session_validation COMMAND signalstream_tests security_session_validation)
+
+# Observability tests (J bugs)
+add_test(NAME observability_trace_context COMMAND signalstream_tests observability_trace_context)
+add_test(NAME observability_metric_cardinality COMMAND signalstream_tests observability_metric_cardinality)
+add_test(NAME observability_metric_registration COMMAND signalstream_tests observability_metric_registration)
+add_test(NAME observability_log_level COMMAND signalstream_tests observability_log_level)
+add_test(NAME observability_log_injection COMMAND signalstream_tests observability_log_injection)
+add_test(NAME observability_telemetry COMMAND signalstream_tests observability_telemetry)
+
+# Template/Modern C++ tests (K bugs)
+add_test(NAME template_sfinae COMMAND signalstream_tests template_sfinae)
+add_test(NAME template_adl COMMAND signalstream_tests template_adl)
+add_test(NAME template_constexpr COMMAND signalstream_tests template_constexpr)
+add_test(NAME template_perfect_forward COMMAND signalstream_tests template_perfect_forward)
+add_test(NAME template_variant_visit COMMAND signalstream_tests template_variant_visit)
+add_test(NAME template_ctad COMMAND signalstream_tests template_ctad)
+add_test(NAME template_concept COMMAND signalstream_tests template_concept)
+add_test(NAME template_requires_clause COMMAND signalstream_tests template_requires_clause)
+
+# Integration tests
+add_test(NAME integration_data_pipeline COMMAND signalstream_tests integration_data_pipeline)
+add_test(NAME integration_alert_workflow COMMAND signalstream_tests integration_alert_workflow)
+add_test(NAME integration_auth_flow COMMAND signalstream_tests integration_auth_flow)
+add_test(NAME integration_routing COMMAND signalstream_tests integration_routing)
+add_test(NAME integration_storage COMMAND signalstream_tests integration_storage)
+
+# Object pool tests
+add_test(NAME pool_acquire_release COMMAND signalstream_tests pool_acquire_release)
+add_test(NAME pool_metrics COMMAND signalstream_tests pool_metrics)
+add_test(NAME pool_capacity COMMAND signalstream_tests pool_capacity)
+
+# Hyper-matrix parametric test (12678 scenarios)
+add_test(NAME hyper_matrix COMMAND signalstream_tests hyper_matrix)
+
+# Latent bugs
+add_test(NAME latent_negative_aggregate COMMAND signalstream_tests latent_negative_aggregate)
+add_test(NAME latent_batch_reorder COMMAND signalstream_tests latent_batch_reorder)
+
+# Domain logic bugs
+add_test(NAME domain_percentile_exact COMMAND signalstream_tests domain_percentile_exact)
+add_test(NAME domain_nan_alert_suppression COMMAND signalstream_tests domain_nan_alert_suppression)
+
+# Multi-step bugs
+add_test(NAME multistep_ratelimit_boundary COMMAND signalstream_tests multistep_ratelimit_boundary)
+add_test(NAME multistep_ratelimit_window COMMAND signalstream_tests multistep_ratelimit_window)
+
+# State machine bugs
+add_test(NAME statemachine_healthcheck_degraded COMMAND signalstream_tests statemachine_healthcheck_degraded)
+add_test(NAME statemachine_circuit_reverse COMMAND signalstream_tests statemachine_circuit_reverse)
+
+# Concurrency bugs
+add_test(NAME concurrency_event_fifo_order COMMAND signalstream_tests concurrency_event_fifo_order)
+add_test(NAME concurrency_span_collision COMMAND signalstream_tests concurrency_span_collision)
+add_test(NAME concurrency_rwlock_underflow COMMAND signalstream_tests concurrency_rwlock_underflow)
+add_test(NAME concurrency_trace_corruption COMMAND signalstream_tests concurrency_trace_corruption)
+
+# Integration bugs
+add_test(NAME integration_inactive_route COMMAND signalstream_tests integration_inactive_route)
+add_test(NAME integration_pipeline_negative COMMAND signalstream_tests integration_pipeline_negative)
+
+# Complex bugs
+add_test(NAME domain_ema_decay COMMAND signalstream_tests domain_ema_decay)
+add_test(NAME statemachine_circuit_probe_limit COMMAND signalstream_tests statemachine_circuit_probe_limit)
+add_test(NAME multistep_event_dedup_collision COMMAND signalstream_tests multistep_event_dedup_collision)
+add_test(NAME integration_token_refresh_collision COMMAND signalstream_tests integration_token_refresh_collision)
+add_test(NAME concurrency_pool_shutdown_drain COMMAND signalstream_tests concurrency_pool_shutdown_drain)
+add_test(NAME latent_sample_variance COMMAND signalstream_tests latent_sample_variance)

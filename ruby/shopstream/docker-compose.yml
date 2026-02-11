@@ -1,0 +1,410 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "8000:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_gateway
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
+      - AUTH_SERVICE_URL=http://auth:3000
+      - CATALOG_SERVICE_URL=http://catalog:3000
+      - INVENTORY_SERVICE_URL=http://inventory:3000
+      - ORDERS_SERVICE_URL=http://orders:3000
+      - PAYMENTS_SERVICE_URL=http://payments:3000
+      - SHIPPING_SERVICE_URL=http://shipping:3000
+      - SEARCH_SERVICE_URL=http://search:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/gateway:/app
+      - ./shared:/app/shared
+      - gateway_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Auth Service
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    ports:
+      - "8001:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_auth
+      - REDIS_URL=redis://redis:6379/1
+      - KAFKA_BROKERS=kafka:9092
+      - JWT_SECRET=development_jwt_secret_key_change_in_production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/auth:/app
+      - ./shared:/app/shared
+      - auth_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Catalog Service
+  catalog:
+    build:
+      context: .
+      dockerfile: services/catalog/Dockerfile
+    ports:
+      - "8002:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_catalog
+      - REDIS_URL=redis://redis:6379/2
+      - KAFKA_BROKERS=kafka:9092
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/catalog:/app
+      - ./shared:/app/shared
+      - catalog_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Inventory Service
+  inventory:
+    build:
+      context: .
+      dockerfile: services/inventory/Dockerfile
+    ports:
+      - "8003:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_inventory
+      - REDIS_URL=redis://redis:6379/3
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/inventory:/app
+      - ./shared:/app/shared
+      - inventory_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Orders Service
+  orders:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    ports:
+      - "8004:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_orders
+      - REDIS_URL=redis://redis:6379/4
+      - KAFKA_BROKERS=kafka:9092
+      - INVENTORY_SERVICE_URL=http://inventory:3000
+      - PAYMENTS_SERVICE_URL=http://payments:3000
+      - SHIPPING_SERVICE_URL=http://shipping:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/orders:/app
+      - ./shared:/app/shared
+      - orders_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Payments Service
+  payments:
+    build:
+      context: .
+      dockerfile: services/payments/Dockerfile
+    ports:
+      - "8005:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_payments
+      - REDIS_URL=redis://redis:6379/5
+      - KAFKA_BROKERS=kafka:9092
+      - STRIPE_API_KEY=sk_test_fake_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/payments:/app
+      - ./shared:/app/shared
+      - payments_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Shipping Service
+  shipping:
+    build:
+      context: .
+      dockerfile: services/shipping/Dockerfile
+    ports:
+      - "8006:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_shipping
+      - REDIS_URL=redis://redis:6379/6
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/shipping:/app
+      - ./shared:/app/shared
+      - shipping_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Search Service
+  search:
+    build:
+      context: .
+      dockerfile: services/search/Dockerfile
+    ports:
+      - "8007:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_search
+      - REDIS_URL=redis://redis:6379/7
+      - KAFKA_BROKERS=kafka:9092
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./services/search:/app
+      - ./shared:/app/shared
+      - search_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Notifications Service
+  notifications:
+    build:
+      context: .
+      dockerfile: services/notifications/Dockerfile
+    ports:
+      - "8008:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_notifications
+      - REDIS_URL=redis://redis:6379/8
+      - KAFKA_BROKERS=kafka:9092
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/notifications:/app
+      - ./shared:/app/shared
+      - notifications_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Analytics Service
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    ports:
+      - "8009:3000"
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_analytics
+      - REDIS_URL=redis://redis:6379/9
+      - KAFKA_BROKERS=kafka:9092
+      - CLICKHOUSE_URL=http://clickhouse:8123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./services/analytics:/app
+      - ./shared:/app/shared
+      - analytics_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Sidekiq workers (shared)
+  sidekiq:
+    build:
+      context: .
+      dockerfile: services/orders/Dockerfile
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    environment:
+      - RAILS_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/shopstream_orders
+      - REDIS_URL=redis://redis:6379/10
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/orders:/app
+      - ./shared:/app/shared
+      - orders_bundle:/usr/local/bundle
+    networks:
+      - shopstream
+
+  # Infrastructure Services
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_MULTIPLE_DATABASES: shopstream_gateway,shopstream_auth,shopstream_catalog,shopstream_inventory,shopstream_orders,shopstream_payments,shopstream_shipping,shopstream_search,shopstream_notifications,shopstream_analytics
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/create-multiple-databases.sh:/docker-entrypoint-initdb.d/create-multiple-databases.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopstream
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopstream
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - shopstream
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - shopstream
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - shopstream
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  elasticsearch_data:
+  gateway_bundle:
+  auth_bundle:
+  catalog_bundle:
+  inventory_bundle:
+  orders_bundle:
+  payments_bundle:
+  shipping_bundle:
+  search_bundle:
+  notifications_bundle:
+  analytics_bundle:
+
+networks:
+  shopstream:
+    driver: bridge

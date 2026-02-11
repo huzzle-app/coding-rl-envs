@@ -1,0 +1,13 @@
+{
+  "name": "@cloudmatrix/analytics",
+  "version": "1.0.0",
+  "description": "Analytics Service for CloudMatrix",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@cloudmatrix/shared": "1.0.0"
+  }
+}

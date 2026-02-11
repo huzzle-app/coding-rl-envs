@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "heliosops"
+description = "Debug a Python hyper-principal orbital reliability platform"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "python"
+
+[agent]
+timeout_sec = 72000.0
+
+[verifier]
+timeout_sec = 2700.0

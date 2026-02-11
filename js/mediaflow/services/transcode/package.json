@@ -1,0 +1,13 @@
+{
+  "name": "@mediaflow/transcode",
+  "version": "1.0.0",
+  "description": "Video Transcoding Service",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@mediaflow/shared": "1.0.0"
+  }
+}

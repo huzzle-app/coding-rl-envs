@@ -1,0 +1,42 @@
+FROM gradle:8.5-jdk21
+
+WORKDIR /app
+
+# Copy Gradle build files first and download dependencies (cached layer)
+COPY build.gradle.kts settings.gradle.kts gradle.properties* ./
+COPY shared/build.gradle.kts shared/build.gradle.kts
+COPY gateway/build.gradle.kts gateway/build.gradle.kts
+COPY auth/build.gradle.kts auth/build.gradle.kts
+COPY documents/build.gradle.kts documents/build.gradle.kts
+COPY search/build.gradle.kts search/build.gradle.kts
+COPY graph/build.gradle.kts graph/build.gradle.kts
+COPY embeddings/build.gradle.kts embeddings/build.gradle.kts
+COPY collab/build.gradle.kts collab/build.gradle.kts
+COPY billing/build.gradle.kts billing/build.gradle.kts
+COPY notifications/build.gradle.kts notifications/build.gradle.kts
+COPY analytics/build.gradle.kts analytics/build.gradle.kts
+RUN gradle build -x test --no-daemon || true
+
+# Copy source code for all modules
+COPY shared ./shared
+COPY gateway ./gateway
+COPY auth ./auth
+COPY documents ./documents
+COPY search ./search
+COPY graph ./graph
+COPY embeddings ./embeddings
+COPY collab ./collab
+COPY billing ./billing
+COPY notifications ./notifications
+COPY analytics ./analytics
+
+# Environment variables for test infrastructure
+ENV POSTGRES_URL=jdbc:postgresql://postgres:5432/mindvault
+ENV POSTGRES_USER=mindvault
+ENV POSTGRES_PASSWORD=mindvault
+ENV REDIS_URL=redis://redis:6379
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+ENV CONSUL_HOST=consul
+ENV CONSUL_PORT=8500
+
+CMD ["gradle", "test", "--no-daemon", "--continue"]

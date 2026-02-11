@@ -1,0 +1,13 @@
+{
+  "name": "@datanexus/gateway",
+  "version": "1.0.0",
+  "description": "API Gateway for DataNexus",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@datanexus/shared": "1.0.0"
+  }
+}

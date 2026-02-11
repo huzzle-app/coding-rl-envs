@@ -1,0 +1,13 @@
+{
+  "name": "@cloudmatrix/users",
+  "version": "1.0.0",
+  "description": "User Profiles Service for CloudMatrix",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@cloudmatrix/shared": "1.0.0"
+  }
+}

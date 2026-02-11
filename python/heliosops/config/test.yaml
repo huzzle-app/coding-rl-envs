@@ -1,0 +1,44 @@
+# HeliosOps Test Configuration
+# NOTE: Due to BUG N07, this overlay file is never actually loaded.
+# The code detects environment=test but does not read config.test.yaml.
+
+service_name: heliosops-test
+environment: test
+debug: true
+
+db:
+  host: localhost
+  port: 5440
+  name: heliosops_test
+  user: postgres
+  password: postgres
+  pool_min: 1
+  pool_max: 5
+  statement_timeout_ms: 5000
+
+redis:
+  host: localhost
+  port: 6400
+  db: 1
+  pool_size: 5
+
+kafka:
+  bootstrap_servers: localhost:9092
+  group_id: heliosops-test
+  auto_offset_reset: earliest
+  max_poll_records: 100
+
+consul:
+  host: localhost
+  port: 8500
+
+logging:
+  level: DEBUG
+  format: "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+feature_flags:
+  enable_advanced_routing: false
+  enable_kafka_events: false
+  enable_compliance_reporting: false
+  enable_analytics_pipeline: false
+  enable_celery_workers: false

@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "clearledger"
+description = "Debug a Ruby global clearing and settlement platform with services"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "ruby"
+
+[agent]
+timeout_sec = 57600.0
+
+[verifier]
+timeout_sec = 2700.0

@@ -1,0 +1,2 @@
+SERVICE_NAME=policy
+API_VERSION=v1

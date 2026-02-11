@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: obsidianmesh
+    ports: ["5444:5432"]
+  redis:
+    image: redis:7
+    ports: ["6404:6379"]

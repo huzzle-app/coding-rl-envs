@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "fluxrail"
+description = "Debug a JavaScript global dispatch reliability platform with 15 modules"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "javascript"
+
+[agent]
+timeout_sec = 57600.0
+
+[verifier]
+timeout_sec = 2700.0

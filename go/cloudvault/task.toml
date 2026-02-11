@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "cloudvault"
+description = "Debug a Go cloud storage and file sync service"
+difficulty = "medium"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "go"
+
+[agent]
+timeout_sec = 14400.0
+
+[verifier]
+timeout_sec = 900.0

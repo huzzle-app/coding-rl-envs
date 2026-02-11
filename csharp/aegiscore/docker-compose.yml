@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aegiscore
+    ports: ["5445:5432"]
+  redis:
+    image: redis:7
+    ports: ["6405:6379"]

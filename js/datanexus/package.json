@@ -1,0 +1,61 @@
+{
+  "name": "datanexus",
+  "version": "1.0.0",
+  "description": "Real-time data pipeline and analytics platform - RL debugging environment",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "shared"
+  ],
+  "scripts": {
+    "test": "jest --config jest.config.js",
+    "test:unit": "jest --config jest.config.js --testPathPattern=tests/unit",
+    "test:integration": "jest --config jest.config.js --testPathPattern=tests/integration",
+    "test:contract": "jest --config jest.config.js --testPathPattern=tests/contract",
+    "test:chaos": "jest --config jest.config.js --testPathPattern=tests/chaos",
+    "test:security": "jest --config jest.config.js --testPathPattern=tests/security",
+    "test:performance": "jest --config jest.config.js --testPathPattern=tests/performance",
+    "test:system": "jest --config jest.config.js --testPathPattern=tests/system",
+    "start": "node scripts/start-all.js",
+    "start:gateway": "node services/gateway/src/index.js",
+    "start:auth": "node services/auth/src/index.js",
+    "lint": "eslint .",
+    "migrate": "node scripts/migrate.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "amqplib": "^0.10.3",
+    "pg": "^8.11.3",
+    "sequelize": "^6.35.0",
+    "redis": "^4.6.10",
+    "minio": "^7.1.3",
+    "consul": "^1.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "uuid": "^9.0.0",
+    "axios": "^1.6.0",
+    "ws": "^8.16.0",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.1.5",
+    "opentracing": "^0.14.7",
+    "prom-client": "^15.0.0",
+    "joi": "^17.11.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "nock": "^13.4.0",
+    "@types/jest": "^29.5.8",
+    "eslint": "^8.54.0",
+    "nodemon": "^3.0.1",
+    "amqplib": "^0.10.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

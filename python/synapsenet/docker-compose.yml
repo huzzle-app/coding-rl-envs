@@ -1,0 +1,536 @@
+# SynapseNet - AI/ML Model Serving & Training Platform
+# Terminal Bench v2 - Distinguished Engineer RL Environment
+version: '3.8'
+
+services:
+  # ===========================================
+  # Infrastructure Services
+  # ===========================================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    hostname: zookeeper
+    container_name: synapsenet-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: synapsenet-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  postgres-models:
+    image: postgres:15-alpine
+    container_name: synapsenet-postgres-models
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: models_db
+      POSTGRES_USER: synapsenet
+      POSTGRES_PASSWORD: synapsenet_secret
+    volumes:
+      - postgres_models_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapsenet -d models_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-users:
+    image: postgres:15-alpine
+    container_name: synapsenet-postgres-users
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: users_db
+      POSTGRES_USER: synapsenet
+      POSTGRES_PASSWORD: synapsenet_secret
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapsenet -d users_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-experiments:
+    image: postgres:15-alpine
+    container_name: synapsenet-postgres-experiments
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: experiments_db
+      POSTGRES_USER: synapsenet
+      POSTGRES_PASSWORD: synapsenet_secret
+    volumes:
+      - postgres_experiments_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapsenet -d experiments_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-metrics:
+    image: postgres:15-alpine
+    container_name: synapsenet-postgres-metrics
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: metrics_db
+      POSTGRES_USER: synapsenet
+      POSTGRES_PASSWORD: synapsenet_secret
+    volumes:
+      - postgres_metrics_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapsenet -d metrics_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: synapsenet-redis
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  consul:
+    image: hashicorp/consul:1.16
+    container_name: synapsenet-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: synapsenet-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: synapsenet
+      MINIO_ROOT_PASSWORD: synapsenet_secret
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: synapsenet-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ===========================================
+  # Application Services
+  # ===========================================
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: synapsenet-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVICE_NAME=gateway
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/0
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    container_name: synapsenet-auth
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVICE_NAME=auth
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-users:5432/users_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/1
+      - JWT_SECRET=super_secret_key_that_should_be_rotated
+      
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+
+  models:
+    build:
+      context: .
+      dockerfile: services/models/Dockerfile
+    container_name: synapsenet-models
+    ports:
+      - "8002:8000"
+    environment:
+      - SERVICE_NAME=models
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/2
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=synapsenet
+      - MINIO_SECRET_KEY=synapsenet_secret
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  registry:
+    build:
+      context: .
+      dockerfile: services/registry/Dockerfile
+    container_name: synapsenet-registry
+    ports:
+      - "8003:8000"
+    environment:
+      - SERVICE_NAME=registry
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/3
+      - MINIO_ENDPOINT=minio:9000
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  training:
+    build:
+      context: .
+      dockerfile: services/training/Dockerfile
+    container_name: synapsenet-training
+    ports:
+      - "8004:8000"
+    environment:
+      - SERVICE_NAME=training
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/4
+      - MINIO_ENDPOINT=minio:9000
+      
+      - CELERY_BROKER_URL=amqp://redis:6379/4
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    container_name: synapsenet-inference
+    ports:
+      - "8005:8000"
+    environment:
+      - SERVICE_NAME=inference
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/5
+      - MINIO_ENDPOINT=minio:9000
+      - MODEL_CACHE_SIZE=10
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  features:
+    build:
+      context: .
+      dockerfile: services/features/Dockerfile
+    container_name: synapsenet-features
+    ports:
+      - "8006:8000"
+    environment:
+      - SERVICE_NAME=features
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/6
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: services/pipeline/Dockerfile
+    container_name: synapsenet-pipeline
+    ports:
+      - "8007:8000"
+    environment:
+      - SERVICE_NAME=pipeline
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/7
+      - MINIO_ENDPOINT=minio:9000
+      
+      - CELERY_BROKER_URL=amqp://redis:6379/7
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  experiments:
+    build:
+      context: .
+      dockerfile: services/experiments/Dockerfile
+    container_name: synapsenet-experiments
+    ports:
+      - "8008:8000"
+    environment:
+      - SERVICE_NAME=experiments
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-experiments:5432/experiments_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/8
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      postgres-experiments:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  monitoring:
+    build:
+      context: .
+      dockerfile: services/monitoring/Dockerfile
+    container_name: synapsenet-monitoring
+    ports:
+      - "8009:8000"
+    environment:
+      - SERVICE_NAME=monitoring
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-metrics:5432/metrics_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/9
+    depends_on:
+      postgres-metrics:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    container_name: synapsenet-scheduler
+    ports:
+      - "8010:8000"
+    environment:
+      - SERVICE_NAME=scheduler
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/10
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  workers:
+    build:
+      context: .
+      dockerfile: services/workers/Dockerfile
+    container_name: synapsenet-workers
+    ports:
+      - "8011:8000"
+    environment:
+      - SERVICE_NAME=workers
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/11
+      - MINIO_ENDPOINT=minio:9000
+      
+      - CELERY_BROKER_URL=amqp://redis:6379/11
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  storage:
+    build:
+      context: .
+      dockerfile: services/storage/Dockerfile
+    container_name: synapsenet-storage
+    ports:
+      - "8012:8000"
+    environment:
+      - SERVICE_NAME=storage
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/12
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=synapsenet
+      - MINIO_SECRET_KEY=synapsenet_secret
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  webhooks:
+    build:
+      context: .
+      dockerfile: services/webhooks/Dockerfile
+    container_name: synapsenet-webhooks
+    ports:
+      - "8013:8000"
+    environment:
+      - SERVICE_NAME=webhooks
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-models:5432/models_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/13
+    depends_on:
+      postgres-models:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: .
+      dockerfile: services/admin/Dockerfile
+    container_name: synapsenet-admin
+    ports:
+      - "8014:8000"
+    environment:
+      - SERVICE_NAME=admin
+      - DATABASE_URL=postgresql://synapsenet:synapsenet_secret@postgres-users:5432/users_db
+      - CONSUL_HOST=consul
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - REDIS_URL=redis://redis:6379/14
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+
+volumes:
+  postgres_models_data:
+  postgres_users_data:
+  postgres_experiments_data:
+  postgres_metrics_data:
+  redis_data:
+  consul_data:
+  minio_data:
+  elasticsearch_data:
+
+networks:
+  default:
+    name: synapsenet-network

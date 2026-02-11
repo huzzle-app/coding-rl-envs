@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=healthlink;Username=healthlink;Password=healthlink"
+      ConnectionStrings__Redis: "redis:6379"
+      ASPNETCORE_ENVIRONMENT: Test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: healthlink
+      POSTGRES_USER: healthlink
+      POSTGRES_PASSWORD: healthlink
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthlink -d healthlink"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

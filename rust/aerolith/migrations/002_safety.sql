@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS collision_decisions (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  confidence DOUBLE PRECISION NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

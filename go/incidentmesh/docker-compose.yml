@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: incidentmesh
+    ports: ["5433:5432"]
+
+  redis:
+    image: redis:7
+    ports: ["6380:6379"]
+
+  nats:
+    image: nats:2.10
+    command: ["-js"]
+    ports: ["4223:4222"]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.11
+    command: ["etcd", "--advertise-client-urls=http://0.0.0.0:2379", "--listen-client-urls=http://0.0.0.0:2379"]
+    ports: ["2380:2379"]
+
+  influxdb:
+    image: influxdb:2.7
+    ports: ["8087:8086"]
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200"]

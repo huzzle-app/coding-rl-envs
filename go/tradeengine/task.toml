@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "tradeengine"
+description = "Debug a Go high-frequency trading platform with microservices"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "go"
+
+[agent]
+timeout_sec = 28800.0
+
+[verifier]
+timeout_sec = 1800.0

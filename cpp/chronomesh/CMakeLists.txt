@@ -1,0 +1,167 @@
+cmake_minimum_required(VERSION 3.20)
+project(chronomesh LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(chronomesh
+  src/allocator.cpp
+  src/routing.cpp
+  src/policy.cpp
+  src/security.cpp
+  src/resilience.cpp
+  src/queue.cpp
+  src/statistics.cpp
+  src/workflow.cpp
+  src/model.cpp
+  src/contracts.cpp
+)
+
+target_include_directories(chronomesh PUBLIC include)
+
+add_executable(chronomesh_tests tests/test_main.cpp)
+target_link_libraries(chronomesh_tests PRIVATE chronomesh)
+
+enable_testing()
+
+# Allocator tests
+add_test(NAME allocator_capacity COMMAND chronomesh_tests allocator_capacity)
+add_test(NAME allocator_batch COMMAND chronomesh_tests allocator_batch)
+add_test(NAME allocator_berth_conflict COMMAND chronomesh_tests allocator_berth_conflict)
+add_test(NAME allocator_available_slots COMMAND chronomesh_tests allocator_available_slots)
+add_test(NAME allocator_cost_estimation COMMAND chronomesh_tests allocator_cost_estimation)
+add_test(NAME allocator_cost_allocation COMMAND chronomesh_tests allocator_cost_allocation)
+add_test(NAME allocator_turnaround COMMAND chronomesh_tests allocator_turnaround)
+add_test(NAME allocator_validation COMMAND chronomesh_tests allocator_validation)
+
+# Routing tests
+add_test(NAME routing_blocked COMMAND chronomesh_tests routing_blocked)
+add_test(NAME routing_channel_score COMMAND chronomesh_tests routing_channel_score)
+add_test(NAME routing_transit_time COMMAND chronomesh_tests routing_transit_time)
+add_test(NAME routing_multi_leg COMMAND chronomesh_tests routing_multi_leg)
+add_test(NAME routing_table COMMAND chronomesh_tests routing_table)
+add_test(NAME routing_cost COMMAND chronomesh_tests routing_cost)
+
+# Policy tests
+add_test(NAME policy_escalation COMMAND chronomesh_tests policy_escalation)
+add_test(NAME policy_deescalation COMMAND chronomesh_tests policy_deescalation)
+add_test(NAME policy_engine_lifecycle COMMAND chronomesh_tests policy_engine_lifecycle)
+add_test(NAME policy_sla COMMAND chronomesh_tests policy_sla)
+add_test(NAME policy_sla_percentage COMMAND chronomesh_tests policy_sla_percentage)
+add_test(NAME policy_metadata COMMAND chronomesh_tests policy_metadata)
+
+# Queue tests
+add_test(NAME queue_hard_limit COMMAND chronomesh_tests queue_hard_limit)
+add_test(NAME queue_priority COMMAND chronomesh_tests queue_priority)
+add_test(NAME queue_drain COMMAND chronomesh_tests queue_drain)
+add_test(NAME queue_health_check COMMAND chronomesh_tests queue_health_check)
+add_test(NAME queue_wait_estimation COMMAND chronomesh_tests queue_wait_estimation)
+
+# Security tests
+add_test(NAME security_signature COMMAND chronomesh_tests security_signature)
+add_test(NAME security_manifest COMMAND chronomesh_tests security_manifest)
+add_test(NAME security_path_sanitise COMMAND chronomesh_tests security_path_sanitise)
+add_test(NAME security_origin COMMAND chronomesh_tests security_origin)
+
+# Resilience tests
+add_test(NAME replay_latest COMMAND chronomesh_tests replay_latest)
+add_test(NAME replay_convergence COMMAND chronomesh_tests replay_convergence)
+add_test(NAME resilience_checkpoint COMMAND chronomesh_tests resilience_checkpoint)
+add_test(NAME resilience_circuit_breaker COMMAND chronomesh_tests resilience_circuit_breaker)
+add_test(NAME resilience_dedup COMMAND chronomesh_tests resilience_dedup)
+
+# Statistics tests
+add_test(NAME percentile_sparse COMMAND chronomesh_tests percentile_sparse)
+add_test(NAME stats_descriptive COMMAND chronomesh_tests stats_descriptive)
+add_test(NAME stats_variance COMMAND chronomesh_tests stats_variance)
+add_test(NAME stats_response_tracker COMMAND chronomesh_tests stats_response_tracker)
+add_test(NAME stats_moving_average COMMAND chronomesh_tests stats_moving_average)
+add_test(NAME stats_heatmap COMMAND chronomesh_tests stats_heatmap)
+
+# Workflow tests
+add_test(NAME workflow_graph COMMAND chronomesh_tests workflow_graph)
+add_test(NAME workflow_shortest_path COMMAND chronomesh_tests workflow_shortest_path)
+add_test(NAME workflow_engine COMMAND chronomesh_tests workflow_engine)
+add_test(NAME workflow_terminal COMMAND chronomesh_tests workflow_terminal)
+add_test(NAME workflow_audit COMMAND chronomesh_tests workflow_audit)
+
+# Model tests
+add_test(NAME model_urgency COMMAND chronomesh_tests model_urgency)
+add_test(NAME model_vessel_manifest COMMAND chronomesh_tests model_vessel_manifest)
+add_test(NAME model_batch_creation COMMAND chronomesh_tests model_batch_creation)
+add_test(NAME model_validation COMMAND chronomesh_tests model_validation)
+add_test(NAME model_classify_severity COMMAND chronomesh_tests model_classify_severity)
+
+# Contract tests
+add_test(NAME contracts_exposed COMMAND chronomesh_tests contracts_exposed)
+add_test(NAME contracts_service_defs COMMAND chronomesh_tests contracts_service_defs)
+add_test(NAME contracts_url COMMAND chronomesh_tests contracts_url)
+add_test(NAME contracts_validation COMMAND chronomesh_tests contracts_validation)
+add_test(NAME contracts_topo_order COMMAND chronomesh_tests contracts_topo_order)
+
+# Integration tests
+add_test(NAME flow_integration COMMAND chronomesh_tests flow_integration)
+add_test(NAME end_to_end_dispatch COMMAND chronomesh_tests end_to_end_dispatch)
+
+# Latent bug tests
+add_test(NAME allocator_berth_utilization COMMAND chronomesh_tests allocator_berth_utilization)
+add_test(NAME allocator_berth_utilization_uniform COMMAND chronomesh_tests allocator_berth_utilization_uniform)
+add_test(NAME allocator_merge_queues COMMAND chronomesh_tests allocator_merge_queues)
+add_test(NAME allocator_merge_dedup COMMAND chronomesh_tests allocator_merge_dedup)
+
+# Domain logic tests
+add_test(NAME routing_hazmat_restricted COMMAND chronomesh_tests routing_hazmat_restricted)
+add_test(NAME routing_hazmat_unrestricted COMMAND chronomesh_tests routing_hazmat_unrestricted)
+add_test(NAME routing_hazmat_no_cargo COMMAND chronomesh_tests routing_hazmat_no_cargo)
+add_test(NAME routing_hazmat_zone_match COMMAND chronomesh_tests routing_hazmat_zone_match)
+add_test(NAME routing_risk_compound COMMAND chronomesh_tests routing_risk_compound)
+add_test(NAME routing_risk_single COMMAND chronomesh_tests routing_risk_single)
+add_test(NAME policy_breach_penalty_critical COMMAND chronomesh_tests policy_breach_penalty_critical)
+add_test(NAME policy_breach_penalty_info COMMAND chronomesh_tests policy_breach_penalty_info)
+add_test(NAME policy_breach_penalty_ordering COMMAND chronomesh_tests policy_breach_penalty_ordering)
+add_test(NAME policy_auto_escalate_at_threshold COMMAND chronomesh_tests policy_auto_escalate_at_threshold)
+add_test(NAME policy_auto_escalate_below COMMAND chronomesh_tests policy_auto_escalate_below)
+add_test(NAME policy_auto_escalate_halted COMMAND chronomesh_tests policy_auto_escalate_halted)
+
+# Multi-step tests
+add_test(NAME stats_weighted_percentile_unnormalized COMMAND chronomesh_tests stats_weighted_percentile_unnormalized)
+add_test(NAME stats_weighted_percentile_boundary COMMAND chronomesh_tests stats_weighted_percentile_boundary)
+add_test(NAME stats_weighted_percentile_low COMMAND chronomesh_tests stats_weighted_percentile_low)
+
+# State machine tests
+add_test(NAME policy_try_recovery_from_halted COMMAND chronomesh_tests policy_try_recovery_from_halted)
+add_test(NAME policy_try_recovery_from_watch COMMAND chronomesh_tests policy_try_recovery_from_watch)
+add_test(NAME policy_escalation_depth_normal COMMAND chronomesh_tests policy_escalation_depth_normal)
+add_test(NAME policy_escalation_depth_halted COMMAND chronomesh_tests policy_escalation_depth_halted)
+add_test(NAME workflow_force_complete_transitions COMMAND chronomesh_tests workflow_force_complete_transitions)
+add_test(NAME workflow_force_complete_from_departed COMMAND chronomesh_tests workflow_force_complete_from_departed)
+add_test(NAME workflow_force_complete_terminal COMMAND chronomesh_tests workflow_force_complete_terminal)
+
+# Concurrency tests
+add_test(NAME allocator_submit_batch_atomic COMMAND chronomesh_tests allocator_submit_batch_atomic)
+add_test(NAME allocator_submit_batch_fits COMMAND chronomesh_tests allocator_submit_batch_fits)
+add_test(NAME resilience_cb_attempt_open COMMAND chronomesh_tests resilience_cb_attempt_open)
+add_test(NAME resilience_cb_attempt_closed COMMAND chronomesh_tests resilience_cb_attempt_closed)
+add_test(NAME workflow_bulk_transition_rollback COMMAND chronomesh_tests workflow_bulk_transition_rollback)
+add_test(NAME workflow_bulk_transition_all_valid COMMAND chronomesh_tests workflow_bulk_transition_all_valid)
+add_test(NAME stats_tracker_merge_window COMMAND chronomesh_tests stats_tracker_merge_window)
+add_test(NAME workflow_terminal_count COMMAND chronomesh_tests workflow_terminal_count)
+
+# Integration tests (extended)
+add_test(NAME security_token_chain_valid COMMAND chronomesh_tests security_token_chain_valid)
+add_test(NAME security_token_chain_single COMMAND chronomesh_tests security_token_chain_single)
+add_test(NAME security_token_chain_empty COMMAND chronomesh_tests security_token_chain_empty)
+add_test(NAME contracts_manifest_chain_valid COMMAND chronomesh_tests contracts_manifest_chain_valid)
+add_test(NAME contracts_manifest_chain_single COMMAND chronomesh_tests contracts_manifest_chain_single)
+add_test(NAME contracts_dependency_depth_leaf COMMAND chronomesh_tests contracts_dependency_depth_leaf)
+add_test(NAME contracts_dependency_depth_chain COMMAND chronomesh_tests contracts_dependency_depth_chain)
+add_test(NAME contracts_dependency_depth_unknown COMMAND chronomesh_tests contracts_dependency_depth_unknown)
+add_test(NAME model_port_fees_hazmat COMMAND chronomesh_tests model_port_fees_hazmat)
+add_test(NAME model_port_fees_normal COMMAND chronomesh_tests model_port_fees_normal)
+add_test(NAME resilience_replay_gap_exists COMMAND chronomesh_tests resilience_replay_gap_exists)
+add_test(NAME resilience_replay_no_gap COMMAND chronomesh_tests resilience_replay_no_gap)
+add_test(NAME stats_ema_increasing COMMAND chronomesh_tests stats_ema_increasing)
+add_test(NAME stats_ema_constant COMMAND chronomesh_tests stats_ema_constant)
+
+# Hyper-matrix parametric test (9200 scenarios)
+add_test(NAME hyper_matrix COMMAND chronomesh_tests hyper_matrix)

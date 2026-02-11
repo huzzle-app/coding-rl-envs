@@ -1,0 +1,1 @@
+"""SynapseNet registry service."""

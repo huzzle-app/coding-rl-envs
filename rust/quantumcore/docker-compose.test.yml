@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      RUST_BACKTRACE: "1"
+      RUST_LOG: "info"
+    volumes:
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+
+volumes:
+  cargo-cache:
+  target-cache:

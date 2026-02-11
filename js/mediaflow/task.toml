@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "mediaflow"
+description = "Debug a distributed Node.js video streaming platform with microservices"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "javascript"
+
+[agent]
+timeout_sec = 28800.0
+
+[verifier]
+timeout_sec = 1800.0

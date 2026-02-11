@@ -1,0 +1,14 @@
+{
+  "name": "cacheforge",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "boost-asio",
+    "boost-beast",
+    "nlohmann-json",
+    "spdlog",
+    "libpqxx",
+    "hiredis",
+    "gtest",
+    "fmt"
+  ]
+}

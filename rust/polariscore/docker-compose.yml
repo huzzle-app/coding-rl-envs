@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: polariscore
+
+  redis:
+    image: redis:7
+
+  nats:
+    image: nats:2.10
+    command: ["-js"]
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.11
+    command: ["etcd", "--advertise-client-urls=http://0.0.0.0:2379", "--listen-client-urls=http://0.0.0.0:2379"]

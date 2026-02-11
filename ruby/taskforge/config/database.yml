@@ -1,0 +1,22 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  username: <%= ENV.fetch("DATABASE_USER") { "postgres" } %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD") { "postgres" } %>
+  host: <%= ENV.fetch("DATABASE_HOST") { "localhost" } %>
+
+development:
+  <<: *default
+  database: taskforge_development
+
+test:
+  <<: *default
+  database: taskforge_test
+
+production:
+  <<: *default
+  database: taskforge_production
+  
+  # pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 25 } %>
+  # checkout_timeout: 5

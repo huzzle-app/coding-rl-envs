@@ -1,0 +1,29 @@
+[package]
+name = "matching-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+shared = { path = "../../shared" }
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+crossbeam.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+once_cell = "1.19"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
+
+[[bench]]
+name = "matching"
+harness = false

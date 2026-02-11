@@ -1,0 +1,31 @@
+
+# Pool size is too small for concurrent requests + Sidekiq workers
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  
+  # With 10 Puma threads + 5 Sidekiq threads, we need at least 15
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  url: <%= ENV['DATABASE_URL'] %>
+
+development:
+  <<: *default
+  database: shopstream_orders_development
+
+test:
+  <<: *default
+  database: shopstream_orders_test
+
+production:
+  <<: *default
+  
+  # Should be: pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + ENV.fetch("SIDEKIQ_CONCURRENCY") { 10 }.to_i %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  database: shopstream_orders_production
+
+# Correct configuration:
+# production:
+#   <<: *default
+#   pool: <%= ENV.fetch("DB_POOL") { 25 } %>
+#   checkout_timeout: 5
+#   reaping_frequency: 10

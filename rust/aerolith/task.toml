@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "aerolith"
+description = "Debug a rust ultra-principal satellite constellation control platform"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "rust"
+
+[agent]
+timeout_sec = 57600.0
+
+[verifier]
+timeout_sec = 2700.0

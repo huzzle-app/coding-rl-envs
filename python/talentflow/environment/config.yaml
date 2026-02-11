@@ -1,0 +1,284 @@
+# TalentFlow RL Environment Configuration
+
+environment:
+  name: "TalentFlow Django Debug"
+  version: "1.0.0"
+  description: "Django debugging RL environment with 25 interconnected bugs"
+
+  # Difficulty settings
+  difficulty: "hard"
+  expected_completion_time: "2-4 hours"
+  target_audience: "senior engineer"
+
+# Episode settings
+episode:
+  max_steps: 100
+  timeout_seconds: 300
+  pytest_timeout: 60
+
+# Reward configuration
+reward:
+  components:
+    test_pass_score:
+      weight: 0.40
+      description: "Sparse test pass rate with thresholds"
+    completion_bonus:
+      weight: 0.25
+      description: "Bonus for completing entire categories"
+    bug_bonus:
+      weight: 0.25
+      description: "Bonus for fixing specific bugs with dependencies"
+    efficiency_bonus:
+      weight: 0.05
+      description: "Bonus for fast completion"
+    regression_penalty:
+      weight: 0.15
+      description: "Penalty for re-breaking passing tests"
+
+  # Category weights for test scoring
+  category_weights:
+    unit: 1.0
+    integration: 1.5
+    system: 2.5
+    security: 2.0
+
+# Bug definitions
+bugs:
+  # Category A: Database & ORM
+  A1:
+    name: "Connection pool exhaustion"
+    location: "talentflow/settings/base.py"
+    symptom: "Sporadic 'connection refused' in parallel tests"
+    fix_hint: "Set CONN_MAX_AGE to reasonable value, enable CONN_HEALTH_CHECKS"
+
+  A2:
+    name: "N+1 query in prefetch"
+    location: "apps/candidates/views.py"
+    symptom: "API slows linearly with data size"
+    fix_hint: "Use Prefetch object with select_related on through model"
+
+  A3:
+    name: "Transaction race condition"
+    location: "apps/jobs/matching.py"
+    symptom: "Intermittent IntegrityError on concurrent calls"
+    fix_hint: "Use select_for_update() to lock the job row"
+
+  # Category B: Celery & Async
+  B1:
+    name: "Timezone mismatch"
+    location: "talentflow/celery.py"
+    symptom: "Scheduled tasks run at wrong times"
+    fix_hint: "Use consistent timezone between Django and Celery"
+
+  B2:
+    name: "Chord callback broken"
+    location: "apps/jobs/tasks.py"
+    symptom: "ignore_result=True breaks result collection"
+    fix_hint: "Remove ignore_result=True from tasks used in chords"
+
+  B3:
+    name: "Redis connection leak"
+    location: "apps/analytics/caching.py"
+    symptom: "Connection pool exhausts after errors"
+    fix_hint: "Use Django's cache framework or proper connection management"
+
+  # Category C: OAuth2 & Auth
+  C1:
+    name: "JWT refresh race"
+    location: "apps/accounts/oauth.py"
+    symptom: "Intermittent 401 on concurrent refresh"
+    fix_hint: "Use select_for_update() when refreshing tokens"
+
+  C2:
+    name: "OAuth state not validated"
+    location: "apps/accounts/oauth.py"
+    symptom: "CSRF vulnerability in OAuth flow"
+    fix_hint: "Always validate state parameter in OAuth callback"
+
+  # Category D: Configuration
+  D1:
+    name: "Settings import order"
+    location: "talentflow/settings/__init__.py"
+    symptom: "DEBUG=True in production"
+    fix_hint: "Check environment before importing settings"
+
+  D2:
+    name: "psycopg2 conflict"
+    location: "requirements.txt"
+    symptom: "ImportError on Linux"
+    fix_hint: "Remove one of psycopg2/psycopg2-binary"
+
+  # Category E: Business Logic
+  E1:
+    name: "Skill matching off-by-one"
+    location: "apps/jobs/matching.py"
+    symptom: "Perfect matches get 0.99 not 1.0"
+    fix_hint: "Fix division to use len(required_skills) not len+1"
+
+  E2:
+    name: "Timezone-naive comparison"
+    location: "apps/interviews/scheduling.py"
+    symptom: "Wrong availability around DST"
+    fix_hint: "Use timezone-aware datetimes throughout"
+
+  # Category F: Heisenbugs
+  F1:
+    name: "Race condition in counter"
+    location: "apps/candidates/tasks.py"
+    symptom: "Counter update without proper locking"
+
+  F2:
+    name: "Data-dependent scoring"
+    location: "apps/candidates/tasks.py"
+    symptom: "Scoring bugs only trigger for specific values"
+
+  F3:
+    name: "Memory leak in cache"
+    location: "apps/analytics/caching.py"
+    symptom: "QueryResultCache accumulates connections"
+
+  F4:
+    name: "Cascading auth bugs"
+    location: "apps/accounts/oauth.py"
+    symptom: "Permission check chain with multiple flaws"
+
+  # Category G: Environmental bugs
+  G1:
+    name: "Naive datetime usage"
+    location: "apps/analytics/tasks.py"
+    symptom: "Uses datetime.now() instead of timezone.now()"
+
+  G2:
+    name: "Locale-dependent formatting"
+    location: "apps/candidates/tasks.py"
+    symptom: "strftime %x varies by server locale"
+
+  G3:
+    name: "Unicode encoding loss"
+    location: "apps/candidates/tasks.py"
+    symptom: "ASCII encoding strips international characters"
+
+  G4:
+    name: "Float precision"
+    location: "apps/jobs/matching.py"
+    symptom: "Direct equality comparison of floats"
+
+  # Category H: Concurrency bugs
+  H1:
+    name: "Deadlock in reports"
+    location: "apps/analytics/tasks.py"
+    symptom: "Inconsistent lock ordering"
+
+  H2:
+    name: "Race in deduplication"
+    location: "apps/candidates/tasks.py"
+    symptom: "Deduplication without proper locking"
+
+  H3:
+    name: "Phantom reads"
+    location: "apps/analytics/tasks.py"
+    symptom: "Data changes between count and lock"
+
+  # Category I: Security bugs
+  I1:
+    name: "SQL injection"
+    location: "apps/candidates/views.py"
+    symptom: "Unsanitized order_by parameter in raw SQL"
+
+  I2:
+    name: "SSRF vulnerability"
+    location: "apps/candidates/tasks.py"
+    symptom: "User-controlled URL in external sync"
+
+  # Category S: Setup bugs
+  S5:
+    name: "Circular import"
+    location: "apps/candidates/utils.py, apps/jobs/utils.py"
+    symptom: "ImportError on startup"
+
+  S6:
+    name: "Missing __init__.py"
+    location: "apps/common/helpers/"
+    symptom: "ModuleNotFoundError for helpers"
+
+  S7:
+    name: "Migration dependency"
+    location: "apps/candidates/migrations/0005*.py"
+    symptom: "Migration fails with dependency error"
+
+  S8:
+    name: "Env var coercion"
+    location: "talentflow/settings/base.py"
+    symptom: "DEBUG='false' evaluates as truthy"
+
+  S9:
+    name: "Package conflicts"
+    location: "requirements.txt"
+    symptom: "ImportError from version conflicts"
+
+  S10:
+    name: "Settings module path"
+    location: "manage.py"
+    symptom: "Wrong settings module reference"
+
+# Test suite configuration
+tests:
+  total_count: 250
+  categories:
+    unit:
+      count: 40
+      location: "tests/unit/"
+      weight: 1.0
+
+    integration:
+      count: 30
+      location: "tests/integration/"
+      weight: 1.5
+
+    system:
+      count: 15
+      location: "tests/system/"
+      weight: 2.5
+
+    security:
+      count: 15
+      location: "tests/security/"
+      weight: 2.0
+
+# Success criteria
+success:
+  required_pass_rate: 1.0
+  required_reward: 1.0
+  description: "All tests must pass"
+
+# Infrastructure
+infrastructure:
+  services:
+    - name: "db"
+      image: "postgres:15"
+      port: 5432
+
+    - name: "redis"
+      image: "redis:7-alpine"
+      port: 6379
+
+    - name: "celery_worker"
+      command: "celery -A talentflow worker -l info"
+      concurrency: 4
+
+    - name: "celery_beat"
+      command: "celery -A talentflow beat -l info"
+
+# Evaluation metrics
+metrics:
+  - name: "pass_rate"
+    description: "Percentage of tests passing"
+
+  - name: "bugs_fixed"
+    description: "Number of bugs fixed (out of 25)"
+
+  - name: "steps_to_completion"
+    description: "Number of actions taken to complete"
+
+  - name: "time_to_completion"
+    description: "Wall clock time to complete"

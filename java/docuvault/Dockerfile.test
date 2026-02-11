@@ -1,0 +1,19 @@
+FROM maven:3.9-eclipse-temurin-21
+
+WORKDIR /app
+
+# Copy pom.xml first and download dependencies (cached layer)
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Environment variables for test database connection
+ENV SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/docuvault
+ENV SPRING_DATASOURCE_USERNAME=docuvault
+ENV SPRING_DATASOURCE_PASSWORD=docuvault
+ENV SPRING_REDIS_HOST=redis
+ENV SPRING_REDIS_PORT=6379
+
+CMD ["mvn", "test", "-Dspring.profiles.active=test"]

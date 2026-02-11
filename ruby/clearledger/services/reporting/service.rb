@@ -1,0 +1,4 @@
+# frozen_string_literal: true
+
+SERVICE_NAME = 'reporting'
+API_VERSION = 'v1'

@@ -1,0 +1,15 @@
+version = "1.0"
+
+[metadata]
+name = "vertexgrid"
+description = "Resolve critical defects in a java apex-principal reliability platform"
+difficulty = "hard"
+category = "programming"
+tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+language = "java"
+
+[agent]
+timeout_sec = 172800.0
+
+[verifier]
+timeout_sec = 3600.0

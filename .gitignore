@@ -1,0 +1,19 @@
+# Generated build artifacts (new envs)
+cpp/*/build/
+**/.gradle/
+**/build/
+**/target/
+**/bin/
+**/obj/
+
+# JS generated
+**/node_modules/
+**/coverage/
+**/package-lock.json
+
+# Common caches
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.cache/
