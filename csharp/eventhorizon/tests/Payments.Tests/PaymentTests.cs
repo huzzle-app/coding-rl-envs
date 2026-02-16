@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -72,7 +73,7 @@ public class PaymentTests
             Assert.NotNull(response);
         }
 
-        Assert.Equal(0, client.ActiveCallCount, "All gRPC calls should be cleaned up");
+        Assert.Equal(0, client.ActiveCallCount);
     }
 
     
@@ -90,7 +91,7 @@ public class PaymentTests
         context.Payments.Add(payment);
         await context.SaveChangesAsync();
 
-        Assert.NotNull(payment.RowVersion, "RowVersion should be set after save");
+        Assert.NotNull(payment.RowVersion);
     }
 
     [Fact]
@@ -128,7 +129,7 @@ public class PaymentTests
 
         await context.SaveChangesAsync();
 
-        Assert.NotNull(context.Transactions.Find("T1"), "Parent should be saved first");
+        Assert.NotNull(context.Transactions.Find("T1"));
     }
 
     [Fact]
@@ -160,7 +161,7 @@ public class PaymentTests
         var client1 = scope1.ServiceProvider.GetService<IHttpClientFactory>().CreateClient("payment");
         var client2 = scope2.ServiceProvider.GetService<IHttpClientFactory>().CreateClient("payment");
 
-        Assert.NotSame(client1, client2, "Circuit breaker state should be scoped");
+        Assert.NotSame(client1, client2);
     }
 
     [Fact]
@@ -197,7 +198,7 @@ public class PaymentTests
         await stream.WriteAsync(new byte[100]);
         pool.Return(stream);
 
-        Assert.Equal(initialCount, pool.AvailableCount, "Stream should be returned to pool");
+        Assert.Equal(initialCount, pool.AvailableCount);
     }
 
     [Fact]
@@ -298,7 +299,7 @@ public class PaymentTests
         processor.Process(payment, "IDEMPOTENCY-1");
         processor.Process(payment, "IDEMPOTENCY-1");
 
-        Assert.Equal(1, processor.ProcessedCount, "Should process only once with same key");
+        Assert.Equal(1, processor.ProcessedCount);
     }
 
     [Fact]
@@ -569,7 +570,7 @@ public class AsyncUnaryCall<T> : IDisposable
         _onDispose = onDispose;
     }
 
-    public TaskAwaiter<T> GetAwaiter() => _task.GetAwaiter();
+    public TaskAwaiter<T> GetAwaiter() => new TaskAwaiter<T>(_task);
 
     public void Dispose()
     {
@@ -763,6 +764,8 @@ public class HttpClientBuilder
     {
         return this;
     }
+
+    public IServiceProvider BuildServiceProvider() => _services.BuildServiceProvider();
 }
 
 public interface IHttpClientFactory
@@ -814,7 +817,7 @@ public class MockHttpClientFactory : IHttpClientFactory
     public HttpClient CreateClient(string name) => new HttpClient();
 }
 
-public struct TaskAwaiter<T>
+public struct TaskAwaiter<T> : INotifyCompletion
 {
     private Task<T> _task;
     public TaskAwaiter(Task<T> task) => _task = task;

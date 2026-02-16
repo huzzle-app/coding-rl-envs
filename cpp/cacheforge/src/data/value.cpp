@@ -25,9 +25,6 @@ size_t Value::memory_size() const {
 
 std::string_view Value::as_string_view() const {
     
-    // If the Value object is moved or destroyed after this call,
-    // the string_view will be a dangling reference.
-    // FIX: Return std::string instead of std::string_view
     if (type_ != Type::String) {
         throw std::runtime_error("Value is not a string");
     }
@@ -59,7 +56,7 @@ const std::vector<uint8_t>& Value::as_binary() const {
     if (type_ != Type::Binary) {
         throw std::runtime_error("Value is not binary");
     }
-    return std::get<uint8_t>(data_);
+    return std::get<std::vector<uint8_t>>(data_);
 }
 
 int64_t Value::fast_integer_parse() const {
@@ -72,12 +69,6 @@ int64_t Value::fast_integer_parse() const {
     }
 
     
-    // The C++ standard says accessing an object through a pointer of
-    // incompatible type is undefined behavior.
-    // FIX: Use std::memcpy:
-    //   int64_t result;
-    //   std::memcpy(&result, str.data(), sizeof(int64_t));
-    //   return result;
     const int64_t* ptr = reinterpret_cast<const int64_t*>(str.data());
     return *ptr;
 }
@@ -88,9 +79,8 @@ bool Value::operator==(const Value& other) const {
 }
 
 
-// FIX: Value make_moved_value(Value&& v) { return std::move(v); }
 Value make_moved_value(const Value& v) {
-    return std::move(v);  // std::move(const T&) -> const T&& -> copies, doesn't move
+    return std::move(v);
 }
 
 }  // namespace cacheforge

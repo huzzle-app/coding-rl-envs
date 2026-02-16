@@ -42,7 +42,7 @@ Each scenario describes **symptoms and failing tests** without revealing exact f
 ## Completion Criteria
 
 - Full suite passes (`dotnet test`).
-- All 9261 tests pass with zero failures.
+- All 9281 tests pass with zero failures.
 - Deterministic replay, scheduling, routing, and policy behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
 

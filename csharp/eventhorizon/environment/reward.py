@@ -4,8 +4,8 @@ Principal difficulty: sparse reward based on pass rate
 """
 from typing import Any, Dict, List
 
-REWARD_THRESHOLDS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
-REWARD_VALUES = [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
+REWARD_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+REWARD_VALUES = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
 
 def calculate_reward(current_results, initial_results):
     if not current_results:

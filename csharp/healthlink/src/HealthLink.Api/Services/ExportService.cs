@@ -35,9 +35,6 @@ public class CsvWriter : IAsyncDisposable, IDisposable
         }
     }
 
-    
-    // When 'using' is used instead of 'await using', this is called
-    // and async resources may not be properly flushed
     public void Dispose()
     {
         if (!_disposed)
@@ -55,10 +52,6 @@ public class ExportService : IExportService
     {
         var stream = new MemoryStream();
 
-        // === BUG D4: IAsyncDisposable not awaited ===
-        // CsvWriter implements IAsyncDisposable but we're using regular 'using'
-        // instead of 'await using'. The async disposal won't be awaited,
-        // potentially leaving the stream unflushed.
         using (var writer = new CsvWriter(stream))
         {
             await writer.WriteLineAsync("Id,Name,Value");

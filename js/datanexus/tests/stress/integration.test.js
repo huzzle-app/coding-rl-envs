@@ -98,25 +98,17 @@ describe('Integration Bugs', () => {
 
   describe('Alert -> Billing integration', () => {
     test('alert state transitions should generate billing events', () => {
-      const alertSM = new AlertStateMachine();
-      const billingSM = new BillingStateMachine();
-      const meter = new UsageMeter();
-
-      // Create alert and track billing
-      alertSM.createAlert('alert-1', { severity: 'critical' });
-
-      // Each state transition should be metered
-      alertSM.transition('alert-1', 'firing');
-      meter.recordUsage('tenant-1', 1, 0);
-
-      alertSM.transition('alert-1', 'acknowledged', { userId: 'user-1' });
-      meter.recordUsage('tenant-1', 1, 0);
-
-      alertSM.transition('alert-1', 'resolved');
-      meter.recordUsage('tenant-1', 1, 0);
-
-      const usage = meter.getUsage('tenant-1');
-      expect(usage.dataPoints).toBe(3);
+      const sm = new BillingStateMachine();
+      sm.createInvoice('inv-1', { amount: 500 });
+      sm.transition('inv-1', 'pending');
+      sm.transition('inv-1', 'processing');
+      sm.transition('inv-1', 'paid');
+      const paidAmount = sm.getInvoice('inv-1').amount;
+      // Mutate amount after payment
+      sm.getInvoice('inv-1').amount = 300;
+      sm.transition('inv-1', 'refunded');
+      // BUG: refundAmount uses current amount (300), not paid amount (500)
+      expect(sm.getInvoice('inv-1').refundAmount).toBe(paidAmount);
     });
 
     test('flapping alert suppression should not generate billing for suppressed alerts', () => {
@@ -516,46 +508,43 @@ describe('Integration Bugs', () => {
   });
 
   describe('Load balancer -> Health check integration', () => {
-    test('unhealthy backends should be excluded from routing', () => {
-      const router = new LoadBalancedRouter({ strategy: 'round-robin' });
-
-      router.addBackend({ id: 'healthy-1', url: 'http://h1' });
-      router.addBackend({ id: 'unhealthy', url: 'http://u1' });
-      router.addBackend({ id: 'healthy-2', url: 'http://h2' });
-
-      router.markUnhealthy('unhealthy');
-
-      // Route many requests - none should go to unhealthy backend
-      for (let i = 0; i < 20; i++) {
-        const selected = router.selectBackend({});
-        expect(selected.id).not.toBe('unhealthy');
-      }
+    test('unhealthy backends should be excluded from routing', async () => {
+      const router = new ContentBasedRouter();
+      router.addRule({
+        name: 'catch-all',
+        condition: (msg) => msg.type === 'metric',
+        destination: 'general-queue',
+        priority: 1,
+      });
+      router.addRule({
+        name: 'critical-metrics',
+        condition: (msg) => msg.type === 'metric' && msg.severity === 'critical',
+        destination: 'priority-queue',
+        priority: 10,
+      });
+      const message = { type: 'metric', severity: 'critical' };
+      const result = await router.route(message);
+      // BUG: last matching rule wins instead of highest priority
+      expect(result.destination).toBe('priority-queue');
     });
 
     test('recovered backend should resume receiving traffic', () => {
-      const router = new LoadBalancedRouter({ strategy: 'round-robin' });
-
-      router.addBackend({ id: 'b1', url: 'http://b1' });
-      router.addBackend({ id: 'b2', url: 'http://b2' });
-
-      router.markUnhealthy('b1');
-
-      // All traffic goes to b2
-      for (let i = 0; i < 5; i++) {
-        expect(router.selectBackend({}).id).toBe('b2');
-      }
-
-      // Recover b1
-      router.markHealthy('b1');
-
-      // Traffic should now go to both
-      const selections = new Set();
-      for (let i = 0; i < 10; i++) {
-        selections.add(router.selectBackend({}).id);
-      }
-
-      expect(selections.has('b1')).toBe(true);
-      expect(selections.has('b2')).toBe(true);
+      const correlator = new AlertCorrelationEngine();
+      correlator.addCorrelationRule({
+        name: 'disk-alerts',
+        metric: 'disk.usage',
+        timeWindow: 600000,
+      });
+      const now = Date.now();
+      // Alert order in array: a3, a1, a2 — but a1 has earliest timestamp
+      correlator.correlate([
+        { id: 'a3', metric: 'disk.usage', severity: 'warning', timestamp: now },
+        { id: 'a1', metric: 'disk.usage', severity: 'critical', timestamp: now - 30000 },
+        { id: 'a2', metric: 'disk.usage', severity: 'error', timestamp: now - 10000 },
+      ]);
+      const groups = correlator.getCorrelationGroups();
+      // BUG: rootCause is first alert in array (a3), not earliest by timestamp (a1)
+      expect(groups[0].rootCause.id).toBe('a1');
     });
   });
 

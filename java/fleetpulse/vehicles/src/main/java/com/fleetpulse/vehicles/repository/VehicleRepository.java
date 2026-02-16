@@ -9,6 +9,12 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Repository for Vehicle entity persistence operations.
+ *
+ * Bugs: E3
+ * Categories: JPA/Persistence
+ */
 @Repository
 public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
 
@@ -18,11 +24,8 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
 
     List<Vehicle> findByDriverId(Long driverId);
 
-    
-    // Loading vehicles and accessing records causes N+1 queries
+    // Bug E3: Loading vehicles and accessing records causes N+1 queries.
+    // Category: JPA/Persistence
     @Query("SELECT v FROM Vehicle v WHERE v.status = :status")
     List<Vehicle> findVehiclesByStatus(@Param("status") String status);
-
-    // Proper fix would be:
-    // @Query("SELECT v FROM Vehicle v JOIN FETCH v.maintenanceRecords WHERE v.status = :status")
 }

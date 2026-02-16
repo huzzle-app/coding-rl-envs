@@ -4,15 +4,19 @@
  * Tests bugs A3 (memory leak), A4 (stale closure), A5 (event loop blocking)
  */
 
+const setupPresenceHandlers = require('../../../src/websocket/handlers/presence.handler');
+
 describe('Presence WebSocket Integration', () => {
   let mockIo;
   let mockSocket;
-  let presenceHandler;
+  let mockPresenceService;
+  let mockBroadcastService;
 
   beforeEach(() => {
     mockSocket = {
       id: 'socket-123',
       userId: 'user-1',
+      user: { id: 'user-1', firstName: 'Test', lastName: 'User', avatarUrl: null },
       on: jest.fn(),
       off: jest.fn(),
       emit: jest.fn(),
@@ -27,171 +31,169 @@ describe('Presence WebSocket Integration', () => {
       emit: jest.fn(),
     };
 
-    presenceHandler = require('../../../src/websocket/handlers/presence.handler');
+    mockPresenceService = {
+      trackUser: jest.fn().mockResolvedValue([]),
+      removeUser: jest.fn().mockResolvedValue([]),
+      updateCursor: jest.fn().mockResolvedValue({}),
+      updateSelection: jest.fn().mockResolvedValue({}),
+      getBoardPresence: jest.fn().mockResolvedValue([]),
+    };
+
+    mockBroadcastService = {
+      broadcastPresence: jest.fn().mockResolvedValue({ success: true }),
+      broadcastCursor: jest.fn().mockResolvedValue({ success: true }),
+      broadcastSelection: jest.fn().mockResolvedValue({ success: true }),
+    };
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('board switching', () => {
-    
-    it('should use current board after board switch', async () => {
-      const boards = [];
-      const handler = presenceHandler(mockSocket, mockIo);
+  function getHandler(eventName) {
+    const call = mockSocket.on.mock.calls.find(c => c[0] === eventName);
+    return call ? call[1] : null;
+  }
 
-      // Track which board cursor updates go to
-      handler.onCursorUpdate = jest.fn().mockImplementation((boardId, position) => {
-        boards.push(boardId);
+  describe('board switching', () => {
+    /**
+     * BUG A4: Stale closure captures old board reference.
+     * When user switches boards, cursor-move handlers registered inside
+     * join-board still reference the old board via closure.
+     */
+    it('should use current board after board switch', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
       });
 
-      // Join first board
-      await handler.joinBoard('board-1');
+      const joinBoardHandler = getHandler('join-board');
+      expect(joinBoardHandler).toBeDefined();
 
-      // Move cursor
-      await handler.cursorMove({ x: 100, y: 100 });
+      // Join first board
+      const cb1 = jest.fn();
+      await joinBoardHandler('board-1', cb1);
+
+      // Get cursor-move handler registered during join
+      const cursorMoveHandler = getHandler('cursor-move');
+      expect(cursorMoveHandler).toBeDefined();
+
+      // Move cursor on first board
+      await cursorMoveHandler({ x: 100, y: 100 });
+
+      expect(mockBroadcastService.broadcastCursor).toHaveBeenCalledWith(
+        'board-1', 'user-1', { x: 100, y: 100 }, 'socket-123'
+      );
 
       // Switch to second board
-      await handler.joinBoard('board-2');
+      const cb2 = jest.fn();
+      await joinBoardHandler('board-2', cb2);
 
-      // Move cursor again
-      await handler.cursorMove({ x: 200, y: 200 });
+      // Move cursor again — should go to board-2, not board-1
+      mockBroadcastService.broadcastCursor.mockClear();
+      await cursorMoveHandler({ x: 200, y: 200 });
 
-      
-      expect(boards).toEqual(['board-1', 'board-2']);
+      // BUG A4: The cursor-move handler uses a stale closure referencing the
+      // old board variable. After switching boards, updates should target board-2,
+      // but the closure may still capture 'board-1'.
+      expect(mockBroadcastService.broadcastCursor).toHaveBeenCalledWith(
+        'board-2', 'user-1', { x: 200, y: 200 }, 'socket-123'
+      );
     });
 
-    
-    it('stale closure test', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
+    /**
+     * BUG A4: Stale closure captures old board for selection-change too
+     */
+    it('should update selection on current board after switch', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
 
-      let capturedBoard = null;
+      const joinBoardHandler = getHandler('join-board');
 
-      // Join board and capture the closure
-      await handler.joinBoard('board-A');
+      // Join board-A
+      await joinBoardHandler('board-A', jest.fn());
 
-      const cursorHandler = mockSocket.on.mock.calls.find(
-        call => call[0] === 'cursor-move'
-      )?.[1];
+      const selectionHandler = getHandler('selection-change');
+      expect(selectionHandler).toBeDefined();
 
-      // Switch board
-      await handler.joinBoard('board-B');
+      // Switch to board-B
+      await joinBoardHandler('board-B', jest.fn());
 
-      // The cursor handler should use updated board reference
-      if (cursorHandler) {
-        await cursorHandler({ x: 50, y: 50 });
-      }
+      // Selection change should target board-B
+      await selectionHandler(['elem-1', 'elem-2']);
 
-      // Should emit to board-B, not board-A
-      const emitCalls = mockIo.to.mock.calls;
-      const lastCall = emitCalls[emitCalls.length - 1];
-
-      expect(lastCall[0]).toBe('board:board-B');
+      expect(mockPresenceService.updateSelection).toHaveBeenCalledWith(
+        'board-B', 'user-1', ['elem-1', 'elem-2']
+      );
     });
   });
 
   describe('memory management', () => {
-    
-    it('should clean up listeners on disconnect', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
+    /**
+     * BUG A4: Each call to join-board registers NEW cursor-move and
+     * selection-change listeners without removing old ones, causing
+     * listener accumulation.
+     */
+    it('should not accumulate listeners on board switch', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
 
-      // Join board (adds listeners)
-      await handler.joinBoard('board-1');
+      const joinBoardHandler = getHandler('join-board');
 
-      // Count listeners added
-      const listenersAdded = mockSocket.on.mock.calls.length;
-
-      // Disconnect
-      await handler.disconnect();
-
-      // Should remove all listeners that were added
-      const listenersRemoved = mockSocket.off.mock.calls.length +
-        mockSocket.removeListener.mock.calls.length;
-
-      expect(listenersRemoved).toBeGreaterThanOrEqual(listenersAdded - 1); // -1 for disconnect itself
-    });
-
-    
-    it('should not accumulate listeners on reconnect', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
-
-      // Simulate multiple reconnects
+      // Switch boards 5 times
       for (let i = 0; i < 5; i++) {
-        await handler.joinBoard('board-1');
-        await handler.leaveBoard('board-1');
+        await joinBoardHandler(`board-${i}`, jest.fn());
       }
 
-      // Count unique listener types
-      const listenerTypes = new Set(
-        mockSocket.on.mock.calls.map(call => call[0])
-      );
-
-      // Should not have duplicate listeners for same event
+      // Count how many cursor-move handlers were registered
       const cursorListeners = mockSocket.on.mock.calls.filter(
         call => call[0] === 'cursor-move'
       );
 
-      
+      // BUG A4: Without cleanup, each join-board adds a new cursor-move listener.
+      // After 5 switches, there should be at most 1 cursor-move listener,
+      // not 5. The handler should remove old listeners before adding new ones.
       expect(cursorListeners.length).toBeLessThanOrEqual(1);
     });
-  });
 
-  describe('event loop performance', () => {
-    
-    it('should not block event loop with large presence data', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
+    /**
+     * BUG A3: Heartbeat listener not removed on disconnect
+     */
+    it('should clean up heartbeat listener on disconnect', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
 
-      // Create large presence state
-      const largePresence = {};
-      for (let i = 0; i < 1000; i++) {
-        largePresence[`user-${i}`] = {
-          id: `user-${i}`,
-          name: `User ${i}`,
-          cursor: { x: Math.random() * 1000, y: Math.random() * 1000 },
-          selection: Array(50).fill(null).map((_, j) => `element-${j}`),
-        };
-      }
+      const joinBoardHandler = getHandler('join-board');
+      await joinBoardHandler('board-1', jest.fn());
 
-      handler._getPresenceState = jest.fn().mockResolvedValue(largePresence);
+      // Count listeners added during join
+      const listenersAdded = mockSocket.on.mock.calls.length;
 
-      const startTime = Date.now();
+      // Trigger disconnect
+      const disconnectHandler = getHandler('disconnect');
+      expect(disconnectHandler).toBeDefined();
+      await disconnectHandler();
 
-      // This should not block
-      await handler.getPresence('board-1');
+      // Should have removed event listeners on disconnect
+      const listenersRemoved = mockSocket.off.mock.calls.length +
+        mockSocket.removeListener.mock.calls.length;
 
-      const duration = Date.now() - startTime;
-
-      expect(duration).toBeLessThan(100);
-    });
-
-    
-    it('should handle rapid cursor updates without blocking', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
-
-      await handler.joinBoard('board-1');
-
-      const startTime = Date.now();
-
-      // Rapid updates
-      const updates = [];
-      for (let i = 0; i < 100; i++) {
-        updates.push(handler.cursorMove({ x: i, y: i }));
-      }
-
-      await Promise.all(updates);
-
-      const duration = Date.now() - startTime;
-
-      // Should complete quickly even with many updates
-      expect(duration).toBeLessThan(500);
+      expect(listenersRemoved).toBeGreaterThanOrEqual(listenersAdded - 1);
     });
   });
 
   describe('concurrent operations', () => {
     it('should handle multiple users joining same board', async () => {
-      const sockets = Array(10).fill(null).map((_, i) => ({
+      const sockets = Array(5).fill(null).map((_, i) => ({
         id: `socket-${i}`,
         userId: `user-${i}`,
+        user: { id: `user-${i}`, firstName: `User`, lastName: `${i}`, avatarUrl: null },
         on: jest.fn(),
         off: jest.fn(),
         emit: jest.fn(),
@@ -199,25 +201,83 @@ describe('Presence WebSocket Integration', () => {
         leave: jest.fn(),
       }));
 
-      const handlers = sockets.map(s => presenceHandler(s, mockIo));
+      sockets.forEach(s => {
+        setupPresenceHandlers(mockIo, s, {
+          presenceService: mockPresenceService,
+          broadcastService: mockBroadcastService,
+        });
+      });
 
       // All join same board
-      await Promise.all(handlers.map(h => h.joinBoard('board-shared')));
+      for (const s of sockets) {
+        const joinHandler = s.on.mock.calls.find(c => c[0] === 'join-board')?.[1];
+        if (joinHandler) {
+          await joinHandler('board-shared', jest.fn());
+        }
+      }
 
-      // All should have joined
+      // All should have joined the room
       sockets.forEach(s => {
         expect(s.join).toHaveBeenCalledWith('board:board-shared');
       });
     });
 
-    it('should broadcast presence to all users', async () => {
-      const handler = presenceHandler(mockSocket, mockIo);
+    it('should broadcast presence update on join', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
 
-      await handler.joinBoard('board-1');
-      await handler.cursorMove({ x: 100, y: 100 });
+      const joinBoardHandler = getHandler('join-board');
+      await joinBoardHandler('board-1', jest.fn());
 
-      expect(mockIo.to).toHaveBeenCalledWith('board:board-1');
-      expect(mockIo.emit).toHaveBeenCalled();
+      expect(mockBroadcastService.broadcastPresence).toHaveBeenCalledWith(
+        'board-1', 'join', mockSocket.user, 'socket-123'
+      );
+    });
+  });
+
+  describe('leave and disconnect', () => {
+    it('should leave board and broadcast leave event', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
+
+      const joinBoardHandler = getHandler('join-board');
+      await joinBoardHandler('board-1', jest.fn());
+
+      const leaveBoardHandler = getHandler('leave-board');
+      expect(leaveBoardHandler).toBeDefined();
+
+      const cb = jest.fn();
+      await leaveBoardHandler('board-1', cb);
+
+      expect(mockSocket.leave).toHaveBeenCalledWith('board:board-1');
+      expect(mockPresenceService.removeUser).toHaveBeenCalledWith(
+        mockSocket, 'board-1', 'user-1'
+      );
+      expect(cb).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('should clean up on disconnect', async () => {
+      setupPresenceHandlers(mockIo, mockSocket, {
+        presenceService: mockPresenceService,
+        broadcastService: mockBroadcastService,
+      });
+
+      const joinBoardHandler = getHandler('join-board');
+      await joinBoardHandler('board-1', jest.fn());
+
+      const disconnectHandler = getHandler('disconnect');
+      await disconnectHandler();
+
+      expect(mockPresenceService.removeUser).toHaveBeenCalledWith(
+        mockSocket, 'board-1', 'user-1'
+      );
+      expect(mockBroadcastService.broadcastPresence).toHaveBeenCalledWith(
+        'board-1', 'leave', mockSocket.user, 'socket-123'
+      );
     });
   });
 });

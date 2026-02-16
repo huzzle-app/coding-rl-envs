@@ -31,7 +31,7 @@ Hyper-Principal (3-6 days expected, 70-140h).
 
 ## Success Criteria
 
-- All 8,053 tests pass (`npm test`).
+- All 9,040 tests pass (`npm test`).
 - Replay and idempotency chaos suites are fully green.
 - Security/compliance suites remain stable while fixing routing/capacity regressions.
 - Do not edit files under `tests/`.

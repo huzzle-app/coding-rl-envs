@@ -212,42 +212,7 @@ Same timing vulnerability exists for API key validation in the shared library.
 
 ---
 
-## Remediation Priority
-
-| Priority | Finding | Action Required |
-|----------|---------|-----------------|
-| P0 | FINDING-001 | Use JPA parameterized queries or CriteriaBuilder |
-| P0 | FINDING-002 | Reject JWT `alg: none` explicitly |
-| P0 | FINDING-003 | Canonicalize paths and validate against allowlist |
-| P0 | FINDING-004 | Validate webhook URLs against allowlist |
-| P1 | FINDING-005 | Remove ObjectInputStream usage, use Jackson with type restrictions |
-| P1 | FINDING-006 | Disable external entities in XML parser |
-| P1 | FINDING-007 | Use MessageDigest.isEqual() for constant-time comparison |
-| P1 | FINDING-008 | Use MessageDigest.isEqual() for API key comparison |
-| P2 | FINDING-009 | Disable stack traces in production |
-
----
-
-## Files to Review
-
-Based on findings, focus remediation on:
-- `gateway/src/main/java/com/fleetpulse/gateway/repository/VehicleSearchRepository.java`
-- `gateway/src/main/java/com/fleetpulse/gateway/controller/ReportController.java`
-- `gateway/src/main/java/com/fleetpulse/gateway/controller/WebhookController.java`
-- `auth/src/main/java/com/fleetpulse/auth/security/JwtValidator.java`
-- `auth/src/main/java/com/fleetpulse/auth/service/PasswordService.java`
-- `auth/src/main/java/com/fleetpulse/auth/service/ImportService.java`
-- `shared/src/main/java/com/fleetpulse/shared/security/ApiKeyValidator.java`
-- `shared/src/main/java/com/fleetpulse/shared/xml/ReportParser.java`
-
----
-
 **Report Prepared By**: Marcus Webb, Senior Penetration Tester
 **Reviewed By**: Dr. Anita Patel, Chief Security Officer
 **Date**: February 6, 2024
 
----
-
-## Remediation Verification
-
-CyberShield will perform verification testing within the 30-day remediation window at no additional cost. Please notify us when fixes are ready for retest.

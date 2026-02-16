@@ -4,6 +4,7 @@ version = "1.0"
 name = "gridweaver"
 description = "Resolve critical defects in a go ultra-principal smart-grid orchestration platform"
 difficulty = "hard"
+tier = "ultra-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "go"

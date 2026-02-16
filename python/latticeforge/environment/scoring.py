@@ -27,8 +27,170 @@ TRAINING_MODES = {
     "linear": lambda x: x,                    # Direct 1:1 mapping
     "sublinear": lambda x: x ** 0.7,          # Rewards early progress more
     "smooth": lambda x: 3 * x**2 - 2 * x**3,  # Smooth S-curve (Hermite)
+    "curriculum": None,                        # Bug-signature blended reward
 }
 DEFAULT_TRAINING_MODE = "linear"
+
+# ---------------------------------------------------------------------------
+# Bug-signature table for curriculum training mode.
+# Each entry maps a known buggy pattern to the file it lives in.
+# When the pattern disappears from the file, the bug is counted as fixed.
+# ---------------------------------------------------------------------------
+BUG_SIGNATURES = [
+    # 1 – routing: max → min (choose_ground_station)
+    {"file": "latticeforge/routing.py",
+     "buggy_pattern": r"return\s+max\(candidates",
+     "label": "routing-max-min"},
+    # 2 – policy: hold threshold 66.0 should be 65.0
+    {"file": "latticeforge/policy.py",
+     "buggy_pattern": r"risk_score\s*>=\s*66\.0",
+     "label": "policy-hold-threshold-66"},
+    # 3 – policy: comms-degraded hold threshold 55.0 should be 50.0
+    {"file": "latticeforge/policy.py",
+     "buggy_pattern": r"risk_score\s*>=\s*55\.0",
+     "label": "policy-hold-threshold-55"},
+    # 4 – policy: compound risk uses sum instead of product
+    {"file": "latticeforge/policy.py",
+     "buggy_pattern": r"combined\s*=\s*sum\(",
+     "label": "policy-compound-sum"},
+    # 5 – resilience: replay budget factor 0.8 should be 0.9
+    {"file": "latticeforge/resilience.py",
+     "buggy_pattern": r"baseline\s*\*\s*0\.8\b",
+     "label": "resilience-budget-factor"},
+    # 6 – orbit: hohmann uses sqrt(r1*r2) instead of (r1+r2)/2
+    {"file": "latticeforge/orbit.py",
+     "buggy_pattern": r"math\.sqrt\(r1_km\s*\*\s*r2_km\)",
+     "label": "orbit-hohmann-sqrt"},
+    # 7 – scheduler: batch offset starts at cooldown instead of 0
+    {"file": "latticeforge/scheduler.py",
+     "buggy_pattern": r"offset\s*=\s*cooldown_s\b",
+     "label": "scheduler-offset-init"},
+    # 8 – scheduler: completion subtracts cooldown instead of adding duration
+    {"file": "latticeforge/scheduler.py",
+     "buggy_pattern": r"per_op_duration_s\s*-\s*cooldown_s",
+     "label": "scheduler-completion-subtract"},
+    # 9 – dependency: parallel groups BFS assigns first-visit level
+    {"file": "latticeforge/dependency.py",
+     "buggy_pattern": r"level\[child\]\s*=\s*level\[current\]\s*\+\s*1",
+     "label": "dependency-bfs-level"},
+    # 10 – telemetry: cache sets valid=True globally
+    {"file": "latticeforge/telemetry.py",
+     "buggy_pattern": r"self\._cache_valid\s*=\s*True",
+     "label": "telemetry-cache-global-valid"},
+    # 11 – queue: drain decrements active_count by batch len
+    {"file": "latticeforge/queue.py",
+     "buggy_pattern": r"self\._active_count\s*-=\s*len\(batch\)",
+     "label": "queue-drain-active-count"},
+    # 12 – identity: clearance > required (should be >=)
+    {"file": "services/identity/service.py",
+     "buggy_pattern": r"context\.clearance\s*>\s*required\b",
+     "label": "identity-clearance-gt"},
+    # 13 – intake: dedupe by (satellite, intent) instead of command_id
+    {"file": "services/intake/service.py",
+     "buggy_pattern": r"dedupe_key\s*=\s*\(command\.satellite_id,\s*command\.intent\)",
+     "label": "intake-dedupe-key"},
+    # 14 – gateway: select_primary uses max instead of min
+    {"file": "services/gateway/service.py",
+     "buggy_pattern": r"return\s+max\(candidates,\s*key=score_node\)",
+     "label": "gateway-max-min"},
+    # 15 – gateway: sat_threshold 0.9 should be 0.5
+    {"file": "services/gateway/service.py",
+     "buggy_pattern": r"sat_threshold\s*=\s*0\.9",
+     "label": "gateway-sat-threshold"},
+    # 16 – policy service: comms_degraded hardcoded to False
+    {"file": "services/policy/service.py",
+     "buggy_pattern": r"comms_degraded\s*=\s*False",
+     "label": "policy-svc-comms-false"},
+    # 17 – resilience service: degraded=[] ignores actual regions
+    {"file": "services/resilience/service.py",
+     "buggy_pattern": r"degraded\s*=\s*\[\]",
+     "label": "resilience-svc-degraded-empty"},
+    # 18 – notifications: throttle key missing channel
+    {"file": "services/notifications/service.py",
+     "buggy_pattern": r"throttle_key\s*=\s*\(recipient_id,\s*incident\.ticket_id\)",
+     "label": "notifications-throttle-key"},
+    # 19 – reporting: rank ascending instead of descending
+    {"file": "services/reporting/service.py",
+     "buggy_pattern": r"key=lambda\s+incident:\s*\(incident\.severity,",
+     "label": "reporting-rank-ascending"},
+    # 20 – audit: ledger appends even on duplicate
+    {"file": "services/audit/service.py",
+     "buggy_pattern": r"self\._events\.append\(event\)\s*\n\s*return not duplicate",
+     "label": "audit-ledger-append-dup",
+     "multiline": True},
+    # 21 – audit: retry keeps stale enrichment
+    {"file": "services/audit/service.py",
+     "buggy_pattern": r'ev\["enrichment"\]\s*=\s*ev\.get\("enrichment"\)',
+     "label": "audit-retry-enrichment"},
+    # 22 – mission: invalid transition silently reuses current state
+    {"file": "services/mission/service.py",
+     "buggy_pattern": r"target\s*=\s*current\.state",
+     "label": "mission-silent-transition"},
+]
+
+TOTAL_BUG_SIGNATURES = len(BUG_SIGNATURES)   # 22
+
+
+def detect_fixed_bugs(cwd: str) -> Tuple[int, int, List[str]]:
+    """
+    Scan source files for known buggy patterns.
+
+    Returns (fixed_count, total_signatures, list_of_fixed_labels).
+    A bug is considered *fixed* when its buggy pattern no longer matches.
+    """
+    import os
+
+    fixed: List[str] = []
+    for sig in BUG_SIGNATURES:
+        filepath = os.path.join(cwd, sig["file"])
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
+        except FileNotFoundError:
+            # File removed – pattern trivially absent ⇒ "fixed"
+            fixed.append(sig["label"])
+            continue
+
+        flags = re.MULTILINE
+        if sig.get("multiline"):
+            flags |= re.DOTALL
+        if re.search(sig["buggy_pattern"], content, flags):
+            continue  # bug still present
+        fixed.append(sig["label"])
+
+    return len(fixed), TOTAL_BUG_SIGNATURES, fixed
+
+
+def curriculum_reward(pass_rate: float, cwd: Optional[str] = None) -> float:
+    """
+    Blended reward for curriculum training.
+
+    Formula: 0.6 × (bugs_fixed / total_sigs) + 0.4 × pass_rate
+    Provides micro-reward even when zero tests pass, as long as buggy patterns
+    are removed from source files.
+    """
+    if cwd is None:
+        return pass_rate  # fall back to raw pass_rate without file access
+    fixed, total, _ = detect_fixed_bugs(cwd)
+    fix_fraction = fixed / total if total > 0 else 0.0
+    return min(1.0, 0.6 * fix_fraction + 0.4 * pass_rate)
+
+
+# ---------------------------------------------------------------------------
+# Regression floor – intentional negative reward for training gradient signal.
+# This looks like a bug (negative reward?!) but is correct: small negative
+# values tell the optimizer "you made things worse", providing directional
+# gradient that a floor of 0.0 cannot.  DO NOT "fix" to 0.0.
+# ---------------------------------------------------------------------------
+REGRESSION_FLOOR = -0.02
+
+
+def apply_regression_floor(reward: float, prev_reward: float) -> float:
+    """Clamp reward to REGRESSION_FLOOR when agent regresses."""
+    if reward < prev_reward:
+        return max(reward, REGRESSION_FLOOR)
+    return reward
+
 
 # Incremental reward settings
 NEWLY_PASSING_BONUS = 0.01   # Bonus per newly passing test (normalized)
@@ -474,7 +636,9 @@ def calculate_reward(
     pass_rate = passed / total
 
     # Use training reward (dense) or sparse reward based on mode
-    if training_mode:
+    if training_mode == "curriculum":
+        base_reward = curriculum_reward(pass_rate, cwd)
+    elif training_mode:
         base_reward = training_reward(pass_rate, training_mode)
     else:
         base_reward = sparse_reward(pass_rate, tier)
@@ -510,6 +674,14 @@ def calculate_reward(
         result["newly_passing"] = incr_data.get("newly_passing", 0)
         result["regressions"] = incr_data.get("regressions", 0)
 
+    # Add curriculum-specific details
+    if training_mode == "curriculum" and cwd:
+        fixed_count, total_sigs, fixed_labels = detect_fixed_bugs(cwd)
+        result["bugs_fixed"] = fixed_count
+        result["bugs_total"] = total_sigs
+        result["bug_fix_fraction"] = round(fixed_count / total_sigs, 4) if total_sigs else 0.0
+        result["fixed_bugs"] = fixed_labels
+
     return result
 
 
@@ -523,9 +695,10 @@ Training Mode:
   continuous reward signals instead of sparse step-function rewards.
 
   Modes:
-    linear    - Direct 1:1 mapping (reward = pass_rate)
-    sublinear - Rewards early progress more (reward = pass_rate^0.7)
-    smooth    - S-curve with smooth endpoints (Hermite interpolation)
+    linear     - Direct 1:1 mapping (reward = pass_rate)
+    sublinear  - Rewards early progress more (reward = pass_rate^0.7)
+    smooth     - S-curve with smooth endpoints (Hermite interpolation)
+    curriculum - Blended: 0.6*(bugs_fixed/total) + 0.4*pass_rate
 
 Incremental Rewards:
   Use --prev-passed to track progress between steps. This adds bonuses for

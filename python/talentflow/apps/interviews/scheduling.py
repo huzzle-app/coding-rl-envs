@@ -276,3 +276,17 @@ def check_availability_for_reschedule(
         'requested_time': new_time,
         'duration_minutes': duration,
     }
+
+
+def find_available_slots(
+    user_ids: List[int],
+    start_date: datetime,
+    end_date: datetime,
+) -> List[dict]:
+    """Find available interview slots for given users within a date range."""
+    users = User.objects.filter(id__in=user_ids)
+    all_slots = []
+    for user in users:
+        slots = get_interviewer_availability(user, start_date, end_date)
+        all_slots.extend(slots)
+    return all_slots

@@ -796,3 +796,111 @@ class TestEventReplayFromOffset:
 
         assert partial_balance == balance, \
             "Snapshot + partial replay should equal full replay"
+
+
+# ===================================================================
+# Source-code-verifying tests for event pipeline bugs
+# ===================================================================
+
+
+class TestBaseEventTimezone:
+    """Tests that verify BaseEvent uses timezone-aware timestamps (BUG B8)."""
+
+    def test_base_event_timestamp_is_timezone_aware(self):
+        """BaseEvent.timestamp default factory must produce timezone-aware datetimes."""
+        import inspect
+        from shared.events.base import BaseEvent
+        src = inspect.getsource(BaseEvent)
+        # The timestamp field should use timezone.utc, not bare datetime.now
+        assert "timezone.utc" in src or "utcnow" in src or "tz=" in src, \
+            "BaseEvent timestamp default_factory should use timezone-aware datetime"
+
+    def test_base_event_instance_timestamp_has_tzinfo(self):
+        """A freshly created BaseEvent must have a timezone-aware timestamp."""
+        from shared.events.base import BaseEvent
+        event = BaseEvent(
+            event_type="test_event",
+            aggregate_id="agg-1",
+            aggregate_type="test",
+        )
+        assert event.timestamp.tzinfo is not None, \
+            "BaseEvent timestamp must have tzinfo set (timezone-aware)"
+
+
+class TestEventEnvelopeTraceHeaders:
+    """Tests that EventEnvelope includes trace context in headers (BUG J1)."""
+
+    def test_envelope_headers_include_trace_context(self):
+        """EventEnvelope should include trace-id and span-id in default headers."""
+        import inspect
+        from shared.events.base import EventEnvelope
+        src = inspect.getsource(EventEnvelope)
+        # Headers should include trace context by default
+        has_trace = ("trace" in src.lower() and "header" in src.lower()) or \
+                    "X-Trace" in src or "trace_id" in src
+        assert has_trace, \
+            "EventEnvelope should include trace context in headers"
+
+
+class TestEventSerializationBugs:
+    """Tests that verify event serialization handles Decimal, pickle, and schema evolution."""
+
+    def test_event_encoder_preserves_decimal_precision(self):
+        """EventEncoder must not convert Decimal to float (BUG F1)."""
+        import inspect
+        from shared.utils.serialization import EventEncoder
+        src = inspect.getsource(EventEncoder.default)
+        # Should NOT use float(obj) for Decimal - loses precision
+        assert "float(obj)" not in src, \
+            "EventEncoder should not convert Decimal to float (causes precision loss)"
+
+    def test_serialize_event_rejects_pickle_format(self):
+        """serialize_event must not support insecure pickle format (BUG I3)."""
+        import inspect
+        from shared.utils.serialization import serialize_event
+        src = inspect.getsource(serialize_event)
+        assert "pickle" not in src, \
+            "serialize_event should not support insecure pickle format"
+
+    def test_deserialize_event_rejects_pickle_format(self):
+        """deserialize_event must not support insecure pickle format (BUG I3)."""
+        import inspect
+        from shared.utils.serialization import deserialize_event
+        src = inspect.getsource(deserialize_event)
+        assert "pickle" not in src, \
+            "deserialize_event should not support insecure pickle format"
+
+    def test_deserialize_handles_schema_evolution(self):
+        """deserialize_event must handle version differences in messages (BUG B5)."""
+        import inspect
+        from shared.utils.serialization import deserialize_event
+        src = inspect.getsource(deserialize_event)
+        # Must handle different schema versions (migrate, transform, convert)
+        has_version_handling = ("version" in src and
+                               ("migrat" in src.lower() or "transform" in src.lower() or
+                                "convert" in src.lower() or "upgrade" in src.lower() or
+                                "schema" in src.lower()))
+        assert has_version_handling, \
+            "deserialize_event must handle schema version evolution"
+
+    def test_decimal_serialization_roundtrip_precision(self):
+        """Decimal values must survive serialization roundtrip without precision loss."""
+        from decimal import Decimal
+        from shared.utils.serialization import EventEncoder
+        import json
+        value = Decimal("0.12345678901234567890")
+        encoded = json.dumps({"price": value}, cls=EventEncoder)
+        decoded = json.loads(encoded)
+        # If converted to float, precision is lost
+        restored = Decimal(str(decoded["price"]))
+        assert restored == value, \
+            f"Decimal precision lost in roundtrip: {value} != {restored}"
+
+    def test_serialization_version_mismatch_detected(self):
+        """Serialization should include version and detect mismatches (BUG C6)."""
+        import inspect
+        from shared.utils.serialization import serialize_event
+        src = inspect.getsource(serialize_event)
+        # Version field should be consistent
+        assert '"version"' in src or "'version'" in src, \
+            "serialize_event should include version in output"

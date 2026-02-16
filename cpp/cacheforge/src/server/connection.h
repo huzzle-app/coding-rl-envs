@@ -1,8 +1,5 @@
 #pragma once
 
-// Both files define CACHEFORGE_CONFIG_H, so whichever is included second
-// gets silently skipped, leading to missing type declarations.
-// FIX: Change this to CACHEFORGE_CONNECTION_H
 #ifndef CACHEFORGE_CONFIG_H
 #define CACHEFORGE_CONFIG_H
 
@@ -26,17 +23,11 @@ public:
     bool is_active() const { return active_.load(); }
 
     
-    // via the reply_queue_ lambda captures. When a connection is closed,
-    // the shared_ptr prevent the destructor from ever running.
-    // FIX: Use weak_from_this() in lambda captures instead of shared_from_this()
     void enqueue_reply(const std::string& reply);
 
     
-    // causes double-delete when unique_ptr destructor also deletes
-    // FIX: Use .release() instead of .get() if transferring ownership,
-    // or don't delete the raw pointer at all
     void set_buffer(std::unique_ptr<char[]> buf, size_t size);
-    char* get_buffer_raw();  // returns .get() - caller must NOT delete
+    char* get_buffer_raw();
 
 private:
     boost::asio::ip::tcp::socket socket_;

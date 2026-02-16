@@ -11,6 +11,9 @@ import java.util.UUID;
  * billing charges, compliance violations, etc.
  *
  * Implemented as a Java 21 record for immutability and compact syntax.
+ *
+ * Bugs: K1
+ * Category: Templates/Modern Java (record semantics)
  */
 public record EventRecord(
     UUID eventId,
@@ -21,19 +24,11 @@ public record EventRecord(
     int version,
     String source
 ) {
-    
-    // Java records auto-generate equals/hashCode using component values.
-    // For String fields this works correctly, but the byte[] overload
-    // constructor below stores payload as a String via new String(bytes).
-    // If this record ever changes payload to byte[], the auto-generated
-    // equals() would use == reference comparison (not Arrays.equals()),
-    // causing two records with identical byte content to be unequal.
-    // This is a latent design issue - any future refactoring to byte[]
-    // would silently break event deduplication and replay logic.
+    // Bug K1: If payload field ever changes from String to byte[], the auto-generated
+    // equals/hashCode would use == reference comparison instead of Arrays.equals(),
+    // silently breaking event deduplication and replay logic. This is a latent
+    // design issue with Java records and array-type fields.
     // Category: Templates/Modern Java (record semantics)
-    // Fix: If payload becomes byte[], override equals/hashCode to use
-    //      Arrays.equals()/Arrays.hashCode() for the byte[] field, or
-    //      wrap byte[] in a ByteBuffer or custom value type.
 
     /**
      * Compact canonical constructor with validation.

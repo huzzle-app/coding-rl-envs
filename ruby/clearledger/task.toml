@@ -4,8 +4,9 @@ version = "1.0"
 name = "clearledger"
 description = "Debug a Ruby global clearing and settlement platform with services"
 difficulty = "hard"
+tier = "ultra-principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "feature", "refactor", "optimize", "api", "migration", "greenfield"]
 language = "ruby"
 
 [agent]

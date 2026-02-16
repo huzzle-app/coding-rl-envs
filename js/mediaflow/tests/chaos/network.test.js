@@ -1,193 +1,295 @@
 /**
  * Network Chaos Tests
+ *
+ * Tests CircuitBreaker and ServiceClient behavior under failure conditions.
+ * Exercises bugs C1 (off-by-one threshold) and C2 (constant retry delay).
  */
+
+const { CircuitBreaker, ServiceClient, RequestCoalescer } = require('../../shared/clients');
 
 describe('Network Partitions', () => {
   describe('Service Isolation', () => {
-    it('should handle auth service unavailable', async () => {
-      const authAvailable = false;
+    it('should open circuit breaker at failure threshold', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
 
-      // Gateway should return 503 or cached response
-      const response = { status: authAvailable ? 200 : 503 };
-      expect([200, 503]).toContain(response.status);
-    });
-
-    it('should handle database unreachable', async () => {
-      const dbConnected = false;
-
-      // Service should fail gracefully
-      const response = { status: dbConnected ? 200 : 503 };
-      expect(response.status).toBe(503);
-    });
-
-    it('should handle cache unavailable', async () => {
-      const cacheAvailable = false;
-
-      // Should fall back to database
-      const fallbackToDb = !cacheAvailable;
-      expect(fallbackToDb).toBe(true);
-    });
-
-    it('should handle message queue unavailable', async () => {
-      const mqAvailable = false;
-
-      // Should queue messages locally or fail gracefully
-      const localQueue = [];
-      if (!mqAvailable) {
-        localQueue.push({ event: 'test' });
+      for (let i = 0; i < 3; i++) {
+        try {
+          await breaker.execute(() => { throw new Error('fail'); });
+        } catch (e) { /* expected */ }
       }
-      expect(localQueue.length).toBeGreaterThan(0);
+
+      // BUG C1: uses > instead of >=, so state stays 'closed' after exactly 3 failures
+      expect(breaker.getState()).toBe('open');
+    });
+
+    it('should reject requests when circuit is open', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 1 });
+
+      try {
+        await breaker.execute(() => { throw new Error('fail'); });
+      } catch (e) { /* expected */ }
+
+      // After 1 failure with threshold 1, should be open (BUG C1: needs >1 failures)
+      try {
+        await breaker.execute(() => Promise.resolve('ok'));
+        // If circuit opened, this should not reach here
+      } catch (e) {
+        expect(e.message).toBe('Circuit breaker is open');
+      }
+    });
+
+    it('should open circuit breaker with threshold 5', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 5 });
+
+      for (let i = 0; i < 5; i++) {
+        try {
+          await breaker.execute(() => { throw new Error('fail'); });
+        } catch (e) { /* expected */ }
+      }
+
+      // BUG C1: with >, 5 failures doesn't open (needs 6)
+      expect(breaker.getState()).toBe('open');
+    });
+
+    it('should reset failure count on success', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
+
+      // 2 failures
+      for (let i = 0; i < 2; i++) {
+        try {
+          await breaker.execute(() => { throw new Error('fail'); });
+        } catch (e) { /* expected */ }
+      }
+
+      // 1 success should reset count
+      await breaker.execute(() => Promise.resolve('ok'));
+
+      // 2 more failures should not open circuit (count reset)
+      for (let i = 0; i < 2; i++) {
+        try {
+          await breaker.execute(() => { throw new Error('fail'); });
+        } catch (e) { /* expected */ }
+      }
+
+      expect(breaker.getState()).toBe('closed');
     });
   });
 
   describe('Partial Failures', () => {
-    it('should handle intermittent failures', async () => {
-      let failures = 0;
-      const maxRetries = 3;
+    it('should transition to half-open after reset timeout', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 1, resetTimeout: 100 });
 
-      const makeRequest = () => {
-        if (Math.random() < 0.5) {
-          failures++;
-          throw new Error('Network error');
-        }
-        return { success: true };
-      };
+      // Trip the breaker (BUG C1: needs >1 fail with threshold 1)
+      try {
+        await breaker.execute(() => { throw new Error('fail'); });
+      } catch (e) { /* expected */ }
+      try {
+        await breaker.execute(() => { throw new Error('fail'); });
+      } catch (e) { /* expected */ }
 
-      let result;
-      for (let i = 0; i < maxRetries; i++) {
-        try {
-          result = makeRequest();
-          break;
-        } catch (e) {
-          continue;
-        }
-      }
+      // Force open state for test
+      breaker.state = 'open';
+      breaker.lastFailureTime = Date.now() - 200; // past reset timeout
 
-      expect(failures).toBeLessThanOrEqual(maxRetries);
+      // Next call should transition to half-open
+      const result = await breaker.execute(() => Promise.resolve('recovered'));
+      expect(breaker.getState()).toBe('closed'); // success in half-open -> closed
     });
 
-    it('should handle slow responses', async () => {
-      const timeout = 5000;
-      const responseTime = 3000;
+    it('should limit requests in half-open state', async () => {
+      const breaker = new CircuitBreaker({
+        failureThreshold: 1,
+        maxHalfOpenRequests: 2
+      });
 
-      const isTimeout = responseTime > timeout;
-      expect(isTimeout).toBe(false);
+      breaker.state = 'half-open';
+      breaker.halfOpenRequests = 0;
+
+      // First two should succeed
+      await breaker.execute(() => Promise.resolve('ok'));
+      // After success in half-open, state goes to closed
+      expect(breaker.getState()).toBe('closed');
     });
 
-    it('should handle connection resets', async () => {
-      const connectionReset = true;
+    it('should re-open circuit on failure in half-open', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 1 });
 
-      // Should retry on connection reset
-      const shouldRetry = connectionReset;
-      expect(shouldRetry).toBe(true);
+      breaker.state = 'half-open';
+      breaker.halfOpenRequests = 0;
+
+      try {
+        await breaker.execute(() => { throw new Error('still failing'); });
+      } catch (e) { /* expected */ }
+
+      // Failure in half-open should trigger _onFailure, incrementing count
+      expect(breaker.failureCount).toBeGreaterThan(0);
     });
   });
 
   describe('DNS Failures', () => {
-    it('should handle DNS timeout', async () => {
-      const dnsResolved = false;
+    it('should use exponential backoff on retry', async () => {
+      const delays = [];
+      const client = new ServiceClient('test-service', {
+        baseUrl: 'http://localhost:9999',
+        maxRetries: 3,
+        retryDelay: 100,
+      });
 
-      // Should use cached DNS or fail
-      const useCachedDns = !dnsResolved;
-      expect(useCachedDns).toBe(true);
+      // Override _delay to capture actual delays
+      client._delay = (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      };
+
+      // Override circuitBreaker to not interfere
+      client.circuitBreaker.execute = (fn) => fn();
+
+      // Mock axios to always fail
+      jest.doMock('axios', () => jest.fn().mockRejectedValue(new Error('ENOTFOUND')));
+
+      try {
+        await client.request('GET', '/test');
+      } catch (e) { /* expected */ }
+
+      // BUG C2: All delays should be different (exponential), but are constant
+      if (delays.length > 1) {
+        expect(delays[1]).toBeGreaterThan(delays[0]);
+      }
     });
 
-    it('should handle DNS NXDOMAIN', async () => {
-      const serviceExists = false;
+    it('should increase delay between retries', async () => {
+      const delays = [];
+      const client = new ServiceClient('test-service', {
+        baseUrl: 'http://localhost:9999',
+        maxRetries: 4,
+        retryDelay: 50,
+      });
 
-      const response = { status: serviceExists ? 200 : 503 };
-      expect(response.status).toBe(503);
+      client._delay = (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      };
+      client.circuitBreaker.execute = (fn) => fn();
+      jest.doMock('axios', () => jest.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+
+      try {
+        await client.request('GET', '/test');
+      } catch (e) { /* expected */ }
+
+      // BUG C2: Delays should increase, but they're all the same constant value
+      const uniqueDelays = new Set(delays);
+      expect(uniqueDelays.size).toBeGreaterThan(1);
     });
   });
 });
 
 describe('Latency Injection', () => {
   describe('Slow Services', () => {
-    it('should timeout slow auth', async () => {
-      const authLatency = 10000;
-      const timeout = 5000;
+    it('should coalesce concurrent identical requests', async () => {
+      const coalescer = new RequestCoalescer();
+      let callCount = 0;
 
-      const timedOut = authLatency > timeout;
-      expect(timedOut).toBe(true);
-    });
-
-    it('should timeout slow database', async () => {
-      const dbLatency = 30000;
-      const timeout = 10000;
-
-      const timedOut = dbLatency > timeout;
-      expect(timedOut).toBe(true);
-    });
-
-    it('should handle cascading latency', async () => {
-      const latencies = {
-        gateway: 100,
-        auth: 200,
-        users: 300,
-        database: 500,
+      const fn = () => {
+        callCount++;
+        return new Promise(resolve => setTimeout(() => resolve('result'), 50));
       };
 
-      const totalLatency = Object.values(latencies).reduce((a, b) => a + b, 0);
-      expect(totalLatency).toBe(1100);
+      const [r1, r2, r3] = await Promise.all([
+        coalescer.coalesce('key1', fn),
+        coalescer.coalesce('key1', fn),
+        coalescer.coalesce('key1', fn),
+      ]);
+
+      expect(r1).toBe('result');
+      expect(r2).toBe('result');
+      expect(r3).toBe('result');
+      // All three should share the same promise, so fn called once
+      expect(callCount).toBe(1);
+    });
+
+    it('should not coalesce different keys', async () => {
+      const coalescer = new RequestCoalescer();
+      let callCount = 0;
+
+      const fn = () => {
+        callCount++;
+        return Promise.resolve('result');
+      };
+
+      await Promise.all([
+        coalescer.coalesce('key1', fn),
+        coalescer.coalesce('key2', fn),
+      ]);
+
+      expect(callCount).toBe(2);
     });
   });
 
   describe('Jitter', () => {
-    it('should handle variable latency', async () => {
-      const latencies = [];
-      for (let i = 0; i < 10; i++) {
-        latencies.push(100 + Math.random() * 200);
-      }
+    it('should clean up pending after resolution', async () => {
+      const coalescer = new RequestCoalescer();
 
-      const min = Math.min(...latencies);
-      const max = Math.max(...latencies);
-      expect(max - min).toBeGreaterThan(0);
+      await coalescer.coalesce('key1', () => Promise.resolve('done'));
+
+      // After resolution, pending map should be empty
+      expect(coalescer.pending.size).toBe(0);
     });
   });
 });
 
 describe('Bandwidth Throttling', () => {
   describe('Slow Connections', () => {
-    it('should handle slow upload', async () => {
-      const uploadSize = 100 * 1024 * 1024; // 100MB
-      const bandwidth = 100 * 1024; // 100KB/s
-      const expectedTime = uploadSize / bandwidth;
+    it('should propagate errors through coalescer', async () => {
+      const coalescer = new RequestCoalescer();
 
-      expect(expectedTime).toBeGreaterThan(1000);
+      const results = await Promise.allSettled([
+        coalescer.coalesce('error-key', () => Promise.reject(new Error('network error'))),
+        coalescer.coalesce('error-key', () => Promise.reject(new Error('network error'))),
+      ]);
+
+      // Both should receive the same error
+      expect(results[0].status).toBe('rejected');
+      expect(results[1].status).toBe('rejected');
     });
 
-    it('should handle slow download', async () => {
-      const downloadSize = 50 * 1024 * 1024; // 50MB
-      const bandwidth = 50 * 1024; // 50KB/s
-      const expectedTime = downloadSize / bandwidth;
+    it('should allow retry after failed coalesced request', async () => {
+      const coalescer = new RequestCoalescer();
 
-      expect(expectedTime).toBeGreaterThan(1000);
+      // First attempt fails
+      try {
+        await coalescer.coalesce('retry-key', () => Promise.reject(new Error('fail')));
+      } catch (e) { /* expected */ }
+
+      // After failure, key should be cleared
+      expect(coalescer.pending.has('retry-key')).toBe(false);
+
+      // Second attempt should work
+      const result = await coalescer.coalesce('retry-key', () => Promise.resolve('success'));
+      expect(result).toBe('success');
     });
   });
 
   describe('Packet Loss', () => {
-    it('should handle packet loss', async () => {
-      const packetLoss = 0.1; // 10%
-      const packets = 100;
-      const delivered = packets * (1 - packetLoss);
+    it('should expose circuit breaker state via getState', () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 5 });
+      expect(breaker.getState()).toBe('closed');
 
-      expect(delivered).toBe(90);
+      breaker.state = 'open';
+      expect(breaker.getState()).toBe('open');
     });
 
-    it('should retry on packet loss', async () => {
-      const maxRetries = 3;
-      let attempts = 0;
+    it('should reset circuit breaker completely', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 2 });
 
-      const sendWithRetry = () => {
-        attempts++;
-        if (Math.random() < 0.1 && attempts < maxRetries) {
-          return sendWithRetry();
-        }
-        return { sent: true };
-      };
+      try {
+        await breaker.execute(() => { throw new Error('fail'); });
+      } catch (e) { /* expected */ }
 
-      const result = sendWithRetry();
-      expect(result.sent).toBe(true);
+      expect(breaker.failureCount).toBe(1);
+      breaker.reset();
+      expect(breaker.failureCount).toBe(0);
+      expect(breaker.getState()).toBe('closed');
+      expect(breaker.lastFailureTime).toBeNull();
     });
   });
 });

@@ -4,6 +4,7 @@ version = "1.0"
 name = "aerolith"
 description = "Debug a rust ultra-principal satellite constellation control platform"
 difficulty = "hard"
+tier = "ultra-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "rust"

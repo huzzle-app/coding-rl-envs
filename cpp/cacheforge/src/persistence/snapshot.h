@@ -23,14 +23,9 @@ public:
     explicit SnapshotManager(const std::string& snapshot_dir);
     ~SnapshotManager();
 
-    
-    // and if an exception is thrown before the pointer is stored in a smart
-    // pointer, the memory is leaked.
-    // FIX: Use std::make_unique<SnapshotWriter>(...) directly
     bool save_snapshot(const std::vector<SnapshotEntry>& entries);
     bool load_snapshot(std::vector<SnapshotEntry>& entries);
 
-    
     void add_entry(const SnapshotEntry& entry);
 
     std::string latest_snapshot_path() const;

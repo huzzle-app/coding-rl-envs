@@ -5,14 +5,11 @@
 namespace cacheforge {
 
 
-// server.cpp's file-scope initializer, but cross-TU static init order is undefined.
-// FIX: Remove this global and use Meyers' singleton in get_config() instead:
-//   Config& get_config() { static Config cfg = Config::from_env(); return cfg; }
+// Global instance used by get_config() and other translation units
 Config CONFIG_INSTANCE;
 
 Config& get_config() {
     
-    // FIX: Use function-local static: static Config cfg = Config::from_env(); return cfg;
     return CONFIG_INSTANCE;
 }
 
@@ -24,8 +21,6 @@ Config Config::from_env() {
     }
 
     
-    // (e.g., "abc" or empty string ""). No try-catch here means unhandled exception.
-    // FIX: Wrap in try { cfg.port = std::stoi(port_str); } catch (...) { /* keep default */ }
     if (const char* port = std::getenv("CACHEFORGE_PORT")) {
         cfg.port = static_cast<uint16_t>(std::stoi(port));
     }

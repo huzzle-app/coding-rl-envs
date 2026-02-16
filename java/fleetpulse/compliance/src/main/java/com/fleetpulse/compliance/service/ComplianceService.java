@@ -15,12 +15,8 @@ import java.util.List;
  * Service enforcing FMCSA Hours of Service regulations, calculating
  * compliance rates, managing driver bookings, and computing ETAs.
  *
- * Contains intentional bugs:
- *   F9  - Duration overflow (BigDecimal to int loses decimal precision)
- *   F10 - Rate calculation precision (integer division truncates to zero)
- *   G5  - Booking race condition (check-then-act without synchronization)
- *   G6  - ETA calculation timezone error (LocalDateTime has no timezone)
- *   K4  - Virtual thread pinning on synchronized (blocks carrier thread)
+ * Bugs: F9, F10, G5, G6, K4
+ * Categories: Precision/Arithmetic, Concurrency, Timezone, Templates
  */
 @Service
 public class ComplianceService {
@@ -37,14 +33,9 @@ public class ComplianceService {
      * @param weekLogs the driver's logs for the current week
      * @return remaining hours as an integer
      */
-    
-    // BigDecimal.intValue() truncates the decimal portion without rounding.
-    // A driver with 52.75 hours driven has 7.25 remaining hours, but intValue()
-    // returns 7, losing 15 minutes of allowed driving time. Worse, if remaining
-    // is negative (driver over limit), large negative values can overflow int range.
-    // Fix: Use proper rounding and check for overflow:
-    //   return remaining.setScale(0, RoundingMode.FLOOR).intValueExact();
-    //   Or better, return BigDecimal to preserve precision.
+    // Bug F9: BigDecimal.intValue() truncates the decimal portion without rounding,
+    // losing fractional driving hours.
+    // Category: Precision/Arithmetic
     public int calculateRemainingDrivingHours(List<DriverLog> weekLogs) {
         BigDecimal totalDriving = weekLogs.stream()
             .map(DriverLog::getDrivingHours)
@@ -52,8 +43,6 @@ public class ComplianceService {
 
         BigDecimal remaining = MAX_WEEKLY_HOURS.subtract(totalDriving);
 
-        
-        // e.g., 7.25 remaining hours becomes 7, losing 15 minutes
         return remaining.intValue();
     }
 
@@ -64,17 +53,10 @@ public class ComplianceService {
      * @param totalDays     total days in the evaluation period
      * @return compliance rate as a percentage (0-100)
      */
-    
-    // Java integer division truncates toward zero. When compliantDays < totalDays,
-    // the division yields 0 (e.g., 9/10 = 0 in integer math). Multiplying 0 by
-    // 100.0 still gives 0.0, so the compliance rate is always 0% unless the driver
-    // is 100% compliant.
-    // Fix: Cast to double before dividing:
-    //   double rate = (double) compliantDays / totalDays;
-    //   return rate * 100.0;
+    // Bug F10: Integer division truncates toward zero, so the rate is always 0%
+    // unless the driver is 100% compliant.
+    // Category: Precision/Arithmetic
     public double calculateComplianceRate(int compliantDays, int totalDays) {
-        
-        // e.g., 9 / 10 = 0 in integer arithmetic, not 0.9
         double rate = compliantDays / totalDays;
         return rate * 100.0;
     }
@@ -88,25 +70,15 @@ public class ComplianceService {
      * @param existingLogs the driver's current log entries (checked for overlap)
      * @return true if the driver was booked, false if unavailable
      */
-    
-    // Two dispatchers calling bookDriver() concurrently can both see the driver
-    // as available (the noneMatch check passes for both), and both proceed to
-    // add a booking. This results in double-booking the same driver for
-    // overlapping time slots.
-    // Fix: Use optimistic locking with @Version, or a database-level constraint
-    //       (UNIQUE on driver_id + time range), or synchronized/ReentrantLock:
-    //   Use SELECT ... FOR UPDATE in a transaction, or
-    //   Add a unique constraint and handle ConstraintViolationException
+    // Bug G5: Check-then-act race condition allows double-booking when two
+    // dispatchers call bookDriver() concurrently.
+    // Category: Concurrency
     public boolean bookDriver(Long driverId, LocalDateTime start, LocalDateTime end,
                                List<DriverLog> existingLogs) {
-        
-        // between checking availability and creating the booking,
-        // another thread could book the same driver for the same slot
         boolean available = existingLogs.stream()
             .noneMatch(driverLog -> isOverlapping(driverLog, start, end));
 
         if (available) {
-            
             DriverLog newLog = new DriverLog();
             newLog.setDriverId(driverId);
             newLog.setLogDate(start.toLocalDate());
@@ -125,20 +97,10 @@ public class ComplianceService {
      * @param timezone        the departure timezone identifier (e.g., "America/New_York")
      * @return the estimated arrival time (timezone-naive, possibly incorrect)
      */
-    
-    // departureTime is a LocalDateTime which carries no timezone information.
-    // Simply adding minutes to it ignores timezone differences between departure
-    // and arrival locations, DST transitions, and UTC offset changes. A 3-hour
-    // flight from New York to Los Angeles would show an arrival 3 hours after
-    // departure in NYC time, but the actual local arrival time should account
-    // for the 3-hour timezone difference.
-    // Fix: Use ZonedDateTime consistently:
-    //   ZonedDateTime departure = departureTime.atZone(ZoneId.of(timezone));
-    //   return departure.plusMinutes(durationMinutes).toLocalDateTime();
+    // Bug G6: LocalDateTime carries no timezone information. Adding minutes
+    // ignores timezone differences between departure and arrival locations.
+    // Category: Timezone
     public LocalDateTime calculateETA(LocalDateTime departureTime, int durationMinutes, String timezone) {
-        
-        // Adding duration without timezone conversion gives wrong result
-        // when departure and arrival are in different timezones
         return departureTime.plusMinutes(durationMinutes);
     }
 
@@ -149,22 +111,10 @@ public class ComplianceService {
      * @param logs     the driver's logs to check
      * @return list of violation description strings
      */
-    
-    // When this method is called from a virtual thread (Project Loom), the
-    // synchronized keyword pins the virtual thread to its carrier platform thread.
-    // Since the method body performs blocking I/O (Thread.sleep simulating DB access),
-    // the carrier thread is blocked and cannot run other virtual threads. Under load,
-    // this exhausts the carrier thread pool and defeats the purpose of virtual threads.
-    // Fix: Replace synchronized with ReentrantLock which supports virtual thread unmounting:
-    //   private final ReentrantLock complianceLock = new ReentrantLock();
-    //   public List<String> checkComplianceViolations(...) {
-    //       complianceLock.lock();
-    //       try { ... } finally { complianceLock.unlock(); }
-    //   }
+    // Bug K4: When called from a virtual thread, the synchronized keyword pins
+    // the carrier thread for the entire method duration including blocking I/O.
+    // Category: Concurrency/Virtual Threads
     public synchronized List<String> checkComplianceViolations(Long driverId, List<DriverLog> logs) {
-        
-        // If called from a virtual thread, this pins the carrier thread for the
-        // entire duration, including the simulated database I/O below
         List<String> violations = new ArrayList<>();
 
         for (DriverLog driverLog : logs) {

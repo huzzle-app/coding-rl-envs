@@ -299,3 +299,94 @@ describe('ConnectorHealthCheck advanced', () => {
     expect(check.healthyThreshold).toBe(30000);
   });
 });
+
+describe('SchemaEvolutionManager chaining (E2)', () => {
+  test('evolve should chain migrations from v1 to v3 through v2', () => {
+    const { ConnectorSchemaRegistry, SchemaEvolutionManager } = require('../../services/connectors/src/services/framework');
+    const registry = new ConnectorSchemaRegistry();
+    const evo = new SchemaEvolutionManager(registry);
+    evo.registerMigration('events', 1, 2, (r) => ({ ...r, fullName: `${r.firstName} ${r.lastName}`, version: 2 }));
+    evo.registerMigration('events', 2, 3, (r) => ({ ...r, email: r.email?.toLowerCase(), version: 3 }));
+    const result = evo.evolve('events', { firstName: 'John', lastName: 'Doe', email: 'JOHN@TEST.COM' }, 1, 3);
+    expect(result.fullName).toBe('John Doe');
+    expect(result.email).toBe('john@test.com');
+    expect(result.version).toBe(3);
+  });
+
+  test('evolve from same version should return record unchanged', () => {
+    const { ConnectorSchemaRegistry, SchemaEvolutionManager } = require('../../services/connectors/src/services/framework');
+    const registry = new ConnectorSchemaRegistry();
+    const evo = new SchemaEvolutionManager(registry);
+    const record = { name: 'test', value: 42 };
+    const result = evo.evolve('events', record, 1, 1);
+    expect(result).toEqual(record);
+  });
+});
+
+describe('ConnectorPipeline transform fallback (E3)', () => {
+  test('pipeline should not write untransformed data when transform fails', async () => {
+    const { SourceConnector, SinkConnector, ConnectorPipeline } = require('../../services/connectors/src/services/framework');
+    const source = new SourceConnector({});
+    source._fetchRecords = jest.fn().mockResolvedValueOnce([
+      { id: 1, partition: 0, offset: 1, data: 'raw' },
+    ]).mockResolvedValue([]);
+    const sink = new SinkConnector({});
+    const writtenRecords = [];
+    sink._flush = jest.fn().mockImplementation(async function() {
+      writtenRecords.push(...this.pendingWrites.splice(0));
+    });
+    const failingTransform = async () => { throw new Error('transform failed'); };
+    const pipeline = new ConnectorPipeline(source, [failingTransform], sink);
+    pipeline.setErrorHandler(() => {});
+    await pipeline.start();
+    await pipeline.processOnce();
+    // BUG: on transform error, pipeline falls back to writing raw untransformed data
+    expect(writtenRecords.length).toBe(0);
+  });
+});
+
+describe('ConnectorConfigManager reload race (E1)', () => {
+  test('config should never be undefined during reload', async () => {
+    const { ConnectorConfigManager } = require('../../services/connectors/src/services/framework');
+    const mgr = new ConnectorConfigManager();
+    mgr.setConfig('c1', { v: 1 });
+    const reloadPromise = mgr.reloadConfig('c1', { v: 2 });
+    const midReload = mgr.getConfig('c1');
+    await reloadPromise;
+    expect(midReload).toBeDefined();
+  });
+
+  test('concurrent reloads should not expose undefined', async () => {
+    const { ConnectorConfigManager } = require('../../services/connectors/src/services/framework');
+    const mgr = new ConnectorConfigManager();
+    mgr.setConfig('c1', { v: 1 });
+    const snapshots = [];
+    let reading = true;
+    const reader = (async () => {
+      while (reading) {
+        snapshots.push(mgr.getConfig('c1'));
+        await new Promise(r => setTimeout(r, 1));
+      }
+    })();
+    await Promise.all([
+      mgr.reloadConfig('c1', { v: 2 }),
+      mgr.reloadConfig('c1', { v: 3 }),
+    ]);
+    reading = false;
+    await reader;
+    expect(snapshots.filter(c => c === undefined).length).toBe(0);
+  });
+
+  test('reload should preserve config atomically', async () => {
+    const { ConnectorConfigManager } = require('../../services/connectors/src/services/framework');
+    const mgr = new ConnectorConfigManager();
+    mgr.setConfig('c1', { host: 'old', port: 1234 });
+    const reloadPromise = mgr.reloadConfig('c1', { host: 'new', port: 5678 });
+    const snap = mgr.getConfig('c1');
+    await reloadPromise;
+    if (snap) {
+      // Should be either fully old or fully new, not a mix
+      expect(snap.host === 'old' || snap.host === 'new').toBe(true);
+    }
+  });
+});

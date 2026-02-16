@@ -14,9 +14,10 @@ class NotificationsServiceTest < Minitest::Test
     refute MercuryLedger::Services::Notifications.should_throttle?(5, 10, 1)
   end
 
-  def test_format_notification_includes_prefix
-    msg = MercuryLedger::Services::Notifications.format_notification('deploy', 5, 'rollback')
-    assert_includes msg, '[CRITICAL]'
+  def test_format_notification_severity_1_is_info
+    msg = MercuryLedger::Services::Notifications.format_notification('deploy', 1, 'msg')
+    assert_includes msg, '[INFO]',
+      'Severity 1 should format as [INFO], not [UNKNOWN]'
   end
 
   def test_escalation_delay_severity_5_is_zero

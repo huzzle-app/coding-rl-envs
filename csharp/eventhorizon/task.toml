@@ -4,6 +4,7 @@ version = "1.0"
 name = "eventhorizon"
 description = "Debug a C# distributed event ticketing platform with microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "csharp"

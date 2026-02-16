@@ -18,7 +18,6 @@ bool HashTable::set(const std::string& key, Value value) {
         it->second = std::move(value);
     } else {
         
-        // see the updated size immediately
         size_.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -120,10 +119,6 @@ std::optional<Value> HashTable::get_with_probe(const std::string& key) {
         const auto& slot = probe_table_[pos];
 
         
-        // probing. But if a key between our target and this slot was DELETED,
-        // the gap breaks the probe chain. Deleted slots should be treated as
-        // "continue probing" (tombstone), not "stop probing".
-        // FIX: Change condition to: if (!slot.occupied && !slot.deleted) break;
         if (!slot.occupied) break;
 
         if (slot.key == key && !slot.deleted) {
@@ -131,6 +126,24 @@ std::optional<Value> HashTable::get_with_probe(const std::string& key) {
         }
     }
     return std::nullopt;
+}
+
+bool HashTable::remove_with_probe(const std::string& key) {
+    size_t idx = hash_key(key) % probe_capacity_;
+
+    for (size_t i = 0; i < probe_capacity_; ++i) {
+        size_t pos = (idx + i) % probe_capacity_;
+        auto& slot = probe_table_[pos];
+
+        if (!slot.occupied && !slot.deleted) break;
+
+        if (slot.occupied && slot.key == key) {
+            slot.occupied = false;
+            slot.deleted = true;  // mark as tombstone
+            return true;
+        }
+    }
+    return false;
 }
 
 void HashTable::set_eviction_callback(std::function<void(const std::string&)> cb) {

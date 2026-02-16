@@ -7,18 +7,21 @@ namespace HealthLink.Tests.Concurrency;
 public class ValueTaskTests
 {
     [Fact]
-    public async Task test_valuetask_not_double_awaited()
+    public void test_valuetask_not_double_awaited()
     {
-        
-        var service = new CacheService();
-        var result = await service.GetOrCreateAsync("test-key", () => Task.FromResult("test-value"));
-        result.Should().Be("test-value");
+        // Verify that GetOrCreateAsync doesn't await the same ValueTask twice
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "CacheService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Count how many times 'await cachedValue' appears - should be at most 1
+        var matches = System.Text.RegularExpressions.Regex.Matches(source, @"await\s+cachedValue");
+        matches.Count.Should().BeLessOrEqualTo(1,
+            "ValueTask can only be awaited once; double-await causes undefined behavior");
     }
 
     [Fact]
     public async Task test_cache_read_safe()
     {
-        
         var service = new CacheService();
         await service.SetAsync("existing-key", "cached-value");
 

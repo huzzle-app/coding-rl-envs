@@ -43,8 +43,9 @@ class RewardCalculator:
 
     def __init__(self, max_steps: int = 100):
         self.max_steps = max_steps
-        self.pass_thresholds = [0.25, 0.50, 0.75, 0.90, 1.0]
-        self.threshold_rewards = [0.0, 0.15, 0.35, 0.65, 1.0]
+        # 5-threshold sparse reward for Senior tier (step function, matches scoring.py)
+        self.pass_thresholds = [0.50, 0.75, 0.90, 1.0]
+        self.threshold_rewards = [0.15, 0.35, 0.65, 1.0]
 
     def calculate(
         self,
@@ -75,36 +76,24 @@ class RewardCalculator:
 
     def _calculate_sparse_pass_rate(self, results: List[TestResult]) -> float:
         """
-        Calculate sparse pass rate with thresholds.
+        Calculate sparse pass rate with thresholds (step function).
 
-        No reward until 25% pass rate, then step increases.
+        Uses unweighted pass/total ratio to match the Harbor evaluation
+        path (scoring.py / test.sh). No reward until 50% pass rate.
         """
         if not results:
             return 0.0
 
-        total_weight = 0.0
-        weighted_passes = 0.0
+        total = len(results)
+        passed = sum(1 for r in results if r.passed)
 
-        for result in results:
-            weight = CATEGORY_WEIGHTS.get(result.category, 1.0)
-            total_weight += weight
-            if result.passed:
-                weighted_passes += weight
+        pass_rate = passed / total if total > 0 else 0.0
 
-        pass_rate = weighted_passes / total_weight if total_weight > 0 else 0.0
-
-        for i, threshold in enumerate(self.pass_thresholds):
-            if pass_rate < threshold:
-                if i == 0:
-                    return 0.0
-                prev_threshold = self.pass_thresholds[i - 1]
-                prev_reward = self.threshold_rewards[i - 1]
-                curr_reward = self.threshold_rewards[i]
-
-                progress = (pass_rate - prev_threshold) / (threshold - prev_threshold)
-                return prev_reward + progress * (curr_reward - prev_reward)
-
-        return 1.0
+        # Step function: find highest threshold that pass_rate meets
+        for threshold, reward in reversed(list(zip(self.pass_thresholds, self.threshold_rewards))):
+            if pass_rate >= threshold:
+                return reward
+        return 0.0
 
     def _get_details(
         self,

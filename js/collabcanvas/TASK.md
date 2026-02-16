@@ -74,10 +74,10 @@ Test failures indicate issues in core modules. Some infrastructure code may also
 ## Test Categories
 
 | Category | Tests | Weight |
-| Unit | 55 | 1.0x |
-| Integration | 35 | 1.5x |
-| System | 18 | 2.5x |
-| Security | 17 | 2.0x |
+| Unit | 141 | 1.0x |
+| Integration | 38 | 1.5x |
+| System | 36 | 2.5x |
+| Security | 44 | 2.0x |
 
 ## Hints
 
@@ -112,7 +112,7 @@ These scenarios describe **symptoms only** - use them to practice realistic debu
 
 ## Success Criteria
 
-- All 248 tests pass
+- All 259 tests pass
 - Application starts without errors
 - No security vulnerabilities detected
 - WebSocket connections work properly
@@ -121,11 +121,11 @@ These scenarios describe **symptoms only** - use them to practice realistic debu
 
 ```
 Pass Rate → Reward
-< 25% → 0.00
-25-50% → 0.15
-50-75% → 0.35
-75-90% → 0.65
-100% → 1.00
+< 50%  → 0.00
+≥ 50%  → 0.15
+≥ 75%  → 0.35
+≥ 90%  → 0.65
+100%   → 1.00
 ```
 
 Additional bonuses:

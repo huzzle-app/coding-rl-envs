@@ -1,3 +1,3 @@
 #!/bin/bash
-set -euo pipefail
-dotnet test
+echo "Reference solution not yet implemented for AegisCore."
+exit 1

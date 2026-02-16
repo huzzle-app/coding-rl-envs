@@ -130,15 +130,15 @@ Test results are written to Surefire XML reports in each module's `target/surefi
 The environment uses very sparse rewards (Principal difficulty):
 
 ```
-Bug Fix Rate -> Reward
-< 10% -> 0.00
-10-25% -> 0.05
-25-40% -> 0.12
-40-55% -> 0.22
-55-70% -> 0.38
-70-85% -> 0.55
-85-95% -> 0.78
-100% -> 1.00
+Test Pass Rate -> Reward
+< 25%   -> 0.00
+25-39%  -> 0.05
+40-54%  -> 0.12
+55-69%  -> 0.22
+70-84%  -> 0.38
+85-94%  -> 0.55
+95-99%  -> 0.78
+100%    -> 1.00
 ```
 
 Additional bonuses:
@@ -148,31 +148,15 @@ Additional bonuses:
 
 ## Java Patterns to Watch
 
-```java
-// BigDecimal.equals() considers scale (BUG)
-new BigDecimal("1.0").equals(new BigDecimal("1.00")) // false!
-// Fix: use compareTo() == 0
+The codebase uses many Java 21 features and Spring Boot patterns. Bugs exploit subtle
+behavioral differences in these areas:
 
-// @Transactional self-invocation bypasses proxy (BUG)
-public void process() { this.save(); } // @Transactional on save() ignored!
-// Fix: inject self or extract to separate bean
-
-// Virtual thread pinning (BUG)
-synchronized (lock) { socket.read(); } // Pins virtual thread to carrier!
-// Fix: use ReentrantLock instead of synchronized
-
-// ThreadLocal leak in pooled threads (BUG)
-threadLocal.set(context); // Never removed!
-// Fix: always remove in finally block
-
-// Collectors.toMap duplicate key (BUG)
-stream.collect(Collectors.toMap(k, v)); // Throws on duplicate!
-// Fix: provide merge function
-
-// Record with array field (BUG)
-record Job(String id, int[] assignments) {} // equals uses == for arrays!
-// Fix: override equals/hashCode with Arrays.equals/hashCode
-```
+- `BigDecimal` equality semantics
+- Spring AOP proxy invocation rules
+- Virtual thread scheduling constraints
+- `ThreadLocal` lifecycle in thread pools
+- Stream collector edge cases with duplicate keys
+- Record types with reference-type fields
 
 ## Debugging Scenarios
 
@@ -201,10 +185,8 @@ These tasks test different software engineering skills while using the same code
 
 ## Hints
 
-1. **Start with L category** -- setup bugs block services from starting. L1 (circular dependency) must be fixed first.
-2. The numerical chain (F1-F10) is the longest at depth 5. Fix `float`-to-`BigDecimal` conversions first.
-3. Concurrency bugs (A category) are the largest group with issues. Many downstream fixes depend on A1 (ThreadLocal leak).
-5. Use `mvn test -pl <module>` to run targeted tests after each fix instead of the full suite.
-6. Watch for `@Transactional` and `@Async` proxy bypass -- this is one of Spring's most common pitfalls.
-7. Virtual thread issues (A10, K4) require replacing `synchronized` with `ReentrantLock`.
-8. The dependency graph means some bugs are not fixable until prerequisites are resolved. Plan your fix ordering accordingly.
+1. **Start with setup bugs** -- some configuration issues block services from starting. Fix these first to unblock downstream tests.
+2. Some bug categories form dependency chains. Check which tests are blocked before investing time in later-stage fixes.
+3. Concurrency bugs are the largest category. Focus on thread safety patterns.
+4. Use `mvn test -pl <module>` to run targeted tests after each fix instead of the full suite.
+5. The dependency graph means some bugs are not fixable until prerequisites are resolved. Plan your fix ordering accordingly.

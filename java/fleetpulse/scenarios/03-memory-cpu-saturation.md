@@ -183,25 +183,6 @@ Analytics cache hit rate: 12%
 - Push notifications not being delivered
 - Real-time tracking updates laggy (30s+ delay)
 
-## Questions for Investigation
-
-1. Why is the ForkJoinPool starving? Are we nesting parallel streams?
-2. Why are CompletableFutures never completing?
-3. Why is @Async not working for some methods (proxy bypass)?
-4. Why are notifications using String.intern() as a lock?
-5. What's causing the ThreadLocal leak in the gateway?
-6. Why is the analytics cache returning null so often?
-
-## Files to Investigate
-
-Based on the symptoms:
-- `dispatch/src/main/java/com/fleetpulse/dispatch/service/OptimizationService.java`
-- `dispatch/src/main/java/com/fleetpulse/dispatch/service/DispatchService.java`
-- `gateway/src/main/java/com/fleetpulse/gateway/filter/RequestContextFilter.java`
-- `notifications/src/main/java/com/fleetpulse/notifications/service/ChannelManager.java`
-- `analytics/src/main/java/com/fleetpulse/analytics/cache/VehicleStatsCache.java`
-- `tracking/src/main/java/com/fleetpulse/tracking/service/PositionAggregator.java`
-
 ---
 
 **Status**: MITIGATED (memory increased, but root cause unfixed)

@@ -1,3 +1,3 @@
 #!/bin/bash
-set -euo pipefail
-mvn -q test
+echo "Reference solution not yet implemented for NimbusFlow."
+exit 1

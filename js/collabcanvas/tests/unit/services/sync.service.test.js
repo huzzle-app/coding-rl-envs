@@ -10,6 +10,7 @@ describe('SyncService', () => {
   let syncService;
   let mockRedis;
   let mockCrdt;
+  let mockIo;
 
   beforeEach(() => {
     mockRedis = {
@@ -36,7 +37,18 @@ describe('SyncService', () => {
       generateOperationId: jest.fn(() => `op-${Date.now()}`),
     };
 
-    syncService = new SyncService(mockRedis, mockCrdt);
+    mockIo = {
+      to: jest.fn().mockReturnThis(),
+      except: jest.fn().mockReturnThis(),
+      emit: jest.fn(),
+    };
+
+    syncService = new SyncService(mockIo, {});
+    // Inject mocks for testing
+    syncService.redis = mockRedis;
+    syncService.pubClient = mockRedis;
+    syncService.subClient = mockRedis;
+    syncService.crdt = mockCrdt;
   });
 
   afterEach(() => {

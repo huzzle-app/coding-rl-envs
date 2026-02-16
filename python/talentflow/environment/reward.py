@@ -51,8 +51,9 @@ class RewardCalculator:
 
     def __init__(self, max_steps: int = 150):
         self.max_steps = max_steps
-        self.pass_thresholds = [0.25, 0.50, 0.75, 0.90, 1.0]
-        self.threshold_rewards = [0.0, 0.15, 0.35, 0.65, 1.0]
+        # 5-threshold sparse reward for Senior tier (step function, matches scoring.py)
+        self.pass_thresholds = [0.50, 0.75, 0.90, 1.0]
+        self.threshold_rewards = [0.15, 0.35, 0.65, 1.0]
 
     def calculate(
         self,
@@ -108,9 +109,9 @@ class RewardCalculator:
 
     def _calculate_sparse_pass_rate(self, results: List[TestResult]) -> float:
         """
-        Calculate sparse pass rate with thresholds.
+        Calculate sparse pass rate with thresholds (step function).
 
-        No reward until 25% pass rate, then step increases.
+        No reward until 50% pass rate, then step increases.
         """
         if not results:
             return 0.0
@@ -126,18 +127,11 @@ class RewardCalculator:
 
         pass_rate = weighted_passes / total_weight if total_weight > 0 else 0.0
 
-        for i, threshold in enumerate(self.pass_thresholds):
-            if pass_rate < threshold:
-                if i == 0:
-                    return 0.0
-                prev_threshold = self.pass_thresholds[i - 1]
-                prev_reward = self.threshold_rewards[i - 1]
-                curr_reward = self.threshold_rewards[i]
-
-                progress = (pass_rate - prev_threshold) / (threshold - prev_threshold)
-                return prev_reward + progress * (curr_reward - prev_reward)
-
-        return 1.0
+        # Step function: find highest threshold that pass_rate meets
+        for threshold, reward in reversed(list(zip(self.pass_thresholds, self.threshold_rewards))):
+            if pass_rate >= threshold:
+                return reward
+        return 0.0
 
     def _calculate_strict_completion_bonus(self, results: List[TestResult]) -> float:
         """
@@ -170,9 +164,33 @@ class RewardCalculator:
         """
         Calculate bug bonus considering dependencies.
 
-        Returns 0.0 as bug tracking has been removed.
+        A bug only counts toward bonus if its prerequisites are also fixed.
         """
-        return 0.0
+        if not BUG_TEST_MAPPING:
+            return 0.0
+
+        # Build test name -> pass/fail map
+        test_status = {r.name: r.passed for r in results}
+
+        # Determine which bugs are fixed
+        fixed_bugs = set()
+        for bug_id, test_names in BUG_TEST_MAPPING.items():
+            matching = [name for name in test_names if name in test_status]
+            if matching and all(test_status.get(name, False) for name in matching):
+                fixed_bugs.add(bug_id)
+
+        # Only count bugs whose dependencies are also fixed
+        valid_fixes = set()
+        for bug_id in fixed_bugs:
+            deps = BUG_DEPENDENCIES.get(bug_id, [])
+            if all(d in fixed_bugs for d in deps):
+                valid_fixes.add(bug_id)
+
+        total_bugs = len(BUG_TEST_MAPPING)
+        if total_bugs == 0:
+            return 0.0
+
+        return len(valid_fixes) / total_bugs
 
     def _calculate_regression_penalty(
         self,
@@ -335,6 +353,104 @@ def parse_pytest_output(output: str) -> List[TestResult]:
 
     return results
 
-# Legacy stubs - kept for backward compatibility with setup.py imports
-BUG_TEST_MAPPING = {}
-BUG_DEPENDENCIES = {}
+# Bug-to-test mapping for RL training reward tracking
+BUG_TEST_MAPPING = {
+    'a1': ['test_connection_health_check', 'test_connection_max_age_configuration', 'test_parallel_queries_connection_exhaustion', 'test_connection_reuse'],
+    'a2': ['test_prefetch_skills_correctly', 'test_n_plus_one_with_wrong_prefetch', 'test_status_field_should_have_index', 'test_candidate_list_query_count'],
+    'a3': ['test_concurrent_job_applications', 'test_safe_concurrent_applications', 'test_application_race_condition_prevention', 'test_concurrent_application_limit_check', 'test_duplicate_application_prevention'],
+    'b1': ['test_celery_timezone_matches_django', 'test_celery_timezone_setting', 'test_scheduled_task_time', 'test_webhook_timing_accuracy'],
+    'b2': ['test_chord_callback_pattern', 'test_chord_with_ignore_result_fails', 'test_chord_result_collection', 'test_webhook_batch_delivery'],
+    'b3': ['test_cache_error_doesnt_release_connection', 'test_connection_accumulation_on_repeated_operations', 'test_connections_grow_without_bound', 'test_query_cache_no_cleanup', 'test_webhook_retry_mechanism'],
+    'c1': ['test_concurrent_refresh_race_condition', 'test_token_replay_prevention', 'test_revoked_token_reuse_detection', 'test_concurrent_token_refresh', 'test_token_reuse_detection'],
+    'c2': ['test_oauth_state_csrf_attack_scenario', 'test_oauth_callback_without_state_is_vulnerable', 'test_oauth_callback_without_state_rejected', 'test_oauth_callback_with_invalid_state_rejected', 'test_oauth_state_must_be_validated', 'test_oauth_state_required', 'test_oauth_state_single_use'],
+    'd1': ['test_settings_import_order'],
+    'd2': ['test_no_conflicting_packages', 'test_psycopg2_single_version'],
+    'e1': ['test_perfect_skill_match_score', 'test_perfect_match_equals_one', 'test_skill_match_with_no_requirements'],
+    'e2': ['test_slot_availability_timezone', 'test_realtime_dashboard_uses_naive_datetime', 'test_interview_scheduling_timezone_awareness', 'test_interview_slot_timezone_handling'],
+    'f1': ['test_score_update_counter_increment', 'test_concurrent_score_updates', 'test_counter_race_condition'],
+    'f2': ['test_score_with_seven_years_experience', 'test_score_with_eight_skills', 'test_score_consistency_across_values', 'test_report_data_integrity_check'],
+    'f3': ['test_connection_accumulation', 'test_batch_cache_creates_many_connections'],
+    'f4': ['test_permission_check_logic', 'test_role_hierarchy_enforcement', 'test_company_access_verification', 'test_token_action_validation', 'test_impersonation_requires_admin'],
+    'g1': ['test_report_timezone_consistency'],
+    'g2': ['test_strftime_locale_dependency', 'test_export_format_consistency'],
+    'g3': ['test_unicode_candidate_creation_preserved', 'test_unicode_in_notes_preserved', 'test_unicode_name_preservation', 'test_notification_with_unicode_name', 'test_bulk_import_data_normalization'],
+    'g4': ['test_weighted_score_basic', 'test_weighted_score_different_weights', 'test_scores_equal_comparison', 'test_score_delta_calculation', 'test_aggregate_perfect_matches', 'test_normalize_scores', 'test_percentile_rank_calculation'],
+    'h1': ['test_comprehensive_report_deadlock_potential', 'test_lock_order_company_job_candidate', 'test_lock_order_candidate_job'],
+    'h2': ['test_concurrent_deduplication'],
+    'h3': ['test_report_data_consistency', 'test_count_vs_locked_mismatch', 'test_report_caching_efficiency', 'test_generate_and_cache_report'],
+    'i1': ['test_advanced_search_order_by_injection', 'test_order_by_with_union_injection', 'test_order_by_with_subquery_injection', 'test_order_by_time_based_injection', 'test_search_query_sanitization', 'test_sql_characters_sanitized'],
+    'i2': ['test_sync_external_candidates_ssrf', 'test_ssrf_with_file_protocol', 'test_ssrf_url_construction', 'test_external_sync_url_validation'],
+    's5': ['test_circular_import_resolved', 'test_candidates_utils_importable'],
+    's6': ['test_helpers_init_exists', 'test_validators_importable'],
+    's7': ['test_migration_chain_valid', 'test_migration_dependencies_correct'],
+    's8': ['test_debug_env_var_coercion', 'test_debug_false_string_is_false'],
+    's9': ['test_no_conflicting_packages', 'test_psycopg2_single_version'],
+    's10': ['test_settings_module_path_correct', 'test_manage_py_settings_path'],
+}
+
+# Bug dependency chains (prerequisite bugs that must be fixed first)
+BUG_DEPENDENCIES = {
+    's5': [],      # No dependencies - fix first
+    's6': [],      # No dependencies
+    's7': [],      # No dependencies
+    's8': [],      # No dependencies
+    's9': [],      # No dependencies
+    's10': [],     # No dependencies
+    'd1': ['s5'],
+    'd2': ['s9'],
+    'a1': ['s5', 's7'],
+    'a2': ['s5', 's7'],
+    'a3': ['s5', 's7'],
+    'b1': ['s5', 'd1'],
+    'b2': ['s5'],
+    'b3': ['s5'],
+    'c1': ['s5', 's7'],
+    'c2': ['s5', 's7'],
+    'e1': ['s5'],
+    'e2': ['s5', 'b1'],
+    'f1': ['s5'],
+    'f2': ['s5', 'e1'],
+    'f3': ['s5', 'b3'],
+    'f4': ['s5', 'c1'],
+    'g1': ['s5', 'e2'],
+    'g2': ['s5'],
+    'g3': ['s5'],
+    'g4': ['s5', 'e1'],
+    'h1': ['s5', 'a3'],
+    'h2': ['s5', 'a3'],
+    'h3': ['s5', 'a2'],
+    'i1': ['s5'],
+    'i2': ['s5'],
+}
+
+# Bug categories for setup.py
+BUG_CATEGORIES = {
+    'setup': ['s5', 's6', 's7', 's8', 's9', 's10'],
+    'database': ['a1', 'a2', 'a3'],
+    'celery': ['b1', 'b2', 'b3'],
+    'auth': ['c1', 'c2'],
+    'config': ['d1', 'd2'],
+    'logic': ['e1', 'e2'],
+    'heisenbug': ['f1', 'f2', 'f3', 'f4'],
+    'data': ['g1', 'g2', 'g3', 'g4'],
+    'cascading': ['h1', 'h2', 'h3'],
+    'security': ['i1', 'i2'],
+}
+
+
+def validate_test_integrity(test_results: List[TestResult]) -> bool:
+    """
+    Anti-reward-hacking: validate that test names in results
+    correspond to actual test functions in the test files.
+    Returns True if results appear legitimate.
+    """
+    known_test_names = set()
+    for tests in BUG_TEST_MAPPING.values():
+        known_test_names.update(tests)
+
+    result_names = {r.name for r in test_results}
+    # If results contain many unknown test names, flag as suspicious
+    known_overlap = result_names & known_test_names
+    if known_test_names and not known_overlap:
+        return False  # No overlap at all is suspicious
+    return True

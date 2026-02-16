@@ -173,8 +173,23 @@ function replayConverges(eventsA, eventsB) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Async replay with processor — enriches events through an async pipeline
+// ---------------------------------------------------------------------------
+
+async function replayWithProcessor(events, processorFn) {
+  const replayed = replay(events);
+  const results = [];
+  for (const event of replayed) {
+    const processed = processorFn(event);
+    results.push(processed);
+  }
+  return results;
+}
+
 module.exports = {
   replay,
+  replayWithProcessor,
   CheckpointManager,
   CircuitBreaker,
   CB_STATES,

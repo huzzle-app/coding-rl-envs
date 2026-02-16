@@ -81,25 +81,20 @@ describe('Multi-Step Bugs', () => {
     });
 
     test('step 3: recovery from checkpoint should replay entries in LSN order', () => {
-      // This step depends on both step 1 (entries survive truncation)
-      // and step 2 (checkpoint preserves necessary entries)
-
-      const lsns = [];
-      lsns.push(wal.append({ operation: 'insert', data: { id: 1 }, tableName: 'table_a' }));
-      lsns.push(wal.append({ operation: 'insert', data: { id: 1 }, tableName: 'table_b' }));
-      lsns.push(wal.append({ operation: 'update', data: { id: 1, v: 2 }, tableName: 'table_a' }));
-      lsns.push(wal.append({ operation: 'delete', data: { id: 1 }, tableName: 'table_b' }));
-
-      for (const lsn of lsns) {
-        wal.commit(lsn);
+      const walLocal = new WriteAheadLog({ maxEntries: 4 });
+      const lsn1 = walLocal.append({ operation: 'insert', data: { id: 1 }, tableName: 'a' });
+      const lsn2 = walLocal.append({ operation: 'insert', data: { id: 2 }, tableName: 'b' });
+      walLocal.commit(lsn1);
+      // lsn2 is uncommitted
+      // Push past maxEntries with committed entries
+      for (let i = 0; i < 6; i++) {
+        const lsn = walLocal.append({ operation: 'insert', data: { id: `x-${i}` }, tableName: 't' });
+        walLocal.commit(lsn);
       }
-
-      const recovered = wal.recover(0);
-      for (let i = 1; i < recovered.length; i++) {
-        expect(recovered[i].lsn).toBeGreaterThan(recovered[i - 1].lsn);
-      }
-
-      expect(recovered.length).toBe(4);
+      // BUG: truncation at maxEntries drops old uncommitted entries
+      const entry = walLocal.getEntry(lsn2);
+      expect(entry).toBeDefined();
+      expect(entry.committed).toBe(false);
     });
   });
 
@@ -434,8 +429,6 @@ describe('Multi-Step Bugs', () => {
   });
 
   describe('Cross-service: ingestion -> aggregation -> query materialization', () => {
-    // RED HERRING: This end-to-end test passes because it uses simple sum aggregation
-    // (which works correctly) rather than running average (which is buggy)
     test('sum aggregation across full pipeline should be exact', async () => {
       const publishedData = [];
       const mockEventBus = {
@@ -448,22 +441,26 @@ describe('Multi-Step Bugs', () => {
       const ingestService = new IngestService(mockEventBus, { batchSize: 100 });
       const agg = new ContinuousAggregation();
 
-      agg.defineMaterialization('byte_sum', {
-        groupBy: ['tenant'],
-        aggregations: [{ type: 'sum', field: 'bytes' }],
+      agg.defineMaterialization('cpu_avg', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'cpu' }],
       });
 
+      // Ingest 4 records
       await ingestService.ingest('metrics', [
-        { id: 'r1', tenant: 'a', bytes: 100 },
-        { id: 'r2', tenant: 'a', bytes: 200 },
-        { id: 'r3', tenant: 'a', bytes: 300 },
+        { id: 'r1', host: 'server-1', cpu: 10 },
+        { id: 'r2', host: 'server-1', cpu: 20 },
+        { id: 'r3', host: 'server-1', cpu: 30 },
+        { id: 'r4', host: 'server-1', cpu: 40 },
       ]);
       await ingestService.drain();
 
-      await agg.update('byte_sum', publishedData);
+      await agg.update('cpu_avg', publishedData);
 
-      const state = agg.getState('byte_sum');
-      expect(state.state['a'].bytes_sum).toBe(600);
+      const state = agg.getState('cpu_avg');
+      // True average = (10+20+30+40)/4 = 25
+      // BUG: formula (prevAvg+value)/2 gives wrong result
+      expect(state.state['server-1'].cpu_avg).toBeCloseTo(25, 5);
     });
   });
 });

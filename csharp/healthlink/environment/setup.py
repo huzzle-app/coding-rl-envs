@@ -286,9 +286,7 @@ class HealthLinkEnvironment:
         info = {
             'reward_breakdown': {
                 'test_pass_score': reward_breakdown.test_pass_score,
-                'completion_bonus': reward_breakdown.completion_bonus,
-                'bug_bonus': reward_breakdown.bug_bonus,
-                'efficiency_bonus': reward_breakdown.efficiency_bonus,
+                'total': reward_breakdown.total,
             },
             'details': reward_breakdown.details,
         }
@@ -606,8 +604,8 @@ class HealthLinkEnvironment:
 
     def get_setup_bugs(self) -> Dict[str, str]:
         """Get setup-specific bug IDs."""
-        from .reward import BUG_CATEGORIES
-        return {bug_id: bug_id for bug_id in BUG_CATEGORIES.get('setup_di_config', [])}
+        setup_bugs = ['L1', 'L2', 'L3', 'L4']
+        return {bug_id: bug_id for bug_id in setup_bugs}
 
     def gym_step(self, action: Dict[str, Any]) -> Tuple[Dict, float, bool, bool, Dict]:
         """Gymnasium-compatible step returning (obs, reward, done, truncated, info)."""

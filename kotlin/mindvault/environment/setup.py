@@ -1,6 +1,6 @@
 """
 MindVault RL Environment Setup
-Distributed knowledge management platform - Principal difficulty (75 bugs, 510+ tests)
+Distributed knowledge management platform - Principal difficulty (80 bugs, 536 tests)
 Kotlin 1.9, Ktor 2.3, Exposed ORM, 10 Microservices, Kafka, PostgreSQL, Redis, Consul
 """
 
@@ -28,7 +28,7 @@ class MindVaultEnvironment:
     """
     RL Environment for MindVault - Distributed Knowledge Management Platform.
 
-    Principal difficulty: 75 bugs, 510+ tests
+    Principal difficulty: 80 bugs, 536 tests
     Stack: Kotlin 1.9, Ktor 2.3, Exposed ORM, 10 Microservices,
            Kafka 3.6, PostgreSQL 16, Redis 7, Consul 1.17
 
@@ -190,7 +190,7 @@ class MindVaultEnvironment:
         self.initial_test_results = self._run_tests()
         self.test_results = list(self.initial_test_results)
         return self._get_observation(
-            "Environment reset. MindVault has 75 bugs to fix across 10 microservices."
+            "Environment reset. MindVault has 80 bugs to fix across 10 microservices."
         )
 
     def step(self, action: Dict[str, Any]) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:

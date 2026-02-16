@@ -41,7 +41,7 @@ RSpec.describe FulfillmentService do
       allow(service).to receive(:verify_inventory).and_return({ success: true })
       allow(service).to receive(:process_payment).and_return({ success: false, error: 'declined' })
 
-      expect(service).to receive(:release_inventory).at_least(:once) rescue nil
+      expect(service).to receive(:release_inventory).at_least(:once)
       service.fulfill! rescue nil
     end
 

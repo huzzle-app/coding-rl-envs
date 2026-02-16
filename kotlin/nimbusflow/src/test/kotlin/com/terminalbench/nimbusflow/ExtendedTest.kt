@@ -788,4 +788,343 @@ class ExtendedTest {
         assertFalse(QueueGuard.shouldShed(atEmergencyThreshold - 1, hardLimit, true))
         assertTrue(QueueGuard.shouldShed(atEmergencyThreshold, hardLimit, true))
     }
+
+    // === Anti-Reward-Hacking: varied inputs prevent hardcoding ===
+
+    @Test
+    fun urgencyScoreMultipleInputs() {
+        assertEquals(120, DispatchOrder("d", 3, 30).urgencyScore())
+        assertEquals(50, DispatchOrder("d", 5, 120).urgencyScore())
+        assertEquals(110, DispatchOrder("d", 1, 20).urgencyScore())
+        val s1 = DispatchOrder("a", 5, 15).urgencyScore()
+        val s2 = DispatchOrder("b", 1, 15).urgencyScore()
+        assertTrue(s1 > s2, "higher urgency must produce higher score")
+    }
+
+    @Test
+    fun planDispatchDescendingUrgencyMultiple() {
+        val out1 = Allocator.planDispatch(
+            listOf(DispatchOrder("a", 2, 60), DispatchOrder("b", 5, 60), DispatchOrder("c", 3, 60)), 2
+        )
+        assertEquals(listOf("b", "c"), out1.map { it.id })
+        val out2 = Allocator.planDispatch(
+            listOf(DispatchOrder("x", 1, 30), DispatchOrder("y", 4, 90), DispatchOrder("z", 4, 20)), 2
+        )
+        assertEquals(listOf("z", "y"), out2.map { it.id })
+    }
+
+    @Test
+    fun estimateCostFormulaChecks() {
+        val c1 = Allocator.estimateCost(3, 60, 100.0)
+        val c2 = Allocator.estimateCost(3, 15, 100.0)
+        assertTrue(c2 > c1, "shorter SLA should cost more")
+        val c3 = Allocator.estimateCost(5, 60, 100.0)
+        val c4 = Allocator.estimateCost(1, 60, 100.0)
+        assertTrue(c3 > c4, "higher severity should cost more")
+    }
+
+    @Test
+    fun turnaroundCeilBehavior() {
+        assertEquals(1.0, Allocator.estimateTurnaround(500, false))
+        assertEquals(1.0, Allocator.estimateTurnaround(499, false))
+        assertEquals(2.0, Allocator.estimateTurnaround(501, false))
+        assertEquals(2.0, Allocator.estimateTurnaround(1000, false))
+        assertEquals(3.0, Allocator.estimateTurnaround(1001, false))
+    }
+
+    @Test
+    fun channelScoreInverseLatency() {
+        val s1 = Routing.channelScore(5, 0.9, 3)
+        val s2 = Routing.channelScore(10, 0.9, 3)
+        val s3 = Routing.channelScore(100, 0.9, 3)
+        assertTrue(s1 > s2, "lower latency should have higher score")
+        assertTrue(s2 > s3, "lower latency should have higher score")
+    }
+
+    @Test
+    fun routeCostIncludesPortFee() {
+        assertEquals(250.0, Routing.estimateRouteCost(100.0, 2.0, 50.0))
+        assertEquals(100.0, Routing.estimateRouteCost(50.0, 1.0, 50.0))
+        assertEquals(0.0, Routing.estimateRouteCost(0.0, 2.0, 0.0))
+    }
+
+    @Test
+    fun percentileCalculation() {
+        assertEquals(4, Statistics.percentile(listOf(4, 1, 9, 7), 50))
+        assertEquals(9, Statistics.percentile(listOf(4, 1, 9, 7), 99))
+        assertEquals(1, Statistics.percentile(listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), 10))
+    }
+
+    @Test
+    fun variancePopulationFormula() {
+        val data = listOf(2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0)
+        val v = Statistics.variance(data)
+        assertTrue(abs(v - 4.0) < 0.01, "population variance of test data should be 4.0, got $v")
+        val sd = Statistics.stddev(data)
+        assertTrue(abs(sd - 2.0) < 0.01, "population stddev should be 2.0, got $sd")
+    }
+
+    @Test
+    fun replayKeepsLatestNotOldest() {
+        val r1 = Resilience.replay(listOf(ReplayEvent("x", 1), ReplayEvent("x", 10)))
+        assertEquals(1, r1.size)
+        assertEquals(10, r1[0].sequence)
+        val r2 = Resilience.replay(listOf(ReplayEvent("a", 5), ReplayEvent("a", 3), ReplayEvent("a", 7)))
+        assertEquals(7, r2[0].sequence)
+    }
+
+    @Test
+    fun sanitisePathBackslashTraversal() {
+        val cleaned = Security.sanitisePath("..\\..\\secret.txt")
+        assertFalse(cleaned.contains(".."), "backslash traversal must be sanitised")
+    }
+
+    @Test
+    fun classifySeverityKeywords() {
+        assertEquals(Severity.CRITICAL, Severity.classify("emergency shutdown"))
+        assertEquals(Severity.HIGH, Severity.classify("urgent escalation"))
+        assertEquals(Severity.MEDIUM, Severity.classify("medium priority"))
+        assertEquals(Severity.LOW, Severity.classify("low impact"))
+        assertEquals(Severity.INFO, Severity.classify("routine check"))
+    }
+
+    @Test
+    fun heatmapNegativeCoordsExcluded() {
+        val events = listOf(
+            HeatmapEvent(-5.0, -5.0, 100.0),
+            HeatmapEvent(1.0, 1.0, 3.0)
+        )
+        val cells = HeatmapGenerator.generate(events, 5, 5)
+        val totalWeight = cells.sumOf { it.value }
+        assertEquals(3.0, totalWeight, "negative coord events must not contribute to grid")
+    }
+
+    @Test
+    fun cancelledIsTerminalState() {
+        assertTrue(Workflow.isTerminalState("cancelled"))
+        val engine = WorkflowEngine()
+        engine.register("test-cancel")
+        engine.transition("test-cancel", "cancelled", 100)
+        assertTrue(engine.isTerminal("test-cancel"))
+        assertEquals(0, engine.activeCount)
+    }
+
+    @Test
+    fun departedCannotGoBackToAllocated() {
+        assertFalse(Workflow.canTransition("departed", "allocated"))
+        val transitions = Workflow.allowedTransitions("departed")
+        assertFalse("allocated" in transitions)
+    }
+
+    @Test
+    fun serviceUrlContainsPort() {
+        for (service in ServiceRegistry.all()) {
+            val url = ServiceRegistry.getServiceUrl(service.id)
+            assertNotNull(url)
+            assertTrue(url!!.contains(":${service.port}"),
+                "URL for ${service.id} must include port ${service.port}: $url")
+        }
+    }
+
+    @Test
+    fun tokenExpiryExactBoundary() {
+        val store = TokenStore()
+        store.store("exact", "tok", 0, 100)
+        assertTrue(store.validate("exact", "tok", 99))
+        assertFalse(store.validate("exact", "tok", 100))
+    }
+
+    @Test
+    fun waitTimeIsDivisionNotMultiplication() {
+        assertEquals(5.0, QueueGuard.estimateWaitTime(10, 2.0))
+        assertEquals(10.0, QueueGuard.estimateWaitTime(50, 5.0))
+        assertEquals(25.0, QueueGuard.estimateWaitTime(100, 4.0))
+    }
+
+    @Test
+    fun policyNextEscalatesOnHighBurst() {
+        assertEquals("watch", Policy.nextPolicy("normal", 2))
+        assertEquals("watch", Policy.nextPolicy("normal", 10))
+        assertEquals("restricted", Policy.nextPolicy("watch", 3))
+        assertEquals("halted", Policy.nextPolicy("restricted", 5))
+    }
+
+    @Test
+    fun policyDeescalateNoOpAtNormal() {
+        val eng = PolicyEngine()
+        eng.deescalate()
+        assertEquals("normal", eng.currentPolicy)
+        assertEquals(0, eng.getHistory().size)
+    }
+
+    @Test
+    fun berthConflictVariedSlots() {
+        val a = BerthSlot("B1", 0, 10, true, "V1")
+        val b = BerthSlot("B1", 5, 15, true, "V2")
+        assertTrue(BerthPlanner.hasConflict(a, b))
+        val c = BerthSlot("B1", 10, 20, true, "V3")
+        assertFalse(BerthPlanner.hasConflict(a, c), "adjacent slots should not conflict")
+    }
+
+    @Test
+    fun shouldShedEmergencyRatioBehavior() {
+        assertFalse(QueueGuard.shouldShed(79, 100, true))
+        assertTrue(QueueGuard.shouldShed(80, 100, true))
+        assertFalse(QueueGuard.shouldShed(39, 50, true))
+        assertTrue(QueueGuard.shouldShed(40, 50, true))
+    }
+
+    @Test
+    fun checkCapacityBoundary() {
+        assertTrue(Allocator.checkCapacity(0, 100))
+        assertTrue(Allocator.checkCapacity(99, 100))
+        assertTrue(Allocator.checkCapacity(100, 100))
+        assertFalse(Allocator.checkCapacity(101, 100))
+    }
+
+    // === Concurrent stress tests for thread-safe structures ===
+
+    @Test
+    fun routeTableUnderConcurrentLoad() {
+        val table = RouteTable()
+        val errors = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val threads = (1..10).map { t ->
+            Thread {
+                latch.await()
+                for (i in 1..100) {
+                    try {
+                        table.add(Route("ch-$t-$i", i))
+                        table.get("ch-$t-$i")
+                        table.remove("ch-$t-$i")
+                    } catch (_: Exception) { errors.incrementAndGet() }
+                }
+            }
+        }
+        threads.forEach { it.start() }
+        latch.countDown()
+        threads.forEach { it.join() }
+        assertEquals(0, errors.get(), "RouteTable must be thread-safe")
+    }
+
+    @Test
+    fun rollingWindowSchedulerUnderConcurrentLoad() {
+        val scheduler = RollingWindowScheduler(60)
+        val errors = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val threads = (1..10).map { t ->
+            Thread {
+                latch.await()
+                for (i in 1..100) {
+                    try {
+                        scheduler.submit(System.nanoTime(), "order-$t-$i")
+                    } catch (_: Exception) { errors.incrementAndGet() }
+                }
+            }
+        }
+        val flushers = (1..3).map {
+            Thread {
+                latch.await()
+                repeat(50) {
+                    try {
+                        scheduler.flush(System.nanoTime())
+                        scheduler.count
+                    } catch (_: Exception) { errors.incrementAndGet() }
+                }
+            }
+        }
+        (threads + flushers).forEach { it.start() }
+        latch.countDown()
+        (threads + flushers).forEach { it.join() }
+        assertEquals(0, errors.get(), "RollingWindowScheduler must be thread-safe")
+    }
+
+    @Test
+    fun checkpointManagerUnderConcurrentLoad() {
+        val mgr = CheckpointManager(10)
+        val errors = java.util.concurrent.atomic.AtomicInteger(0)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val writers = (1..10).map { t ->
+            Thread {
+                latch.await()
+                for (i in 1..100) {
+                    try {
+                        mgr.record(Checkpoint("cp-$t-$i", i.toLong(), System.nanoTime()))
+                    } catch (_: Exception) { errors.incrementAndGet() }
+                }
+            }
+        }
+        val readers = (1..5).map { t ->
+            Thread {
+                latch.await()
+                repeat(100) { i ->
+                    try {
+                        mgr.get("cp-$t-${(i % 100) + 1}")
+                        mgr.count
+                    } catch (_: Exception) { errors.incrementAndGet() }
+                }
+            }
+        }
+        (writers + readers).forEach { it.start() }
+        latch.countDown()
+        (writers + readers).forEach { it.join() }
+        assertEquals(0, errors.get(), "CheckpointManager must be thread-safe")
+    }
+
+    // === End-to-end integration: all 10 modules in a single pipeline ===
+
+    @Test
+    fun endToEndDispatchPipeline() {
+        // 1. Domain: classify severity
+        assertEquals(Severity.CRITICAL, Severity.classify("emergency cargo release"),
+            "e2e: classify emergency as CRITICAL")
+
+        // 2. Allocator: plan dispatch (descending urgency)
+        val plan = Allocator.planDispatch(
+            listOf(DispatchOrder("lo", 1, 120), DispatchOrder("hi", 5, 15)), 1
+        )
+        assertEquals("hi", plan[0].id, "e2e: dispatch selects highest urgency")
+
+        // 3. Allocator: cost and turnaround
+        val cost = Allocator.estimateCost(5, 15, 100.0)
+        assertEquals(1500.0, cost, "e2e: cost = baseRate * severity * slaFactor")
+        assertEquals(3.0, Allocator.estimateTurnaround(1001, false),
+            "e2e: turnaround uses ceil")
+
+        // 4. Routing: score and route cost
+        val cs = Routing.channelScore(10, 0.9, 5)
+        assertTrue(abs(cs - 0.45) < 0.001, "e2e: channelScore = rel*pri/lat, got $cs")
+        assertEquals(375.0, Routing.estimateRouteCost(200.0, 1.5, 75.0),
+            "e2e: route cost adds port fee")
+
+        // 5. Policy: escalation and deescalation
+        assertEquals("watch", Policy.nextPolicy("normal", 3), "e2e: escalate to watch")
+        assertTrue(Policy.shouldDeescalate(3, "watch"), "e2e: deescalate at threshold")
+
+        // 6. Queue: shed and wait
+        assertFalse(QueueGuard.shouldShed(79, 100, true), "e2e: below emergency ratio")
+        assertEquals(5.0, QueueGuard.estimateWaitTime(20, 4.0), "e2e: wait = depth/rate")
+
+        // 7. Security: sanitise path
+        assertFalse(Security.sanitisePath("..\\..\\etc\\passwd").contains(".."),
+            "e2e: backslash traversal sanitised")
+
+        // 8. Resilience: replay keeps latest
+        val replayed = Resilience.replay(listOf(ReplayEvent("e", 1), ReplayEvent("e", 5)))
+        assertEquals(5, replayed[0].sequence, "e2e: replay keeps latest")
+
+        // 9. Statistics: percentile and variance
+        assertEquals(30, Statistics.percentile(listOf(10, 20, 30, 40, 50), 50),
+            "e2e: percentile formula")
+        assertTrue(abs(Statistics.variance(listOf(2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0)) - 4.0) < 0.01,
+            "e2e: population variance")
+
+        // 10. Workflow: terminal states and transitions
+        assertTrue(Workflow.isTerminalState("cancelled"), "e2e: cancelled is terminal")
+        assertFalse(Workflow.canTransition("departed", "allocated"), "e2e: no backward transition")
+
+        // 11. Contracts: service URL includes port
+        val url = ServiceRegistry.getServiceUrl("gateway")!!
+        assertTrue(url.contains(":8160"), "e2e: URL includes port")
+    }
 }

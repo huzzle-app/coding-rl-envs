@@ -40,9 +40,9 @@ func SanitizePath(path string) string {
 }
 
 // JoinPath safely joins path components
-func JoinPath(base, path string) string {
-	
-	return filepath.Join(base, path)
+func JoinPath(parts ...string) string {
+
+	return filepath.Join(parts...)
 }
 
 // IsWithinBase checks if a path is within the base directory

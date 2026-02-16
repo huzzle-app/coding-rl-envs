@@ -774,3 +774,88 @@ class TestPermissionBoundaryEnforcement:
 
         can_escalate = attempted_action in current_perms
         assert not can_escalate, "Trader should not escalate to admin permissions"
+
+
+# ===================================================================
+# Source-code-verifying tests for authentication chain bugs
+# ===================================================================
+
+
+class TestValidateTokenClaimCompleteness:
+    """Tests that validate_token returns all required JWT claims (BUG E1)."""
+
+    def test_validate_token_returns_roles(self):
+        """validate_token must include 'roles' in returned claims."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.validate_token)
+        assert "'roles'" in src or '"roles"' in src, \
+            "validate_token must include roles in the returned claims dict"
+
+    def test_validate_token_returns_permissions(self):
+        """validate_token must include 'permissions' in returned claims."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.validate_token)
+        assert "'permissions'" in src or '"permissions"' in src, \
+            "validate_token must include permissions in the returned claims dict"
+
+    def test_validate_token_returns_tenant_id(self):
+        """validate_token must include 'tenant_id' in returned claims."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.validate_token)
+        assert "'tenant_id'" in src or '"tenant_id"' in src, \
+            "validate_token must include tenant_id in the returned claims dict"
+
+    def test_validate_token_preserves_all_claims(self):
+        """validate_token must return roles, permissions, and tenant_id (BUG E1)."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.validate_token)
+        # The return dict must include all three fields
+        required_fields = ["roles", "permissions", "tenant_id"]
+        for field in required_fields:
+            assert field in src, \
+                f"validate_token must include '{field}' in returned claims"
+
+
+class TestRefreshTokenConcurrencySafety:
+    """Tests that refresh_token uses proper locking (BUG E2)."""
+
+    def test_refresh_token_uses_asyncio_lock(self):
+        """refresh_token must use asyncio.Lock for thread-safety, not a dict flag."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.refresh_token)
+        has_proper_lock = "asyncio.Lock" in src or "Lock()" in src or "_lock" in src
+        assert has_proper_lock, \
+            "refresh_token should use asyncio.Lock for concurrency safety, not a dict flag"
+
+    def test_refresh_in_progress_is_lock_not_dict(self):
+        """_refresh_in_progress should be an asyncio.Lock, not a Dict."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient)
+        # Should NOT use Dict for tracking refresh progress
+        assert "_refresh_in_progress: Dict" not in src, \
+            "_refresh_in_progress should be a Lock, not a Dict (causes race conditions)"
+
+
+class TestServiceAuthEmptyHeaderBypass:
+    """Tests that service auth rejects empty headers (BUG E3)."""
+
+    def test_authenticate_service_validates_token_content(self):
+        """authenticate_service should validate that returned token is non-empty."""
+        import inspect
+        from shared.clients.auth import AuthClient
+        src = inspect.getsource(AuthClient.authenticate_service)
+        # The method should check for empty/None token values
+        checks_empty = ("not " in src and "token" in src) or \
+                       ("strip" in src) or \
+                       ('== ""' in src) or \
+                       ("len(" in src and "token" in src)
+        # If the method just returns token blindly, it allows empty bypass
+        if "header" in src.lower():
+            assert checks_empty, \
+                "authenticate_service must reject empty auth headers"

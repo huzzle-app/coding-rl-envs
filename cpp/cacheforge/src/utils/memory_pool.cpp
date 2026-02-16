@@ -10,12 +10,6 @@ MemoryPool::MemoryPool(size_t block_size, size_t initial_blocks)
 }
 
 MemoryPool::~MemoryPool() {
-    
-    // try to manage the same memory, leading to double-free.
-    // The default copy constructor copies pool_storage_ (which is fine,
-    // it's a vector), but also copies free_list_ pointers that point
-    // into the ORIGINAL pool_storage_, not the copied one.
-    // FIX: Delete copy operations, implement move operations
 }
 
 void* MemoryPool::allocate() {
@@ -44,8 +38,6 @@ void MemoryPool::grow(size_t additional_blocks) {
     size_t old_size = pool_storage_.size();
     size_t new_size = old_size + additional_blocks * block_size_;
 
-    
-    // All previously returned pointers become dangling
     pool_storage_.resize(new_size);
 
     // Add new blocks to free list

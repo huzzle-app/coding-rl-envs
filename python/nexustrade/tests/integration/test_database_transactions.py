@@ -996,3 +996,62 @@ class TestWriteConflictResolution:
 
         assert merged["email"] == "alice@new.com", "Should take branch A's email"
         assert merged["phone"] == "222", "Should take branch B's phone"
+
+
+# ===================================================================
+# Source-code-verifying tests for database & distributed bugs
+# ===================================================================
+
+
+class TestAcquireMultipleLocksOrdering:
+    """Tests that acquire_multiple_locks sorts lock names to prevent deadlocks (BUG D10)."""
+
+    def test_acquire_multiple_locks_sorts_names(self):
+        """acquire_multiple_locks must sort lock names before acquiring."""
+        import inspect
+        from shared.utils.distributed import acquire_multiple_locks
+        src = inspect.getsource(acquire_multiple_locks)
+        assert "sorted(" in src, \
+            "acquire_multiple_locks must sort lock_names to prevent deadlocks"
+
+    def test_lock_ordering_prevents_deadlock_pattern(self):
+        """Locks acquired in sorted order cannot create circular wait."""
+        import inspect
+        from shared.utils.distributed import acquire_multiple_locks
+        src = inspect.getsource(acquire_multiple_locks)
+        # The iteration should be over sorted(lock_names), not lock_names
+        assert "sorted(lock_names)" in src or "sorted( lock_names)" in src, \
+            "Must iterate over sorted(lock_names) to prevent deadlocks"
+
+
+class TestDistributedLockTimeout:
+    """Tests that DistributedLock default timeout is adequate (BUG A3)."""
+
+    def test_default_lock_timeout_is_adequate(self):
+        """Default lock timeout must be >= 30 seconds for long operations."""
+        import inspect
+        import re
+        from shared.utils.distributed import DistributedLock
+        src = inspect.getsource(DistributedLock.__init__)
+        match = re.search(r'timeout:\s*float\s*=\s*([\d.]+)', src)
+        assert match is not None, "DistributedLock.__init__ should have timeout parameter"
+        default_timeout = float(match.group(1))
+        assert default_timeout >= 30.0, \
+            f"Default lock timeout {default_timeout}s is too short, should be >= 30s"
+
+    def test_lock_timeout_not_truncated_to_int(self):
+        """Lock timeout must not be truncated to int when setting Redis key expiry."""
+        import inspect
+        from shared.utils.distributed import DistributedLock
+        src = inspect.getsource(DistributedLock.acquire)
+        # The bug pattern: ex=int(self.timeout) truncates sub-second precision
+        # and with timeout=5.0, the lock expires too quickly
+        if "int(self.timeout)" in src:
+            # Check that the timeout is at least reasonable (>= 30)
+            import re
+            init_src = inspect.getsource(DistributedLock.__init__)
+            match = re.search(r'timeout:\s*float\s*=\s*([\d.]+)', init_src)
+            if match:
+                default_timeout = float(match.group(1))
+                assert default_timeout >= 30.0, \
+                    f"Lock timeout {default_timeout}s is too short for operations that may take minutes"

@@ -4,6 +4,18 @@
  * Tests gateway routing, middleware, authentication flow, service discovery
  */
 
+// Mock express to prevent service index files from starting HTTP servers
+jest.mock('express', () => {
+  const router = { use: jest.fn(), get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), patch: jest.fn() };
+  const app = { use: jest.fn().mockReturnThis(), get: jest.fn().mockReturnThis(), post: jest.fn().mockReturnThis(), put: jest.fn().mockReturnThis(), delete: jest.fn().mockReturnThis(), patch: jest.fn().mockReturnThis(), listen: jest.fn((port, cb) => cb && cb()), set: jest.fn().mockReturnThis() };
+  const express = jest.fn(() => app);
+  express.json = jest.fn(() => jest.fn());
+  express.urlencoded = jest.fn(() => jest.fn());
+  express.static = jest.fn(() => jest.fn());
+  express.Router = jest.fn(() => router);
+  return express;
+});
+
 describe('API Gateway', () => {
   let app;
   let request;

@@ -1,5 +1,7 @@
 'use strict';
 
+const { chooseRoute } = require('./routing');
+
 // ---------------------------------------------------------------------------
 // Berth Scheduling Engine
 //
@@ -169,9 +171,36 @@ function estimateTurnaround(vessel) {
   return base + Math.floor(tonnageFactor); 
 }
 
+// ---------------------------------------------------------------------------
+// Optimal berth allocation with route selection
+// ---------------------------------------------------------------------------
+
+function allocateOptimalBerth(vessels, routeOptions, berths, blocked) {
+  const results = [];
+  for (const vessel of vessels) {
+    const route = chooseRoute(routeOptions, blocked || []);
+    const suitableBerths = berths.filter(b => b.canAccept(vessel));
+    if (suitableBerths.length === 0 || !route) {
+      results.push({ vesselId: vessel.id, allocated: false, reason: 'no_berth_or_route' });
+      continue;
+    }
+    const berth = suitableBerths[0];
+    berth.reserve(vessel.id, estimateTurnaround(vessel));
+    results.push({
+      vesselId: vessel.id,
+      allocated: true,
+      berthId: berth.berthId,
+      route: route.channel,
+      routeLatency: route.latency,
+    });
+  }
+  return results;
+}
+
 module.exports = {
   planWindow,
   planWindowWithConflicts,
+  allocateOptimalBerth,
   BerthSlot,
   RollingWindowScheduler,
   BERTH_STATES,

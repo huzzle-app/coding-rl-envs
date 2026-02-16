@@ -41,6 +41,11 @@ class ServiceMeshMatrixTest < Minitest::Test
         primary = OpalCommand::Services::Gateway.select_primary_node(nodes)
         refute_nil primary
 
+        # Bug: select_primary_node uses min_by instead of max_by
+        best_score = nodes.map { |n| OpalCommand::Services::Gateway.score_node(n) }.max
+        assert_equal best_score, OpalCommand::Services::Gateway.score_node(primary),
+          "select_primary_node should pick the node with HIGHEST score"
+
         chain = OpalCommand::Services::Gateway.build_route_chain(nodes, max_hops: 2)
         assert_operator chain[:hops], :<=, 2
 
@@ -50,8 +55,14 @@ class ServiceMeshMatrixTest < Minitest::Test
         )
         assert_equal "op-#{idx}", ctx.operator_id
 
-        result = OpalCommand::Services::Auth.authorize_intent(ctx, required_clearance: 3)
-        refute_nil result[:authorized]
+        # Bug: Auth.authorize_intent uses > instead of >= (clearance 3 with required 3 should pass)
+        ctx_exact = OpalCommand::Services::Auth.derive_context(
+          operator_id: "exact-#{idx}", name: "Exact", roles: %w[admin],
+          clearance: 3, mfa_done: true
+        )
+        exact_result = OpalCommand::Services::Auth.authorize_intent(ctx_exact, required_clearance: 3)
+        assert exact_result[:authorized],
+          "clearance 3 with required_clearance 3 should be authorized (>= not >)"
 
       when 1
         # intake + ledger
@@ -64,6 +75,19 @@ class ServiceMeshMatrixTest < Minitest::Test
         end
         summary = OpalCommand::Services::Intake.batch_summary(commands)
         assert_equal 4, summary[:total]
+
+        # Bug: priority_sort sorts ascending instead of descending
+        sorted = OpalCommand::Services::Intake.priority_sort(commands)
+        assert_operator sorted.first[:urgency], :>=, sorted.last[:urgency],
+          "priority_sort should return highest urgency first (descending)"
+
+        # Bug: partition_by_urgency uses > instead of >= (threshold boundary)
+        threshold_cmds = [
+          { id: "t-#{idx}", type: "t", satellite: "S", urgency: 3, payload: "p" }
+        ]
+        partitioned = OpalCommand::Services::Intake.partition_by_urgency(threshold_cmds, threshold: 3)
+        assert_equal 1, partitioned[:high].length,
+          "urgency == threshold (3) should be in :high partition (>= not >)"
 
         ledger = OpalCommand::Services::Ledger::AuditLedger.new
         evt = OpalCommand::Services::Ledger::AuditEvent.new(
@@ -92,6 +116,22 @@ class ServiceMeshMatrixTest < Minitest::Test
         zone = OpalCommand::Services::Settlement.zone_band(idx % 500)
         assert_includes %w[alpha bravo charlie delta], zone
 
+        # Bug: can_berth? ignores tide_level_m
+        can_fit = OpalCommand::Services::Settlement.can_berth?(12.0, 10.0, tide_level_m: 3.0)
+        assert can_fit, "12m draft should fit in 10m berth + 3m tide (can_berth? must consider tide)"
+
+        # Bug: compute_berth_penalty divides time_penalty by 24 erroneously
+        penalty = OpalCommand::Services::Settlement.compute_berth_penalty(250, 200, 2)
+        expected_penalty = (50 * 15.0) + (2 * 50.0)  # excess=50, excess*15=750, hours*50=100, total=850
+        assert_in_delta expected_penalty, penalty, 0.01,
+          "berth_penalty formula: excess_length * 15 + hours * 50 (no /24 divisor)"
+
+        # Bug: estimate_laden_fuel ignores laden parameter
+        laden_fuel = OpalCommand::Services::Settlement.estimate_laden_fuel(100, 1000, laden: true)
+        ballast_fuel = OpalCommand::Services::Settlement.estimate_laden_fuel(100, 1000, laden: false)
+        assert_operator laden_fuel, :>, ballast_fuel,
+          "Laden fuel consumption should exceed ballast fuel"
+
         seq = OpalCommand::Services::Reconcile.build_reconcile_sequence(
           delta_required: 10.0 + (idx % 50), available_budget: 200.0 + (idx % 300)
         )
@@ -111,6 +151,21 @@ class ServiceMeshMatrixTest < Minitest::Test
           incidents_resolved: 70 + (idx % 30), incidents_total: 100, sla_met_pct: 60 + (idx % 40)
         )
         assert_operator compliance, :>=, 0
+
+        # Bug: escalation_required? uses > instead of >= at boundary
+        esc_at_boundary = OpalCommand::Services::Policy.escalation_required?(75, :normal)
+        assert esc_at_boundary,
+          "risk_score == threshold (75 for :normal) should require escalation (>= not >)"
+
+        # Bug: Reporting.rank_incidents sorts ascending instead of descending
+        incidents_to_rank = [
+          { id: "lo-#{idx}", severity: 1 },
+          { id: "hi-#{idx}", severity: 5 },
+          { id: "mid-#{idx}", severity: 3 }
+        ]
+        ranked = OpalCommand::Services::Reporting.rank_incidents(incidents_to_rank)
+        assert_equal 5, ranked.first[:severity],
+          "rank_incidents should return highest severity first (descending)"
 
         dual = OpalCommand::Services::Policy.enforce_dual_control("op-#{idx}", "op-#{idx + 1}", 'deploy')
         assert dual[:enforced]
@@ -132,6 +187,12 @@ class ServiceMeshMatrixTest < Minitest::Test
         rate_result = OpalCommand::Services::Risk.rate_limit_check(request_count: idx % 20, limit: 20)
         refute_nil rate_result[:allowed]
 
+        # Bug: sanitize_input truncates to max_length-1 instead of max_length
+        input_str = "a" * 50
+        sanitized = OpalCommand::Services::Risk.sanitize_input(input_str, max_length: 50)
+        assert_equal 50, sanitized.length,
+          "sanitize_input with max_length=50 should keep all 50 chars, not truncate to 49"
+
         trail = OpalCommand::Services::Audit::AuditTrail.new
         trail.append(OpalCommand::Services::Audit::AuditEntry.new(
           entry_id: "a-#{idx}", service: 'risk', action: 'validate',
@@ -151,8 +212,16 @@ class ServiceMeshMatrixTest < Minitest::Test
         trends = OpalCommand::Services::Analytics.trend_analysis(values, window: 3)
         assert_operator trends.length, :>, 0
 
+        # Bug: vessel_ranking sorts ascending instead of descending
         ranked = OpalCommand::Services::Analytics.vessel_ranking(vessels)
         assert_equal 5, ranked.length
+        assert_operator ranked.first[:health_score], :>=, ranked.last[:health_score],
+          "vessel_ranking should return highest health_score first (descending)"
+
+        # Bug: SEVERITY_CHANNELS[5] missing 'pager'
+        channels_5 = OpalCommand::Services::Notifications::SEVERITY_CHANNELS[5]
+        assert_includes channels_5, 'pager',
+          "Severity 5 should include 'pager' in notification channels"
 
         planner = OpalCommand::Services::Notifications::NotificationPlanner.new
         planner.plan(operator_id: "op-#{idx}", severity: (idx % 5) + 1, message: "alert-#{idx}")
@@ -170,6 +239,9 @@ class ServiceMeshMatrixTest < Minitest::Test
         end
         ranked = OpalCommand::Services::Reporting.rank_incidents(incidents)
         assert_equal 6, ranked.length
+        # Bug: rank_incidents sorts ascending instead of descending
+        assert_operator ranked.first[:severity], :>=, ranked.last[:severity],
+          "rank_incidents should return highest severity first"
 
         report = OpalCommand::Services::Reporting.compliance_report(
           resolved: 80 + (idx % 20), total: 100, sla_met_pct: 70 + (idx % 30)
@@ -178,6 +250,13 @@ class ServiceMeshMatrixTest < Minitest::Test
 
         row = OpalCommand::Services::Reporting.format_incident_row(incidents.first)
         assert_includes row, "inc-#{idx}-0"
+
+        # Bug: generate_executive_summary uses > instead of >= for 80 boundary
+        summary_80 = OpalCommand::Services::Reporting.generate_executive_summary(
+          incidents: incidents, fleet_health: 80
+        )
+        assert_equal 'excellent', summary_80[:fleet_status],
+          "fleet_health == 80 should be 'excellent' (>= not >)"
 
         summary = OpalCommand::Services::Reporting.generate_executive_summary(
           incidents: incidents, fleet_health: 50 + (idx % 50)
@@ -197,6 +276,35 @@ class ServiceMeshMatrixTest < Minitest::Test
           operators: operators, severity: (idx % 4) + 1, message: "cross-#{idx}"
         )
         assert_operator notifications.length, :>=, 1
+
+        # Bug: escalate_severity caps at 4 instead of 5
+        esc = OpalCommand::Services::Notifications.escalate_severity(4)
+        assert_equal 5, esc,
+          "escalate_severity(4) should reach 5, not cap at 4"
+
+        # Bug: cascade_notifications prepends instead of appending (reversed order)
+        cascade = OpalCommand::Services::Notifications.cascade_notifications(
+          operators: ["op-#{idx}"], base_severity: 2, message: "test", escalation_steps: 3
+        )
+        assert_equal 3, cascade.length
+        severities = cascade.map { |n| n[:severity] }
+        assert_equal [2, 3, 4], severities,
+          "cascade should be in ascending severity order: [2, 3, 4]"
+
+        # Bug: priority_dispatch uses channels.length-1 as min (drops a channel)
+        test_notifs = [
+          { operator_id: "op-#{idx}", severity: 3, channels: %w[log email sms pager] }
+        ]
+        dispatched = OpalCommand::Services::Notifications.priority_dispatch(test_notifs, max_channels: 2)
+        assert_equal 2, dispatched.first[:channels].length,
+          "max_channels=2 should limit to exactly 2 channels"
+
+        # Bug: Gateway.weighted_admission threshold 80 instead of 70
+        gw_result = OpalCommand::Services::Gateway.weighted_admission(
+          current_load: 10, max_capacity: 100, risk_score: 75, priority: :normal
+        )
+        assert_equal false, gw_result[:admitted],
+          "risk_score 75 (>= 70) should be denied by weighted_admission"
 
         vessels = Array.new(4) { |i| { id: "v-#{idx}-#{i}", health_score: 50 + (idx + i) % 50, active: true } }
         fleet = OpalCommand::Services::Analytics.fleet_summary(vessels)

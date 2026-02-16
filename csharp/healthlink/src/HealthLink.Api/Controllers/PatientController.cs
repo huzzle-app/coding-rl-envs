@@ -4,9 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace HealthLink.Api.Controllers;
 
-// === BUG I4: [AllowAnonymous] on class overrides [Authorize] on methods ===
-// When [AllowAnonymous] is on the controller, individual [Authorize]
-// attributes on actions are ignored - all endpoints become public
 [ApiController]
 [Route("api/[controller]")]
 [AllowAnonymous]
@@ -33,7 +30,6 @@ public class PatientController : ControllerBase
         return patient != null ? Ok(patient) : NotFound();
     }
 
-    // This should require authentication but [AllowAnonymous] on class overrides it
     [Authorize]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeletePatient(int id)
@@ -42,7 +38,6 @@ public class PatientController : ControllerBase
         return NoContent();
     }
 
-    // This should require admin role but [AllowAnonymous] on class overrides it
     [Authorize(Roles = "Admin")]
     [HttpPut("{id}/sensitive")]
     public async Task<IActionResult> UpdateSensitiveData(int id, [FromBody] object data)

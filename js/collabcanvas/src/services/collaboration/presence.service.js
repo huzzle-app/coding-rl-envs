@@ -187,6 +187,28 @@ class PresenceService extends EventEmitter {
   }
 
   /**
+   * Get all active users on a board from Redis
+   * Uses Redis hgetall for cross-server presence data
+   */
+  async getActiveUsers(boardId) {
+    const presenceData = await this.redis.hgetall(`presence:${boardId}`);
+    if (!presenceData || Object.keys(presenceData).length === 0) {
+      return [];
+    }
+
+    const users = [];
+    for (const [userId, data] of Object.entries(presenceData)) {
+      try {
+        users.push(JSON.parse(data));
+      } catch (e) {
+        // Skip malformed entries
+      }
+    }
+
+    return users;
+  }
+
+  /**
    * Clean up stale presence data
    */
   async cleanupStalePresence(maxAge = 60000) {

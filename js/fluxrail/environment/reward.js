@@ -8,8 +8,13 @@ function sparseReward(passRate) {
   return 0.0;
 }
 
+function totalBugs() { return 57; }
+function totalTests() { return 9040; }
+
 module.exports = {
   PASS_THRESHOLDS,
   THRESHOLD_REWARDS,
-  sparseReward
+  sparseReward,
+  totalBugs,
+  totalTests
 };

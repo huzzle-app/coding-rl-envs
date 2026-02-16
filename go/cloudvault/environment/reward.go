@@ -190,5 +190,43 @@ func CalculateRegressionPenalty(current map[string]bool, previous map[string]boo
 // Legacy stubs - kept for backward compatibility
 func CalculateBugBonus(_ map[string]bool) float64 { return 0.0 }
 
-var BugTestMapping = map[string][]string{}
-var BugDependencies = map[string][]string{}
+var BugTestMapping = map[string][]string{
+	"A1-GoroutineLeak":         {"TestStorageServiceGoroutineLeak/should_not_leak_goroutines_on_upload"},
+	"A2-RaceCondition":         {"TestSyncServiceRaceCondition/should_handle_concurrent_sync_starts_safely", "TestRateLimiterRaceCondition/should_handle_concurrent_requests_safely", "TestRateLimiterBucketAccess/should_not_race_on_bucket_token_modification"},
+	"A3-ChannelDeadlock":       {"TestNotificationServiceDeadlock/should_not_deadlock_when_no_subscribers", "TestNotificationServiceDeadlock/should_not_deadlock_on_slow_subscriber", "TestNotificationServiceSubscribe/should_receive_notifications_on_channel", "TestNotificationServiceWaitForNotification/should_wait_for_notification"},
+	"A4-WaitGroupMisuse":       {"TestStorageServiceConcurrency/should_handle_concurrent_chunk_uploads"},
+	"A5-MutexCopy":             {"TestBucketMutexCopy/should_not_copy_bucket_by_value", "TestRateLimiterMutexCopy/should_not_copy_rate_limiter_by_value"},
+	"B1-SliceBounds":           {"TestChunkerSplit/should_calculate_chunk_count_correctly"},
+	"B2-NilMapWrite":           {"TestConflictResolver/should_not_panic_on_RegisterStrategy", "TestSlidingWindowLimiter/should_handle_Allow_without_panic"},
+	"B3-SliceAliasing":         {"TestChunkerMerge/should_merge_chunks_in_correct_order"},
+	"B4-MemoryLeak":            {},
+	"C1-TransactionRollback":   {"TestVersioningCreateVersion/should_fail_without_database"},
+	"C2-ConnectionLeak":        {"TestRepositoryConnectionLeak/should_not_leak_connections_on_error_in_GetByUserID"},
+	"C3-PreparedStatementLeak": {"TestRepositoryPreparedStatementLeak/should_not_leak_prepared_statements_in_BulkCreate"},
+	"C4-NPlus1Query":           {},
+	"D1-IgnoredError":          {"TestSyncServiceApplyChange/should_handle_delete_change_with_invalid_file"},
+	"D2-ErrorShadowing":        {"TestSyncServiceApplyChange/should_handle_delete_change_with_invalid_file"},
+	"D3-NilInterfaceCheck":     {"TestGetUserID/should_panic_on_wrong_type"},
+	"E1-WeakCrypto":            {"TestStreamEncryption/should_use_random_IV_for_stream", "TestHashPassword/should_produce_different_hashes_for_same_password_with_salt", "TestHashPassword/should_be_resistant_to_rainbow_tables", "TestCryptoSecurityIssues/should_use_proper_password_hashing", "TestCryptoSecurityIssues/should_use_unique_IVs_for_stream_encryption", "TestAuthenticationIssues/should_use_strong_password_hashing"},
+	"E2-PathTraversal":         {"TestValidatePath/should_detect_URL-encoded_traversal", "TestValidatePath/should_detect_null_byte_injection", "TestPathTraversalPrevention/encoded_traversal", "TestPathTraversalPrevention/null_byte", "TestSanitizePath/should_fully_prevent_traversal", "TestJoinPath/should_prevent_escaping_base", "TestIsWithinBase/should_not_be_fooled_by_similar_prefixes", "TestIsAllowedExtension/should_not_be_bypassed_by_double_extension", "TestNormalizePath/should_handle_backslashes", "TestBuildPath/should_validate_components"},
+	"E3-SQLInjection":          {"TestRepositorySQLInjection/should_be_vulnerable_to_SQL_injection_in_Search", "TestSQLInjection/should_prevent:_drop_table", "TestSQLInjection/should_prevent:_boolean_bypass", "TestSQLInjection/should_prevent:_stacked_query", "TestSQLInjection/should_prevent:_union_injection"},
+	"E4-IDOR":                  {"TestIDORPrevention/should_check_file_ownership_on_download"},
+	"F1-ImportCycle":            {},
+	"F2-EnvParsing":            {"TestConfigEnvParsing/should_parse_MAX_FILE_SIZE_correctly", "TestConfigEnvParsing/should_parse_RATE_LIMIT_RPS_correctly", "TestConfigEnvParsing/should_parse_DEBUG_as_boolean", "TestConfigEnvParsing/should_accept_DEBUG=1_as_true"},
+	"F3-ChunkSizeParsing":      {"TestConfigEnvParsing/should_parse_CHUNK_SIZE_with_Atoi"},
+	"F4-MissingValidation":     {"TestConfigValidation/should_validate_required_fields", "TestConfigValidation/should_parse_ALLOWED_ORIGINS_correctly"},
+	"L1-InitOrder":             {},
+	"L2-EnvTypeParsing":        {"TestConfigEnvParsing/should_parse_DEBUG_as_boolean", "TestConfigEnvParsing/should_accept_DEBUG=1_as_true"},
+}
+
+var BugDependencies = map[string][]string{
+	"F1-ImportCycle":  {},
+	"L1-InitOrder":   {},
+	"A2-RaceCondition": {"F1-ImportCycle"},
+	"D1-IgnoredError":  {"F1-ImportCycle"},
+	"D2-ErrorShadowing": {"F1-ImportCycle"},
+	"B2-NilMapWrite":   {"F1-ImportCycle"},
+	"C2-ConnectionLeak": {"L1-InitOrder"},
+	"C3-PreparedStatementLeak": {"L1-InitOrder"},
+	"E3-SQLInjection": {"L1-InitOrder"},
+}

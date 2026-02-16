@@ -4,7 +4,7 @@
  * Tests for BUG D1-D10 aggregation bugs
  */
 
-const { RollupEngine } = require('../../../services/aggregate/src/services/rollups');
+const { RollupEngine, ContinuousAggregation, StreamAggregator } = require('../../../services/aggregate/src/services/rollups');
 
 describe('RollupEngine', () => {
   let engine;
@@ -359,6 +359,100 @@ describe('RollupEngine', () => {
       ];
       const result = engine.topN(items, 2, x => x.score);
       expect(result[0].score).toBeGreaterThanOrEqual(result[1].score);
+    });
+  });
+
+  describe('ContinuousAggregation avg formula (D9)', () => {
+    test('avg of single batch should be correct', () => {
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('m1', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'cpu' }],
+      });
+      agg.update('m1', [
+        { host: 'h1', cpu: 10 },
+        { host: 'h1', cpu: 20 },
+        { host: 'h1', cpu: 30 },
+      ]);
+      const state = agg.getState('m1');
+      expect(state.state['h1'].cpu_avg).toBeCloseTo(20, 5);
+    });
+
+    test('avg across two batches should use correct weighted formula', () => {
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('m2', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'cpu' }],
+      });
+      agg.update('m2', [
+        { host: 'h1', cpu: 10 },
+        { host: 'h1', cpu: 20 },
+      ]);
+      agg.update('m2', [{ host: 'h1', cpu: 30 }]);
+      const state = agg.getState('m2');
+      // True avg = (10+20+30)/3 = 20, buggy = (15+30)/2 = 22.5
+      expect(state.state['h1'].cpu_avg).toBeCloseTo(20, 5);
+    });
+
+    test('avg across many single-value batches should converge to true mean', () => {
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('m3', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'val' }],
+      });
+      const values = [100, 200, 300, 400, 500];
+      for (const v of values) {
+        agg.update('m3', [{ host: 'h1', val: v }]);
+      }
+      const state = agg.getState('m3');
+      expect(state.state['h1'].val_avg).toBeCloseTo(300, 5);
+    });
+
+    test('avg count should track actual number of records', () => {
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('m4', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'x' }],
+      });
+      agg.update('m4', [{ host: 'h1', x: 1 }, { host: 'h1', x: 2 }]);
+      agg.update('m4', [{ host: 'h1', x: 3 }, { host: 'h1', x: 4 }]);
+      const state = agg.getState('m4');
+      expect(state.state['h1'].x_count).toBe(4);
+    });
+  });
+
+  describe('RollupEngine moving average boundary (D5)', () => {
+    test('moving average at exact window boundary should drop oldest value', () => {
+      const engine = new RollupEngine({ windowSize: 3 });
+      engine.addDataPoint('metric1', 10);
+      engine.addDataPoint('metric1', 20);
+      engine.addDataPoint('metric1', 30);
+      engine.addDataPoint('metric1', 40);
+      const avg = engine.getMovingAverage('metric1');
+      // Window of 3: should be avg of [20,30,40] = 30
+      expect(avg).toBeCloseTo(30, 5);
+    });
+  });
+
+  describe('RollupEngine HLL merge (D7)', () => {
+    test('HLL merge should use max, not sum', () => {
+      const engine = new RollupEngine({});
+      const hll1 = [5, 3, 7, 2];
+      const hll2 = [4, 8, 1, 6];
+      const merged = engine.mergeHLL(hll1, hll2);
+      // Element-wise max: [5,8,7,6]
+      expect(merged).toEqual([5, 8, 7, 6]);
+    });
+
+    test('HLL count after merge should not over-estimate', () => {
+      const engine = new RollupEngine({});
+      const hll1 = [3, 3, 3, 3];
+      const hll2 = [3, 3, 3, 3];
+      const merged = engine.mergeHLL(hll1, hll2);
+      // Max of identical arrays: still [3,3,3,3], not [6,6,6,6]
+      for (let i = 0; i < merged.length; i++) {
+        expect(merged[i]).toBe(Math.max(hll1[i], hll2[i]));
+      }
     });
   });
 });

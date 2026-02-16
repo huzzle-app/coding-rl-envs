@@ -15,6 +15,10 @@ Maritime dispatch reliability platform coordinating route dispatch, replay contr
 - **Domain** — Dispatch orders, vessel manifests, severity classification, batch creation
 - **Contracts** — Service definitions, URL resolution, contract validation, topological ordering
 
+## Bug Count
+
+25 bugs across 10 source files.
+
 ## Constraints
 
 - Fix only source files (`src/main/kotlin/**/*.kt`)
@@ -23,7 +27,7 @@ Maritime dispatch reliability platform coordinating route dispatch, replay contr
 
 ## Success Criteria
 
-All `mvn test` tests pass including the 9200-scenario hyper-matrix:
+All `mvn test` tests pass including the 9316-scenario test suite:
 
 ```bash
 cd kotlin/nimbusflow && mvn test

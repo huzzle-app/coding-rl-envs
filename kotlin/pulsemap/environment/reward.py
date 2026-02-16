@@ -58,8 +58,9 @@ class RewardCalculator:
 
     def __init__(self, max_steps: int = 100):
         self.max_steps = max_steps
-        self.pass_thresholds = [0.25, 0.50, 0.75, 0.90, 1.0]
-        self.threshold_rewards = [0.0, 0.15, 0.35, 0.65, 1.0]
+        # 5-threshold sparse reward for Senior tier (step function, matches scoring.py)
+        self.pass_thresholds = [0.50, 0.75, 0.90, 1.0]
+        self.threshold_rewards = [0.15, 0.35, 0.65, 1.0]
 
     def calculate(
         self,
@@ -124,9 +125,9 @@ class RewardCalculator:
 
     def _calculate_sparse_pass_rate(self, results: List[TestResult]) -> float:
         """
-        Calculate sparse pass rate with thresholds.
+        Calculate sparse pass rate with thresholds (step function).
 
-        No reward until 25% pass rate, then step increases.
+        No reward until 50% pass rate, then step increases.
         """
         if not results:
             return 0.0
@@ -142,18 +143,11 @@ class RewardCalculator:
 
         pass_rate = weighted_passes / total_weight if total_weight > 0 else 0.0
 
-        for i, threshold in enumerate(self.pass_thresholds):
-            if pass_rate < threshold:
-                if i == 0:
-                    return 0.0
-                prev_threshold = self.pass_thresholds[i - 1]
-                prev_reward = self.threshold_rewards[i - 1]
-                curr_reward = self.threshold_rewards[i]
-
-                progress = (pass_rate - prev_threshold) / (threshold - prev_threshold)
-                return prev_reward + progress * (curr_reward - prev_reward)
-
-        return 1.0
+        # Step function: find highest threshold that pass_rate meets
+        for threshold, reward in reversed(list(zip(self.pass_thresholds, self.threshold_rewards))):
+            if pass_rate >= threshold:
+                return reward
+        return 0.0
 
     def _calculate_strict_completion_bonus(self, results: List[TestResult]) -> float:
         """
@@ -358,6 +352,51 @@ def calculate_reward(test_results, step_count, max_steps=100):
 
     return breakdown.total
 
-# Legacy stubs - kept for backward compatibility with setup.py imports
-BUG_TEST_MAPPING = {}
-BUG_DEPENDENCIES = {}
+BUG_TEST_MAPPING = {
+    'L1': ['test_content_negotiation_single_install', 'test_json_serialization_works'],
+    'L2': ['test_serialization_plugin_present', 'test_serializable_annotation_works'],
+    'L3': ['test_hocon_config_correct_key', 'test_server_binds_correct_host'],
+    'L4': ['test_database_connect_outside_transaction', 'test_exposed_init_order'],
+    'A1': ['test_no_run_blocking_in_handler', 'test_concurrent_requests_no_deadlock'],
+    'A2': ['test_no_global_scope', 'test_coroutine_cancelled_on_shutdown'],
+    'A3': ['test_flow_on_before_collect', 'test_flow_runs_on_correct_dispatcher'],
+    'A4': ['test_channel_bounded', 'test_backpressure_under_burst'],
+    'A5': ['test_async_error_propagated', 'test_deferred_await_called'],
+    'B1': ['test_platform_type_null_check', 'test_empty_geometry_handled'],
+    'B2': ['test_cache_miss_returns_404', 'test_no_double_bang_on_map_get'],
+    'B3': ['test_nullable_column_insert', 'test_not_null_constraint_handled'],
+    'B4': ['test_safe_cast_on_deserialize', 'test_wrong_type_returns_400'],
+    'C1': ['test_sensor_reading_equality', 'test_deduplication_works'],
+    'C2': ['test_copy_deep_mutable_list', 'test_original_not_mutated_after_copy'],
+    'C3': ['test_sealed_when_all_branches', 'test_multi_polygon_handled'],
+    'C4': ['test_sealed_serialization_registered', 'test_radius_filter_deserializes'],
+    'D1': ['test_auth_intercept_returns', 'test_unauthorized_stops_pipeline'],
+    'D2': ['test_no_coroutine_in_transaction', 'test_transaction_scope_respected'],
+    'D3': ['test_batch_insert_no_returning', 'test_bulk_insert_performance'],
+    'D4': ['test_uses_call_receive', 'test_content_type_validated'],
+    'E1': ['test_extension_not_shadowed', 'test_bounding_box_correct'],
+    'E2': ['test_reified_type_preserved', 'test_deserialize_generic'],
+    'I1': ['test_sql_injection_prevented', 'test_parameterized_query_used', 'test_sql_injection_in_sensor_id'],
+    'I2': ['test_path_traversal_blocked', 'test_tile_path_rejects_null_bytes'],
+}
+
+BUG_CATEGORIES = {
+    'setup_config': ['L1', 'L2', 'L3', 'L4'],
+    'coroutines': ['A1', 'A2', 'A3', 'A4', 'A5'],
+    'null_safety': ['B1', 'B2', 'B3', 'B4'],
+    'data_sealed': ['C1', 'C2', 'C3', 'C4'],
+    'ktor_exposed': ['D1', 'D2', 'D3', 'D4'],
+    'language_features': ['E1', 'E2'],
+    'security': ['I1', 'I2'],
+}
+
+BUG_DEPENDENCIES = {
+    'A1': ['L1'],
+    'A2': ['L1'],
+    'D1': ['L1'],
+    'D4': ['L1', 'L2'],
+    'C4': ['L2'],
+    'B3': ['L4'],
+    'D2': ['L4'],
+    'D3': ['L4'],
+}

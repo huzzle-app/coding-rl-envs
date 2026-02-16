@@ -4,6 +4,7 @@ version = "1.0"
 name = "datanexus"
 description = "Debug a distributed Node.js real-time data pipeline platform with microservices"
 difficulty = "hard"
+tier = "distinguished"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "javascript"

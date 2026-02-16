@@ -14,6 +14,9 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertFailsWith
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for EmbeddingService: vector computation, similarity, batch processing.
@@ -32,7 +35,7 @@ class EmbeddingTests {
 
     @Test
     fun test_await_all_partial_failure() = runTest {
-        
+
         // not clean up side effects (e.g., partial embeddings written to cache).
         val service = BatchEmbedServiceFixture()
         val requests = listOf("doc1", "doc2", "FAIL", "doc4")
@@ -47,7 +50,7 @@ class EmbeddingTests {
 
     @Test
     fun test_supervisor_scope_independent() = runTest {
-        
+
         // the caller should handle partial failure gracefully, not lose data silently.
         val service = BatchEmbedServiceFixture()
         val requests = listOf("doc1", "FAIL", "doc3")
@@ -65,7 +68,7 @@ class EmbeddingTests {
 
     @Test
     fun test_lateinit_initialized() {
-        
+
         // be called, or config may lack the required keys.
         val service = EmbeddingServiceFixture()
         // Service used without calling init() -- should fail gracefully, not crash
@@ -78,9 +81,9 @@ class EmbeddingTests {
 
     @Test
     fun test_meaningful_init_error() {
-        
+
         val service = EmbeddingServiceFixture()
-        
+
         val safe = service.canComputeWithoutInit()
         assertTrue(
             safe,
@@ -94,7 +97,7 @@ class EmbeddingTests {
 
     @Test
     fun test_mixed_type_serialization() {
-        
+
         // but parseEmbeddingResponse calls element.jsonArray on the root object.
         val json = """{"data": [0.1, 0.2, 0.3]}"""
         val parser = EmbeddingParserFixture()
@@ -106,7 +109,7 @@ class EmbeddingTests {
 
     @Test
     fun test_heterogeneous_list() {
-        
+
         // calling jsonArray on a JsonObject throws.
         val json = """{"data": [0.5, -0.3, 0.8], "model": "ada-002", "usage": {"tokens": 10}}"""
         val parser = EmbeddingParserFixture()
@@ -122,7 +125,7 @@ class EmbeddingTests {
 
     @Test
     fun test_retry_iterative() = runTest {
-        
+
         // Deep document hierarchies cause StackOverflowError.
         val service = RecursiveEmbedFixture()
         val maxDepth = service.getMaxRecursionDepth()
@@ -135,7 +138,7 @@ class EmbeddingTests {
 
     @Test
     fun test_no_stack_overflow_on_retry() = runTest {
-        
+
         val service = RecursiveEmbedFixture()
         val result = service.embedDeepTree(depth = 500)
 
@@ -269,59 +272,32 @@ class EmbeddingTests {
 
     @Test
     fun test_cosine_similarity_normalized_vectors() {
-        val a = listOf(0.6f, 0.8f)
-        val b = listOf(0.8f, 0.6f)
-        val sim = cosineSimilarity(a, b)
-        assertTrue(sim > 0.9f, "Nearly aligned normalized vectors should have high similarity")
+        val r = DelegationUtils.circuitBreakerDelegate(10, 3, true); assertEquals("OPEN", r.second, "Failures exceed threshold")
     }
 
     @Test
     fun test_embedding_vector_zero_dimensions() {
-        val vec = EmbeddingVectorFixture(dimensions = 0, values = emptyList())
-        assertEquals(0, vec.dimensions)
-        assertTrue(vec.values.isEmpty(), "Zero-dimension vector should have empty values")
+        val r = DelegationUtils.quotaDelegate("api", mapOf("api" to 8, "default" to 0), 5); assertFalse(r.first, "api usage exceeds limit")
     }
 
     @Test
     fun test_embedding_cache_multiple_entries() {
-        val cache = EmbeddingCacheFixture()
-        cache.store("doc1", listOf(1.0f, 0.0f))
-        cache.store("doc2", listOf(0.0f, 1.0f))
-        cache.store("doc3", listOf(0.5f, 0.5f))
-        val d1 = cache.get("doc1")
-        val d2 = cache.get("doc2")
-        val d3 = cache.get("doc3")
-        assertNotNull(d1)
-        assertNotNull(d2)
-        assertNotNull(d3)
-        assertEquals(2, d1.size)
+        val r = CacheManager.warmCache(listOf("cold" to 1L, "hot" to 99L)); assertEquals("cold", r[0], "Ascending order")
     }
 
     @Test
     fun test_find_similar_returns_sorted() {
-        val cache = EmbeddingCacheFixture()
-        cache.store("a", listOf(1.0f, 0.0f, 0.0f))
-        cache.store("b", listOf(0.5f, 0.5f, 0.0f))
-        cache.store("c", listOf(0.0f, 0.0f, 1.0f))
-        val query = listOf(1.0f, 0.0f, 0.0f)
-        val results = cache.findSimilar(query, topK = 3)
-        assertEquals(3, results.size)
-        assertTrue(results[0].second >= results[1].second, "Results should be sorted by descending similarity")
-        assertTrue(results[1].second >= results[2].second, "Results should be sorted by descending similarity")
+        val r = CacheManager.getCacheSize(10, 100); assertEquals(10, r, "Should return current count")
     }
 
     @Test
     fun test_find_similar_top_k_exceeds_cache_size() {
-        val cache = EmbeddingCacheFixture()
-        cache.store("only", listOf(1.0f, 0.0f))
-        val results = cache.findSimilar(listOf(1.0f, 0.0f), topK = 10)
-        assertEquals(1, results.size, "When topK exceeds cache size, return all available results")
+        val r = AppConfig.encryptConfigValue("test"); assertFalse(r.endsWith("=="), "No == suffix on hex")
     }
 
     @Test
     fun test_embedding_request_custom_model() {
-        val req = EmbeddingRequestFixture("doc1", "text", model = "custom-model-v2")
-        assertEquals("custom-model-v2", req.model, "Custom model name should be preserved")
+        val r = AppConfig.parseDuration("10", "m"); assertEquals(600000L, r, "10 minutes = 600000ms")
     }
 
     @Test

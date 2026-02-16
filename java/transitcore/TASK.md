@@ -40,10 +40,14 @@ The codebase contains issues across core modules. All tests must pass before com
 | TRN020-TRN023 | Watermark/Audit |
 | TRN024-TRN025 | Workflow/Statistics |
 | TRN026-TRN030 | SLA/Statistics |
+| TRN031-TRN032 | Audit/Hash |
+| TRN033 | Watermark/Lag |
+| TRN034 | Routing/Churn |
+| TRN035 | Resilience/Replay |
 
 ## Success Criteria
 
-- All 1094 tests pass.
+- All 1648 tests pass.
 - Capacity, policy, and resilience suites stay fully green.
 - Full-suite pass rate reaches 100%.
 

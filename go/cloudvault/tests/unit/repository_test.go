@@ -12,6 +12,11 @@ import (
 	"github.com/terminal-bench/cloudvault/internal/repository"
 )
 
+// poolStatsInUse is a helper that extracts InUse from PoolStats
+func poolStatsInUse(repo *repository.FileRepository) int {
+	return repo.PoolStats().InUse
+}
+
 func TestFileRepositoryCreation(t *testing.T) {
 	t.Run("should fail with nil config", func(t *testing.T) {
 		repo, err := repository.NewFileRepository(nil)
@@ -290,10 +295,10 @@ func TestRepositorySQLInjection(t *testing.T) {
 			"test' UNION SELECT * FROM users --",
 		}
 		for _, payload := range payloads {
-			_, err := repo.Search(context.Background(), uuid.New(), payload)
+			_, err := repo.Search(context.Background(), uuid.New(), payload, 10)
 			// Should not panic or cause DB errors beyond "no rows"
 			assert.NotPanics(t, func() {
-				repo.Search(context.Background(), uuid.New(), payload)
+				repo.Search(context.Background(), uuid.New(), payload, 10)
 			}, "SQL injection payload should not cause panic: %s", payload[:20])
 			_ = err
 		}
@@ -322,8 +327,7 @@ func TestRepositoryConnectionLeak(t *testing.T) {
 		}
 
 		// After many calls, pool should not be exhausted
-		stats := repo.PoolStats()
-		assert.LessOrEqual(t, stats.InUse, 5,
+		assert.LessOrEqual(t, poolStatsInUse(repo), 5,
 			"connection pool should not have many in-use connections after queries complete")
 	})
 }
@@ -340,9 +344,9 @@ func TestRepositoryPreparedStatementLeak(t *testing.T) {
 		}
 		defer repo.Close()
 
-		files := make([]*models.File, 10)
+		files := make([]models.File, 10)
 		for i := range files {
-			files[i] = &models.File{
+			files[i] = models.File{
 				ID:         uuid.New(),
 				UserID:     uuid.New(),
 				Name:       "test.txt",
@@ -355,8 +359,7 @@ func TestRepositoryPreparedStatementLeak(t *testing.T) {
 		// BulkCreate should properly close prepared statements
 		err = repo.BulkCreate(context.Background(), files)
 		if err == nil {
-			stats := repo.PoolStats()
-			assert.LessOrEqual(t, stats.InUse, 2,
+			assert.LessOrEqual(t, poolStatsInUse(repo), 2,
 				"prepared statements should be closed after BulkCreate")
 		}
 	})

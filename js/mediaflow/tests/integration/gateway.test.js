@@ -32,17 +32,18 @@ describe('API Gateway', () => {
         email: 'test@example.com',
         password: 'password',
       });
-      expect(response.status).toBeDefined();
+      // Without auth token, gateway middleware returns 401
+      expect(response.status).toBe(401);
     });
 
     it('should route to users service', async () => {
       const response = await request.get('/api/users/user-1');
-      expect(response.status).toBeDefined();
+      expect(response.status).toBe(401);
     });
 
     it('should route to videos service', async () => {
       const response = await request.get('/api/videos');
-      expect(response.status).toBeDefined();
+      expect(response.status).toBe(401);
     });
 
     it('should return 404 for unknown routes', async () => {
@@ -66,7 +67,8 @@ describe('API Gateway', () => {
       const response = await request
         .get('/api/users/me')
         .set('Authorization', 'Bearer valid-token');
-      expect([200, 401]).toContain(response.status);
+      // 'valid-token' is not a real JWT, so auth middleware rejects it
+      expect(response.status).toBe(401);
     });
 
     it('should reject invalid token', async () => {
@@ -85,7 +87,8 @@ describe('API Gateway', () => {
 
     it('should include rate limit headers', async () => {
       const response = await request.get('/health');
-      // expect(response.headers['x-ratelimit-limit']).toBeDefined();
+      const hasRateLimit = response.headers['x-ratelimit-limit'] || response.headers['ratelimit-limit'];
+      expect(hasRateLimit).toBeDefined();
     });
   });
 
@@ -104,22 +107,15 @@ describe('API Gateway', () => {
 
   describe('CORS', () => {
     it('should handle preflight requests', async () => {
-      // OPTIONS preflight should not require auth and should return quickly
-      // Simulating what an OPTIONS request handler should do
-      const mockOpts = { method: 'OPTIONS', path: '/api/videos' };
-      expect(mockOpts.method).toBe('OPTIONS');
-      // A valid preflight response should have 2xx status
-      expect([200, 204]).toContain(204);
+      const response = await request.options('/api/videos');
+      expect([200, 204]).toContain(response.status);
     });
 
     it('should set CORS headers', async () => {
       const response = await request.get('/health');
-      
-      // When fixed, should have specific allowed origin header
-      if (response.headers['access-control-allow-origin']) {
-        expect(response.headers['access-control-allow-origin']).not.toBe('*');
-      }
-      expect(response.status).toBe(200);
+      // BUG: CORS origin defaults to '*' which is insecure
+      expect(response.headers['access-control-allow-origin']).toBeDefined();
+      expect(response.headers['access-control-allow-origin']).not.toBe('*');
     });
   });
 
@@ -132,101 +128,99 @@ describe('API Gateway', () => {
       await request.get('/health');
 
       console.log = originalLog;
-      // Should have logged at least the health check request
-      // When logging is properly implemented, expect logs to be captured
-      expect(Array.isArray(logs)).toBe(true);
+      // Should have request logging middleware that logs each request
+      expect(logs.length).toBeGreaterThan(0);
     });
 
     it('should include correlation ID', async () => {
       const response = await request.get('/health');
-      
-      // When fixed, this header will be present
-      if (response.headers['x-correlation-id']) {
-        expect(response.headers['x-correlation-id']).toBeDefined();
-        expect(typeof response.headers['x-correlation-id']).toBe('string');
-      }
-      expect(response.status).toBe(200);
+      // BUG J2: Correlation IDs should be propagated in response headers
+      expect(response.headers['x-correlation-id']).toBeDefined();
+      expect(typeof response.headers['x-correlation-id']).toBe('string');
     });
   });
 });
 
 describe('Service Discovery', () => {
-  describe('service registration', () => {
-    it('should register with consul', async () => {
-      
-      const mockConsul = {
-        agent: {
-          service: {
-            register: jest.fn().mockResolvedValue({}),
+  let ServiceRegistry;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.doMock('consul', () => {
+      return function() {
+        return {
+          agent: {
+            service: {
+              register: jest.fn().mockResolvedValue({}),
+              deregister: jest.fn().mockResolvedValue({}),
+            },
           },
-        },
-      };
-
-      // A proper registration should include id, name, port, and check
-      const registration = {
-        id: 'gateway-1',
-        name: 'gateway',
-        port: 3000,
-        check: {
-          http: 'http://localhost:3000/health',
-          interval: '10s',
-        },
-      };
-
-      await mockConsul.agent.service.register(registration);
-      expect(mockConsul.agent.service.register).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'gateway',
-          check: expect.objectContaining({
-            http: expect.any(String),
-            interval: expect.any(String),
+          health: { service: {} },
+          watch: jest.fn().mockReturnValue({
+            on: jest.fn(),
           }),
-        })
-      );
+        };
+      };
+    });
+    ({ ServiceRegistry } = require('../../../services/gateway/src/services/registry'));
+  });
+
+  describe('service registration', () => {
+    it('should have health check timeout shorter than interval', async () => {
+      const registry = new ServiceRegistry({ host: 'localhost', port: 8500 });
+      await registry.register('gateway', { host: 'localhost', port: 3000 });
+
+      const call = registry.consul.agent.service.register.mock.calls[0][0];
+      const interval = parseInt(call.check.interval);
+      const timeout = parseInt(call.check.timeout);
+      // BUG L6: timeout (60s) is greater than interval (30s)
+      expect(timeout).toBeLessThan(interval);
     });
 
-    it('should deregister on shutdown', async () => {
-      const mockConsul = {
-        agent: {
-          service: {
-            deregister: jest.fn().mockResolvedValue({}),
-          },
-        },
-      };
+    it('should include health check endpoint in registration', async () => {
+      const registry = new ServiceRegistry({ host: 'localhost', port: 8500 });
+      await registry.register('gateway', { host: 'localhost', port: 3000 });
 
-      await mockConsul.agent.service.deregister('gateway-1');
-      expect(mockConsul.agent.service.deregister).toHaveBeenCalledWith('gateway-1');
+      const call = registry.consul.agent.service.register.mock.calls[0][0];
+      expect(call.check.http).toContain('/health');
+      expect(call.check.http).toContain('localhost');
     });
   });
 
   describe('load balancing', () => {
-    it('should distribute requests', async () => {
-      // Simulate round-robin distribution
-      const instances = ['host-1', 'host-2', 'host-3'];
-      const distribution = {};
-      instances.forEach(i => distribution[i] = 0);
+    it('should round-robin across instances', () => {
+      const registry = new ServiceRegistry({ host: 'localhost', port: 8500 });
+      registry.services.set('auth', [
+        { id: 'auth-1', address: 'host-1', port: 3001 },
+        { id: 'auth-2', address: 'host-2', port: 3001 },
+        { id: 'auth-3', address: 'host-3', port: 3001 },
+      ]);
 
-      for (let i = 0; i < 30; i++) {
-        const instance = instances[i % instances.length];
-        distribution[instance]++;
+      const results = [];
+      for (let i = 0; i < 6; i++) {
+        results.push(registry.getService('auth'));
       }
 
-      // Each instance should get equal share
-      instances.forEach(i => {
-        expect(distribution[i]).toBe(10);
-      });
+      // Should cycle: auth-1, auth-2, auth-3, auth-1, auth-2, auth-3
+      expect(results[0].id).toBe('auth-1');
+      expect(results[1].id).toBe('auth-2');
+      expect(results[2].id).toBe('auth-3');
+      expect(results[3].id).toBe('auth-1');
     });
 
-    it('should skip unhealthy instances', async () => {
-      const instances = [
-        { host: 'host-1', healthy: true },
-        { host: 'host-2', healthy: false },
-        { host: 'host-3', healthy: true },
-      ];
+    it('should return null for unregistered service', () => {
+      const registry = new ServiceRegistry({ host: 'localhost', port: 8500 });
+      expect(registry.getService('nonexistent')).toBeNull();
+    });
+  });
 
-      const healthyInstances = instances.filter(i => i.healthy);
-      expect(healthyInstances).toHaveLength(2);
-      expect(healthyInstances.map(i => i.host)).not.toContain('host-2');
+  describe('discovery startup', () => {
+    it('should return a Promise from discoverServices', () => {
+      const registry = new ServiceRegistry({ host: 'localhost', port: 8500 });
+      // BUG L4: discoverServices() is sync, returns undefined, not a Promise
+      // It calls async _watchService() without await
+      const result = registry.discoverServices();
+      expect(result).toBeInstanceOf(Promise);
     });
   });
 });

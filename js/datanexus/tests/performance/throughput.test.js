@@ -228,6 +228,34 @@ describe('Performance Throughput Tests', () => {
 
       expect(engine.rollingSum('key-0', 0)).toBe(10);
     });
+
+    test('avg of 1000 values across 100 batches should be correct', () => {
+      const { ContinuousAggregation } = require('../../services/aggregate/src/services/rollups');
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('perf_avg', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'value' }],
+      });
+
+      // 100 batches of 10 records each, values 1-1000
+      let total = 0;
+      let count = 0;
+      for (let batch = 0; batch < 100; batch++) {
+        const records = [];
+        for (let i = 0; i < 10; i++) {
+          const val = batch * 10 + i + 1; // values 1 through 1000
+          records.push({ host: 'perf-host', value: val });
+          total += val;
+          count++;
+        }
+        agg.update('perf_avg', records);
+      }
+
+      const state = agg.getState('perf_avg');
+      const expectedAvg = total / count; // 500.5
+      // BUG: (prevAvg+value)/2 formula compounds error over 100 batches
+      expect(state.state['perf-host'].value_avg).toBeCloseTo(expectedAvg, 0);
+    });
   });
 
   describe('query engine throughput', () => {
@@ -433,6 +461,104 @@ describe('Performance Throughput Tests', () => {
         wm.getWindowKey(i * 10);
       }
       expect(wm.windows.size).toBeGreaterThan(100);
+    });
+  });
+
+  describe('ContinuousAggregation avg at scale', () => {
+    test('avg of varied values across many batches should be correct', () => {
+      const { ContinuousAggregation } = require('../../services/aggregate/src/services/rollups');
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('perf_avg', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'value' }],
+      });
+      let total = 0;
+      let count = 0;
+      for (let batch = 0; batch < 100; batch++) {
+        const records = [];
+        for (let i = 0; i < 10; i++) {
+          const val = batch * 10 + i + 1;
+          records.push({ host: 'perf-host', value: val });
+          total += val;
+          count++;
+        }
+        agg.update('perf_avg', records);
+      }
+      const state = agg.getState('perf_avg');
+      expect(state.state['perf-host'].value_avg).toBeCloseTo(total / count, 0);
+    });
+  });
+
+  describe('CompactionManager at scale', () => {
+    test('compaction of many segments should keep newest versions', () => {
+      const { CompactionManager } = require('../../services/store/src/services/timeseries');
+      const cm = new CompactionManager({ mergeThreshold: 4 });
+      for (let i = 0; i < 8; i++) {
+        cm.addSegment({
+          level: 0,
+          data: [{ key: 'key-0', value: i * 10, timestamp: i * 1000 }],
+        });
+      }
+      cm.compact();
+      const result = cm.lookup('key-0');
+      expect(result.value).toBe(70);
+    });
+  });
+
+  describe('Concurrent config reloads at scale', () => {
+    test('10 concurrent reloads should never expose undefined', async () => {
+      const { ConnectorConfigManager } = require('../../services/connectors/src/services/framework');
+      const mgr = new ConnectorConfigManager();
+      mgr.setConfig('c1', { v: 0 });
+      const snapshots = [];
+      let reading = true;
+      const reader = (async () => {
+        while (reading) {
+          snapshots.push(mgr.getConfig('c1'));
+          await new Promise(r => setTimeout(r, 1));
+        }
+      })();
+      const reloads = [];
+      for (let i = 1; i <= 10; i++) {
+        reloads.push(mgr.reloadConfig('c1', { v: i }));
+      }
+      await Promise.all(reloads);
+      reading = false;
+      await reader;
+      expect(snapshots.filter(c => c === undefined).length).toBe(0);
+    });
+  });
+
+  describe('HLL merge correctness at scale', () => {
+    test('repeated HLL merges should not overflow', () => {
+      const { RollupEngine } = require('../../services/aggregate/src/services/rollups');
+      const engine = new RollupEngine({});
+      let result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+      for (let i = 0; i < 100; i++) {
+        const other = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        result = engine.mergeHLL(result, other);
+      }
+      for (const val of result) {
+        expect(val).toBeLessThanOrEqual(10);
+      }
+    });
+  });
+
+  describe('UsageAggregator rollup idempotency', () => {
+    test('triple rollup should not inflate daily totals', () => {
+      const { UsageAggregator } = require('../../services/billing/src/services/metering');
+      const agg = new UsageAggregator();
+      for (let h = 0; h < 24; h++) {
+        agg.recordHourly('t1', 86400000 * 500 + h * 3600000, {
+          dataPoints: 100, bytes: 1000, queries: 5,
+        });
+      }
+      agg.rollupToDaily('t1');
+      agg.rollupToDaily('t1');
+      agg.rollupToDaily('t1');
+      const dayStart = 86400000 * 500;
+      const daily = agg.getDailyUsage('t1', dayStart, dayStart);
+      expect(daily[0].dataPoints).toBe(2400);
     });
   });
 });

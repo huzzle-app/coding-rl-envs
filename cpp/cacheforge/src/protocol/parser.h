@@ -20,18 +20,12 @@ struct Command {
 class Parser {
 public:
     
-    // the length prefix claims more bytes than actually present.
-    // The parser trusts the client-provided length without bounds checking.
-    // FIX: Validate that claimed length <= actual remaining buffer size
     std::optional<Command> parse_raw(const uint8_t* data, size_t length);
 
     // Parse a text-mode command string like "SET mykey myvalue"
     std::optional<Command> parse_text(const std::string& input);
 
     
-    // when key contains embedded null bytes. Uses strlen() instead of
-    // respecting the explicit length field.
-    // FIX: Use the provided length instead of strlen()
     std::string extract_key(const uint8_t* data, size_t length);
 
     // Serialize a response

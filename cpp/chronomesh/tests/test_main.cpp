@@ -7,12 +7,33 @@
 using namespace chronomesh;
 
 // ---------------------------------------------------------------------------
+// Diagnostic helpers — print expected vs actual on failure
+// ---------------------------------------------------------------------------
+
+#define DIAG(label, actual, expected) \
+    do { if ((actual) != (expected)) { \
+        std::cerr << "  " << label << ": got=" << (actual) << " expected=" << (expected) << std::endl; \
+    } } while(0)
+
+#define DIAG_F(label, actual, expected, tol) \
+    do { if (std::abs((actual) - (expected)) >= (tol)) { \
+        std::cerr << "  " << label << ": got=" << (actual) << " expected=" << (expected) << std::endl; \
+    } } while(0)
+
+// ---------------------------------------------------------------------------
 // Allocator tests
 // ---------------------------------------------------------------------------
 
 static bool allocator_capacity() {
   auto out = plan_dispatch({{"a", 1, "09:30"}, {"b", 3, "10:00"}, {"c", 3, "08:30"}}, 2);
-  return out.size() == 2 && out[0].id == "c" && out[1].id == "b";
+  if (out.size() != 2 || out[0].id != "c" || out[1].id != "b") {
+    std::cerr << "  allocator_capacity: size=" << out.size();
+    for (size_t i = 0; i < out.size(); ++i)
+      std::cerr << " [" << i << "]={id=" << out[i].id << ",urg=" << out[i].urgency << ",eta=" << out[i].eta << "}";
+    std::cerr << " expected [c(3,08:30), b(3,10:00)]" << std::endl;
+    return false;
+  }
+  return true;
 }
 
 static bool allocator_batch() {
@@ -33,6 +54,7 @@ static bool allocator_available_slots() {
 
 static bool allocator_cost_estimation() {
   double cost = estimate_cost(100.0, 2.5, 50.0);
+  DIAG_F("estimate_cost(100,2.5,50)", cost, 300.0, 0.01);
   return std::abs(cost - 300.0) < 0.01;
 }
 
@@ -86,6 +108,7 @@ static bool routing_table() {
 
 static bool routing_cost() {
   double cost = estimate_route_cost(10, 2.0, 100.0);
+  DIAG_F("estimate_route_cost(10,2.0,100)", cost, 205.0, 0.01);
   return std::abs(cost - 205.0) < 0.01;
 }
 
@@ -293,6 +316,7 @@ static bool workflow_audit() {
 
 static bool model_urgency() {
   DispatchModel model{3, 30};
+  DIAG("urgency_score({3,30})", model.urgency_score(), 120);
   return model.urgency_score() == 120;
 }
 
@@ -445,6 +469,7 @@ static bool routing_risk_compound() {
   // Two legs with latency 5 and 3, base risk 1.0
   // Compound risk: 1.0 * (1 + 0.5) * (1 + 0.3) = 1.95
   double risk = calculate_route_risk({{"a", 5}, {"b", 3}}, 1.0);
+  DIAG_F("route_risk([5,3],1.0)", risk, 1.95, 0.01);
   return std::abs(risk - 1.95) < 0.01;
 }
 
@@ -459,6 +484,7 @@ static bool policy_breach_penalty_critical() {
   // CRITICAL severity (5) should have highest penalty weight
   // Weight 5 * 10 minutes over SLA = 50
   int penalty = calculate_breach_penalty(SEVERITY_CRITICAL, 10);
+  DIAG("breach_penalty(CRITICAL,10)", penalty, 50);
   return penalty == 50;
 }
 
@@ -466,6 +492,7 @@ static bool policy_breach_penalty_info() {
   // INFO severity (1) should have lowest penalty weight
   // Weight 1 * 10 minutes over SLA = 10
   int penalty = calculate_breach_penalty(SEVERITY_INFO, 10);
+  DIAG("breach_penalty(INFO,10)", penalty, 10);
   return penalty == 10;
 }
 
@@ -501,6 +528,7 @@ static bool stats_weighted_percentile_unnormalized() {
   // Normalized: [0.3, 0.5, 0.2], cumulative: [0.3, 0.8, 1.0]
   // 30th percentile: first cumulative >= 0.3 at value 1.0
   double wp = weighted_percentile({3.0, 1.0, 2.0}, {2.0, 3.0, 5.0}, 30);
+  DIAG_F("weighted_pctl({3,1,2},{2,3,5},30)", wp, 1.0, 0.01);
   return std::abs(wp - 1.0) < 0.01;
 }
 
@@ -509,6 +537,7 @@ static bool stats_weighted_percentile_boundary() {
   // 50th percentile: cumulative [0.2, 0.5, 1.0], target 0.5
   // Cumulative reaches exactly 0.5 at value 2.0, so result should be 2.0
   double wp = weighted_percentile({1.0, 2.0, 3.0}, {0.2, 0.3, 0.5}, 50);
+  DIAG_F("weighted_pctl({1,2,3},{0.2,0.3,0.5},50)", wp, 2.0, 0.01);
   return std::abs(wp - 2.0) < 0.01;
 }
 
@@ -725,6 +754,7 @@ static bool model_port_fees_hazmat() {
   VesselManifest vm{"V1", "HazShip", 100.0, 150, true};
   double fee = estimate_port_fees(vm, 1.0);
   // base: 1.0 * 100 = 100, hazmat: +0.5, containers > 100: +150*0.1=15, total: 115.5
+  DIAG_F("port_fees(hazmat,150ctn)", fee, 115.5, 0.01);
   return std::abs(fee - 115.5) < 0.01;
 }
 
@@ -749,6 +779,7 @@ static bool resilience_replay_no_gap() {
 static bool stats_ema_increasing() {
   double ema = exponential_moving_average_single({10.0, 20.0, 30.0}, 0.3);
   // Correct: 10, 0.3*20+0.7*10=13, 0.3*30+0.7*13=18.1
+  DIAG_F("ema({10,20,30},0.3)", ema, 18.1, 0.01);
   return std::abs(ema - 18.1) < 0.01;
 }
 
@@ -756,6 +787,170 @@ static bool stats_ema_constant() {
   double ema = exponential_moving_average_single({5.0, 5.0, 5.0, 5.0}, 0.5);
   // Constant input → EMA should equal the constant
   return std::abs(ema - 5.0) < 0.01;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-module integration tests (Recommendation 2)
+// ---------------------------------------------------------------------------
+
+static bool routing_score_priority_ordering() {
+  // Higher priority (lower number) should get a higher reliability-weighted score
+  // because reliability contributes more for important routes
+  double high_prio = channel_score(10, 0.9, 2);  // priority 2 (high)
+  double low_prio = channel_score(10, 0.9, 8);   // priority 8 (low)
+  // Correct: 10 + 0.9*(10-2)=17.2 vs 10 + 0.9*(10-8)=11.8 → high > low
+  // Buggy:   10 + 0.9*2=11.8      vs 10 + 0.9*8=17.2       → high < low (WRONG)
+  if (high_prio <= low_prio) {
+    std::cerr << "  routing_score_priority_ordering: high_prio=" << high_prio
+              << " low_prio=" << low_prio << " (expected high > low)" << std::endl;
+  }
+  return high_prio > low_prio;
+}
+
+static bool policy_deescalate_restricted() {
+  // "restricted" has de-escalation threshold 1. A streak of 2 should trigger de-escalation.
+  // With correct formula (> threshold): 2 > 1 = true
+  // With buggy formula (* 2):           2 > 1*2 = 2 > 2 = false
+  bool should = should_deescalate("restricted", 2);
+  if (!should) {
+    std::cerr << "  policy_deescalate_restricted: should_deescalate('restricted',2)=false"
+              << " (expected true, threshold=1)" << std::endl;
+  }
+  return should;
+}
+
+static bool dispatch_cost_pipeline() {
+  // Cross-module: allocator estimate_cost + routing estimate_route_cost should agree
+  // on the sign of cost components (both should add, not subtract)
+  double alloc_cost = estimate_cost(100.0, 2.0, 50.0);   // 100*2 + 50 = 250
+  double route_cost = estimate_route_cost(10, 2.0, 100.0); // 100*2 + 10*0.5 = 205
+  // Both costs must be >= their base (fuel*distance). Surcharges should always ADD.
+  double alloc_base = 100.0 * 2.0;
+  double route_base = 2.0 * 100.0;
+  if (alloc_cost < alloc_base || route_cost < route_base) {
+    std::cerr << "  dispatch_cost_pipeline: alloc=" << alloc_cost << " (base=" << alloc_base
+              << ") route=" << route_cost << " (base=" << route_base << ")" << std::endl;
+  }
+  return alloc_cost >= alloc_base && route_cost >= route_base;
+}
+
+static bool policy_full_cycle() {
+  // Cross-module: escalate → check should_deescalate → deescalate cycle
+  PolicyEngine pe("normal");
+  pe.escalate(5, "burst");
+  // Now at "watch". Threshold for "watch" is 2. Success streak of 3 should trigger deescalate.
+  if (!should_deescalate(pe.current(), 3)) {
+    std::cerr << "  policy_full_cycle: should_deescalate('watch',3)=false (expected true)" << std::endl;
+    return false;
+  }
+  pe.deescalate("recovery");
+  // Should be back to normal
+  DIAG("policy_full_cycle", pe.current(), std::string("normal"));
+  return pe.current() == "normal";
+}
+
+static bool security_contracts_integration() {
+  // Cross-module: sign a manifest of a service URL, then verify it
+  auto url = get_service_url("routing", "dispatch.local");
+  auto sig = sign_manifest(url, "secret");
+  bool valid = verify_manifest(url, sig, "secret");
+  // URL must include port for correct verification
+  if (url.find(":8141") == std::string::npos) {
+    std::cerr << "  security_contracts_integration: url=" << url
+              << " (expected to contain :8141)" << std::endl;
+  }
+  return valid && url.find(":8141") != std::string::npos;
+}
+
+static bool stats_percentile_consistency() {
+  // Cross-module: percentile (int) and ResponseTimeTracker::percentile_float should agree
+  // on the same data. Both use the same rank formula.
+  int p = percentile({10, 20, 30, 40, 50, 60, 70, 80, 90, 100}, 50);
+  ResponseTimeTracker rt(100);
+  for (int v = 10; v <= 100; v += 10) rt.record(static_cast<double>(v));
+  double pf = rt.p50();
+  // Both should return the 50th percentile of the same 10-element sequence
+  if (std::abs(static_cast<double>(p) - pf) > 0.01) {
+    std::cerr << "  stats_percentile_consistency: int_p50=" << p << " float_p50=" << pf << std::endl;
+  }
+  return std::abs(static_cast<double>(p) - pf) < 0.01;
+}
+
+static bool resilience_checkpoint_gap() {
+  // Cross-module: checkpoint manager + replay gap detection
+  // Record checkpoints, then verify gap detection finds the right gap
+  CheckpointManager cm;
+  cm.record("stream-x", 1);
+  cm.record("stream-x", 2);
+  cm.record("stream-x", 5);  // gap at 3
+  // Replay gap detection should find gap at sequence 3
+  int gap = find_replay_gap({{"stream-x", 1}, {"stream-x", 2}, {"stream-x", 5}});
+  DIAG("replay_gap", gap, 3);
+  return gap == 3 && cm.last_sequence() == 5;
+}
+
+static bool workflow_force_complete_and_count() {
+  // Cross-module: force_complete + terminal_count + active_count
+  WorkflowEngine we;
+  we.register_entity("v1", "queued");
+  we.register_entity("v2", "queued");
+  we.register_entity("v3", "queued");
+  we.force_complete("v1");  // queued → allocated → departed → arrived
+  we.transition("v2", "cancelled");
+  // v1: arrived (not terminal), v2: cancelled (terminal), v3: queued (active)
+  auto hist = we.entity_history("v1");
+  if (hist.size() != 3) {
+    std::cerr << "  workflow_force_complete_and_count: v1 history=" << hist.size()
+              << " (expected 3 transitions)" << std::endl;
+  }
+  return we.get_state("v1") == "arrived" && hist.size() == 3
+      && we.terminal_count() == 1 && we.active_count() == 2;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-module interaction tests (pass-rate lowering)
+// ---------------------------------------------------------------------------
+
+static bool classify_breach_pipeline() {
+  // Cross-module: classify_severity (model) → calculate_breach_penalty (policy)
+  // "medium priority" should classify as SEVERITY_MEDIUM (3), then penalty = 3 * 10 = 30
+  int sev = classify_severity("medium priority alert");
+  int penalty = calculate_breach_penalty(sev, 10);
+  DIAG("classify('medium')", sev, SEVERITY_MEDIUM);
+  DIAG("breach_penalty(MEDIUM,10)", penalty, 30);
+  return sev == SEVERITY_MEDIUM && penalty == 30;
+}
+
+static bool stats_sample_variance() {
+  // variance() should use sample variance formula: sum_sq / (n - 1)
+  // Data: {2, 4, 4, 4, 5, 5, 7, 9}, mean = 5.0
+  // sum_sq = 9+1+1+1+0+0+4+16 = 32
+  // Sample variance = 32/7 ≈ 4.571, population variance = 32/8 = 4.0
+  auto var = variance({2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0});
+  DIAG_F("variance({2,4,4,4,5,5,7,9})", var, 32.0 / 7.0, 0.01);
+  return std::abs(var - 32.0 / 7.0) < 0.01;
+}
+
+static bool urgency_dispatch_chain() {
+  // Cross-module: urgency_score (model) → plan_dispatch (allocator)
+  // CRITICAL with short SLA should have HIGH urgency, LOW with long SLA should have LOW urgency
+  // Give the HIGH urgency item a LATER ETA so ETA-first sort would put it second
+  DispatchModel m1{SEVERITY_CRITICAL, 30};  // correct urgency = 5*10 + 90 = 140
+  DispatchModel m2{SEVERITY_LOW, 90};       // correct urgency = 2*10 + 30 = 50
+  auto planned = plan_dispatch({
+    {"critical-ship", m1.urgency_score(), "10:00"},
+    {"low-ship", m2.urgency_score(), "08:00"},
+  }, 2);
+  // With correct urgency + correct sort: critical(140) > low(50), critical first → PASS
+  // With urgency bug: critical=5*30=150, low=2*90=180, low first → FAIL
+  // With sort bug: ETA-first: low(08:00) first → FAIL
+  // Requires BOTH bugs fixed to pass
+  if (planned[0].id != "critical-ship") {
+    std::cerr << "  urgency_dispatch_chain: first=" << planned[0].id
+              << " (urg=" << planned[0].urgency << ")"
+              << " expected critical-ship" << std::endl;
+  }
+  return planned[0].id == "critical-ship";
 }
 
 // ---------------------------------------------------------------------------
@@ -837,8 +1032,9 @@ static bool run_hyper_case(int idx) {
   }
 
   if (idx % 41 == 0) {
-    double score = channel_score(route.latency, 0.8, 5);
-    if (score < 0) return false;
+    double score_hi = channel_score(route.latency, 0.8, 2);
+    double score_lo = channel_score(route.latency, 0.8, 8);
+    if (score_hi <= score_lo) return false;
   }
 
   if (idx % 53 == 0) {
@@ -895,6 +1091,32 @@ static bool run_hyper_case(int idx) {
     VesselManifest vm{"V1", "Test", 100.0, 150, true};
     double fee = estimate_port_fees(vm, 1.0);
     if (fee < 115.0) return false;
+  }
+
+  if (idx % 59 == 0) {
+    // De-escalation from "restricted" (threshold 1) with streak 2 should succeed
+    if (!should_deescalate("restricted", 2)) return false;
+  }
+
+  // High-frequency cross-module checks (lower pass rate to target range)
+  if (idx % 3 == 0) {
+    DispatchModel dm{3, 30};
+    if (dm.urgency_score() != 120) return false;
+  }
+
+  if (idx % 5 != 0) {
+    double cost = estimate_cost(100.0, 2.0, 50.0);
+    if (std::abs(cost - 250.0) > 0.01) return false;
+  }
+
+  if (idx % 9 == 0) {
+    auto url = get_service_url("routing", "t");
+    if (url.find(":8141") == std::string::npos) return false;
+  }
+
+  if (idx % 13 == 0) {
+    int sev = classify_severity("medium alert");
+    if (sev != SEVERITY_MEDIUM) return false;
   }
 
   return true;
@@ -1047,6 +1269,19 @@ int main(int argc, char** argv) {
   else if (name == "resilience_replay_no_gap") ok = resilience_replay_no_gap();
   else if (name == "stats_ema_increasing") ok = stats_ema_increasing();
   else if (name == "stats_ema_constant") ok = stats_ema_constant();
+  // Cross-module integration tests
+  else if (name == "routing_score_priority_ordering") ok = routing_score_priority_ordering();
+  else if (name == "policy_deescalate_restricted") ok = policy_deescalate_restricted();
+  else if (name == "dispatch_cost_pipeline") ok = dispatch_cost_pipeline();
+  else if (name == "policy_full_cycle") ok = policy_full_cycle();
+  else if (name == "security_contracts_integration") ok = security_contracts_integration();
+  else if (name == "stats_percentile_consistency") ok = stats_percentile_consistency();
+  else if (name == "resilience_checkpoint_gap") ok = resilience_checkpoint_gap();
+  else if (name == "workflow_force_complete_and_count") ok = workflow_force_complete_and_count();
+  // Cross-module interaction tests
+  else if (name == "classify_breach_pipeline") ok = classify_breach_pipeline();
+  else if (name == "stats_sample_variance") ok = stats_sample_variance();
+  else if (name == "urgency_dispatch_chain") ok = urgency_dispatch_chain();
   // Hyper-matrix
   else if (name == "hyper_matrix") ok = hyper_matrix();
   else {

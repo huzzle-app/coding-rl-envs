@@ -37,7 +37,7 @@ These scenarios describe **symptoms only** - not solutions. Use them to understa
 ## Completion Criteria
 
 - Full suite passes (`ruby -Ilib -Itests tests/run_all.rb`).
-- All 1240 tests pass with zero failures.
+- All 1571 tests pass with zero failures.
 - Settlement correctness and compliance suites remain stable.
 - Security, workflow, and audit invariants remain enforced.
 

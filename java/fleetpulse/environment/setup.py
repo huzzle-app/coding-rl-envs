@@ -1,6 +1,6 @@
 """
 FleetPulse RL Environment Setup
-Real-time fleet management platform - Principal difficulty (75 bugs, 510+ tests)
+Real-time fleet management platform - Principal difficulty (~66 bugs, 510+ tests)
 Java 21, 10 Spring Boot Microservices, Kafka, PostgreSQL, Redis, Consul
 """
 
@@ -29,7 +29,7 @@ class FleetPulseEnvironment:
     """
     RL Environment for FleetPulse - Real-time Fleet Management Platform.
 
-    Principal difficulty: 75 bugs, 510+ tests
+    Principal difficulty: ~66 bugs, 510+ tests
     Stack: Java 21, 10 Spring Boot Microservices, Kafka, PostgreSQL, Redis, Consul
     """
 
@@ -190,7 +190,7 @@ class FleetPulseEnvironment:
         self.done = False
         self.initial_test_results = self._run_tests()
         self.test_results = list(self.initial_test_results)
-        return self._get_observation("Environment reset. FleetPulse has 75 bugs to fix across 10 microservices.")
+        return self._get_observation("Environment reset. FleetPulse has ~66 bugs to fix across 10 microservices.")
 
     def step(self, action: Dict[str, Any]) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
         if self.done:
@@ -358,7 +358,8 @@ class FleetPulseEnvironment:
 
     def _run_tests(self):
         try:
-            subprocess.run(['mvn', 'test', '-Dsurefire.useFile=true', '-q'],
+            subprocess.run(['mvn', 'test', '-Dsurefire.useFile=true', '-q',
+                           '-Dmaven.test.failure.ignore=true', '--fail-at-end'],
                           shell=False, capture_output=True, text=True,
                           timeout=self.timeout, cwd=str(self.project_dir))
             return self._parse_surefire_reports()

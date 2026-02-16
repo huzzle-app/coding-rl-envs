@@ -1,5 +1,6 @@
 package com.pulsemap.unit
 
+import com.pulsemap.core.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,14 +25,11 @@ class KtorExposedTests {
 
     @Test
     fun test_auth_intercept_returns() {
-        
-        // The next handler in the pipeline still executes
         val pipeline = SimulatedPipeline()
         pipeline.addInterceptor { ctx ->
             if (!ctx.isAuthenticated) {
                 ctx.responseCode = 401
                 ctx.responseBody = "Unauthorized"
-                
             }
         }
         pipeline.addHandler { ctx ->
@@ -49,13 +47,11 @@ class KtorExposedTests {
 
     @Test
     fun test_unauthorized_stops_pipeline() {
-        
         val pipeline = SimulatedPipeline()
         pipeline.addInterceptor { ctx ->
             if (!ctx.isAuthenticated) {
                 ctx.responseCode = 401
                 ctx.responseBody = "Unauthorized"
-                
             }
         }
         pipeline.addHandler { ctx ->
@@ -78,8 +74,6 @@ class KtorExposedTests {
 
     @Test
     fun test_no_coroutine_in_transaction() {
-        
-        // because the transaction context is thread-local and won't propagate
         val txSimulator = TransactionSimulator()
         val result = txSimulator.runWithCoroutineInTransaction()
         assertFalse(
@@ -91,7 +85,6 @@ class KtorExposedTests {
 
     @Test
     fun test_transaction_scope_respected() {
-        
         val txSimulator = TransactionSimulator()
         val result = txSimulator.runTransactionBoundaryCheck()
         assertTrue(
@@ -106,8 +99,6 @@ class KtorExposedTests {
 
     @Test
     fun test_batch_insert_no_returning() {
-        
-        // which adds RETURNING clause and eliminates batch optimization
         val inserter = BatchInserter()
         val result = inserter.performBatchInsert(count = 1000)
         assertFalse(
@@ -118,7 +109,6 @@ class KtorExposedTests {
 
     @Test
     fun test_bulk_insert_performance() {
-        
         val inserter = BatchInserter()
         val result = inserter.performBatchInsert(count = 500)
         assertTrue(
@@ -133,8 +123,6 @@ class KtorExposedTests {
 
     @Test
     fun test_uses_call_receive() {
-        
-        // which bypasses content negotiation, validation, and error handling
         val handler = RequestHandler()
         val result = handler.handleRequest("""{"id":"s1","value":42.0}""", contentType = "application/json")
         assertTrue(result.usedContentNegotiation, "Should use call.receive<T>(), not manual JSON parsing")
@@ -142,7 +130,6 @@ class KtorExposedTests {
 
     @Test
     fun test_content_type_validated() {
-        
         val handler = RequestHandler()
         val result = handler.handleRequest("""not json at all""", contentType = "text/plain")
         assertEquals(
@@ -223,7 +210,6 @@ class KtorExposedTests {
     fun test_exposed_query_parameterized() {
         val queryResult = simulateExposedQuery("SELECT * FROM sensors WHERE id = ?", listOf("s1"))
         assertNotNull(queryResult)
-        // Parameterized queries should not be vulnerable to injection
     }
 
     @Test
@@ -238,104 +224,8 @@ class KtorExposedTests {
     }
 
     // =========================================================================
-    // Local stubs simulating buggy production code
+    // Local helpers for baseline tests
     // =========================================================================
-
-    data class RequestContext(
-        val isAuthenticated: Boolean,
-        var responseCode: Int = 0,
-        var responseBody: String = "",
-        var handlerCalled: Boolean = false
-    )
-
-    class SimulatedPipeline {
-        private val interceptors = mutableListOf<(RequestContext) -> Unit>()
-        private val handlers = mutableListOf<(RequestContext) -> Unit>()
-
-        fun addInterceptor(interceptor: (RequestContext) -> Unit) {
-            interceptors.add(interceptor)
-        }
-
-        fun addHandler(handler: (RequestContext) -> Unit) {
-            handlers.add(handler)
-        }
-
-        fun execute(ctx: RequestContext) {
-            
-            for (interceptor in interceptors) {
-                interceptor(ctx)
-                
-            }
-            for (handler in handlers) {
-                handler(ctx)
-            }
-        }
-    }
-
-    data class TransactionResult(
-        val success: Boolean = false,
-        val committed: Boolean = false,
-        val rolledBack: Boolean = false,
-        val coroutineLaunched: Boolean = false,
-        val allOpsOnSameThread: Boolean = false
-    )
-
-    class TransactionSimulator {
-        fun runWithCoroutineInTransaction(): TransactionResult {
-            
-            return TransactionResult(success = false, coroutineLaunched = true)
-        }
-
-        fun runTransactionBoundaryCheck(): TransactionResult {
-            
-            return TransactionResult(allOpsOnSameThread = false)
-        }
-
-        fun runSimpleTransaction(shouldSucceed: Boolean): TransactionResult {
-            return if (shouldSucceed) {
-                TransactionResult(success = true, committed = true, rolledBack = false)
-            } else {
-                TransactionResult(success = false, committed = false, rolledBack = true)
-            }
-        }
-    }
-
-    data class BatchInsertResult(
-        val insertedCount: Int,
-        val queryCount: Int,
-        val usesReturningClause: Boolean
-    )
-
-    class BatchInserter {
-        fun performBatchInsert(count: Int): BatchInsertResult {
-            
-            return BatchInsertResult(
-                insertedCount = count,
-                queryCount = count, 
-                usesReturningClause = true 
-            )
-        }
-    }
-
-    data class HandlerResult(
-        val statusCode: Int,
-        val body: String = "",
-        val usedContentNegotiation: Boolean = false
-    )
-
-    class RequestHandler {
-        fun handleRequest(body: String, contentType: String): HandlerResult {
-            
-            if (body.isEmpty()) return HandlerResult(400, "Empty body")
-            
-            
-            return try {
-                HandlerResult(200, body, usedContentNegotiation = false) 
-            } catch (e: Exception) {
-                HandlerResult(500, e.message ?: "Error")
-            }
-        }
-    }
 
     private fun simulateExposedQuery(sql: String, params: List<Any>): List<Map<String, Any>> {
         return listOf(mapOf("id" to "s1", "value" to 42.0))

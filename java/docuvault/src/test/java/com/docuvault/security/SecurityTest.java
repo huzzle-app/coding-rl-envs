@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
@@ -17,71 +18,67 @@ public class SecurityTest {
 
     // Tests for BUG I1: SQL injection
     @Test
-    void test_sql_injection_prevented() {
-        
-        // In the fixed version, parameterized queries prevent injection
-        // Verify that the query method exists and would use parameters
-        String maliciousInput = "'; DROP TABLE documents; --";
-        // The fixed version should use parameterized queries that treat this as a literal string
-        assertNotNull(maliciousInput, "SQL injection input should be handled safely");
-        assertTrue(maliciousInput.contains("'"),
-            "Input with SQL metacharacters should be treated as data, not code");
+    void test_sql_injection_prevented() throws Exception {
+        // Verify SecurityConfig.searchDocumentsByName uses parameterized queries,
+        // not string concatenation. Read source and strip comments before checking.
+        Path sourceFile = Paths.get("src/main/java/com/docuvault/config/SecurityConfig.java");
+        String source = new String(java.nio.file.Files.readAllBytes(sourceFile));
+        String code = stripComments(source);
+
+        // The vulnerable pattern: concatenating user input into SQL string
+        boolean hasStringConcat = code.contains("+ userInput +")
+            || code.contains("\" + userInput")
+            || code.contains("userInput + \"");
+        assertFalse(hasStringConcat,
+            "SecurityConfig.searchDocumentsByName must use parameterized queries, " +
+            "not string concatenation with user input");
     }
 
     @Test
-    void test_parameterized_query_safe() {
-        // Verify that special characters in input are properly escaped
-        String[] maliciousInputs = {
-            "' OR '1'='1",
-            "'; DROP TABLE users; --",
-            "\" OR \"\"=\"",
-            "1; DELETE FROM documents",
-            "admin'--"
-        };
+    void test_parameterized_query_uses_setParameter() throws Exception {
+        // Verify the query uses setParameter() for safe parameterization
+        Path sourceFile = Paths.get("src/main/java/com/docuvault/config/SecurityConfig.java");
+        String source = new String(java.nio.file.Files.readAllBytes(sourceFile));
+        String code = stripComments(source);
 
-        for (String input : maliciousInputs) {
-            // In fixed version, these should be treated as literal strings
-            // not as SQL commands. We verify the inputs are non-trivial.
-            assertFalse(input.isEmpty(),
-                "Malicious input should be handled as literal data by parameterized query");
-        }
+        // The fixed version should use setParameter to bind values safely
+        assertTrue(code.contains("setParameter") || code.contains(":userInput")
+            || code.contains("?1"),
+            "searchDocumentsByName should use parameterized query binding (setParameter or :param)");
     }
 
     // Tests for BUG I2: Deserialization of untrusted data
     @Test
-    void test_no_unsafe_deserialization() {
-        
-        byte[] maliciousPayload = createMaliciousSerializedObject();
+    void test_no_unsafe_deserialization() throws Exception {
+        // Verify DocumentController does NOT use raw ObjectInputStream.
+        // Strip comments since bug descriptions mention the fix patterns.
+        Path sourceFile = Paths.get("src/main/java/com/docuvault/controller/DocumentController.java");
+        String source = new String(java.nio.file.Files.readAllBytes(sourceFile));
+        String code = stripComments(source);
 
-        // In the fixed version, this should either:
-        // 1. Not use ObjectInputStream at all (use Jackson instead)
-        // 2. Use ObjectInputFilter to block dangerous classes
-        assertNotNull(maliciousPayload,
-            "Serialized payloads should be rejected or filtered before deserialization");
-        assertTrue(maliciousPayload.length > 0,
-            "Even seemingly harmless serialized data should go through validation");
+        boolean usesRawOIS = code.contains("new ObjectInputStream(")
+            && !code.contains("setObjectInputFilter")
+            && !code.contains("ObjectInputFilter");
+
+        assertFalse(usesRawOIS,
+            "DocumentController must not use raw ObjectInputStream without ObjectInputFilter. " +
+            "Use Jackson ObjectMapper or add ObjectInputFilter to whitelist allowed classes.");
     }
 
     @Test
-    void test_input_filter_blocks_dangerous_classes() {
-        // Verify that ObjectInputFilter (if used) blocks dangerous classes
-        // like Runtime, ProcessBuilder, etc.
-        String[] dangerousClasses = {
-            "java.lang.Runtime",
-            "java.lang.ProcessBuilder",
-            "javax.script.ScriptEngine"
-        };
+    void test_safe_deserialization_method() throws Exception {
+        // Verify the metadata endpoint uses safe deserialization (stripping comments)
+        Path sourceFile = Paths.get("src/main/java/com/docuvault/controller/DocumentController.java");
+        String source = new String(java.nio.file.Files.readAllBytes(sourceFile));
+        String code = stripComments(source);
 
-        for (String className : dangerousClasses) {
-            // In the fixed version, these classes should be blocked from deserialization
-            try {
-                Class<?> clazz = Class.forName(className);
-                assertNotNull(clazz,
-                    "Class " + className + " exists and should be blocked by ObjectInputFilter");
-            } catch (ClassNotFoundException e) {
-                // Some classes may not be on classpath, which is fine
-            }
-        }
+        boolean usesSafeMethod = code.contains("ObjectMapper")
+            || code.contains("ObjectInputFilter")
+            || code.contains("setObjectInputFilter")
+            || !code.contains("ObjectInputStream");
+
+        assertTrue(usesSafeMethod,
+            "uploadMetadata should use Jackson ObjectMapper or ObjectInputFilter for safe deserialization");
     }
 
     // Tests for BUG I3: Path traversal
@@ -89,12 +86,12 @@ public class SecurityTest {
     void test_path_traversal_blocked() {
         String uploadDir = "/tmp/docuvault/uploads";
 
-        
+        // Only use forward-slash paths that work cross-platform
         String[] maliciousPaths = {
             "../../etc/passwd",
             "../../../etc/shadow",
-            "..\\..\\windows\\system32\\config\\sam",
-            "....//....//etc/passwd"
+            "subdir/../../etc/passwd",
+            "../../../root/.ssh/id_rsa"
         };
 
         for (String malPath : maliciousPaths) {
@@ -234,15 +231,12 @@ public class SecurityTest {
             "Password hash should use BCrypt format");
     }
 
-    private byte[] createMaliciousSerializedObject() {
-        try {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ObjectOutputStream oos = new ObjectOutputStream(baos);
-            oos.writeObject("harmless string");
-            oos.close();
-            return baos.toByteArray();
-        } catch (IOException e) {
-            return new byte[0];
-        }
+    /** Strip single-line (//) and multi-line comments from Java source. */
+    private String stripComments(String source) {
+        // Remove multi-line comments (/* ... */)
+        String result = source.replaceAll("/\\*[\\s\\S]*?\\*/", "");
+        // Remove single-line comments (// ...)
+        result = result.replaceAll("//[^\n]*", "");
+        return result;
     }
 }

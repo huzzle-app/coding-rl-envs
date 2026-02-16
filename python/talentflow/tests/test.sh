@@ -45,7 +45,10 @@ if [ "$TEST_FAST" = "1" ]; then
 fi
 
 # Run pytest and capture output
-TEST_OUTPUT=$($PYTEST_CMD 2>&1 || true)
+set +e
+TEST_OUTPUT=$($PYTEST_CMD 2>&1)
+TEST_EXIT=$?
+set -e
 echo "$TEST_OUTPUT" > /logs/verifier/test_output.txt
 
 # Parse pytest summary line: "X passed, Y failed, Z errors"
@@ -62,8 +65,12 @@ TOTAL=$((PASSED + FAILED + ERRORS))
 if [ "$TOTAL" -eq 0 ]; then
     echo "0.0" > /logs/verifier/reward.txt
     echo '{"passed": 0, "failed": 0, "total": 0, "reward": 0.0}' > /logs/verifier/results.json
+    if [ "$TEST_EXIT" -ne 0 ]; then
+      echo "Verifier error: test runner failed before any result could be parsed."
+      exit 1
+    fi
     echo "No tests found or all tests skipped. Reward: 0.0"
-    exit 0
+    exit 1
 fi
 
 RATIO=$(awk "BEGIN {printf \"%.6f\", $PASSED / $TOTAL}")

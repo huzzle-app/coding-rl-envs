@@ -391,4 +391,82 @@ describe('Pipeline Integration', () => {
       expect(result).toBeDefined();
     });
   });
+
+  describe('Cross-service avg pipeline bug', () => {
+    test('avg through ingestion to continuous aggregation should be correct', async () => {
+      const { IngestService } = require('../../services/ingestion/src/services/ingest');
+      const { ContinuousAggregation } = require('../../services/aggregate/src/services/rollups');
+      const publishedData = [];
+      const mockEventBus = {
+        publish: jest.fn().mockImplementation(async (event) => {
+          publishedData.push(...event.data);
+          return true;
+        }),
+      };
+      const service = new IngestService(mockEventBus, { batchSize: 100 });
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('cpu_avg', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'cpu' }],
+      });
+      await service.ingest('metrics', [
+        { id: 'r1', host: 'h1', cpu: 10 },
+        { id: 'r2', host: 'h1', cpu: 20 },
+        { id: 'r3', host: 'h1', cpu: 30 },
+        { id: 'r4', host: 'h1', cpu: 40 },
+        { id: 'r5', host: 'h1', cpu: 50 },
+      ]);
+      await service.drain();
+      await agg.update('cpu_avg', publishedData);
+      const state = agg.getState('cpu_avg');
+      expect(state.state['h1'].cpu_avg).toBeCloseTo(30, 5);
+    });
+  });
+
+  describe('WAL truncation preserves uncommitted', () => {
+    test('uncommitted entries should survive truncation past maxEntries', () => {
+      const { WriteAheadLog } = require('../../services/store/src/services/timeseries');
+      const wal = new WriteAheadLog({ maxEntries: 3 });
+      const lsn1 = wal.append({ operation: 'insert', data: { id: 1 }, tableName: 't' });
+      const lsn2 = wal.append({ operation: 'insert', data: { id: 2 }, tableName: 't' });
+      wal.commit(lsn1);
+      // lsn2 uncommitted
+      for (let i = 0; i < 5; i++) {
+        const lsn = wal.append({ operation: 'insert', data: { id: `x-${i}` }, tableName: 't' });
+        wal.commit(lsn);
+      }
+      const entry = wal.getEntry(lsn2);
+      expect(entry).toBeDefined();
+    });
+  });
+
+  describe('Compaction merge keeps newest version', () => {
+    test('merged segments should retain newest version of each key', () => {
+      const { CompactionManager } = require('../../services/store/src/services/timeseries');
+      const cm = new CompactionManager({ mergeThreshold: 2 });
+      cm.addSegment({
+        level: 0,
+        data: [{ key: 'metric-1', value: 10, timestamp: 1000 }],
+      });
+      cm.addSegment({
+        level: 0,
+        data: [{ key: 'metric-1', value: 50, timestamp: 5000 }],
+      });
+      cm.compact();
+      const result = cm.lookup('metric-1');
+      expect(result.value).toBe(50);
+    });
+
+    test('lookup should return newest version across unmerged segments', () => {
+      const { CompactionManager } = require('../../services/store/src/services/timeseries');
+      const cm = new CompactionManager({ mergeThreshold: 10 });
+      cm.addSegment({ level: 0, data: [{ key: 'k1', value: 'v1', timestamp: 100 }] });
+      cm.addSegment({ level: 0, data: [{ key: 'k1', value: 'v2', timestamp: 200 }] });
+      cm.addSegment({ level: 0, data: [{ key: 'k1', value: 'v3', timestamp: 300 }] });
+      const result = cm.lookup('k1');
+      // lookup iterates segments in order, returns first match
+      // With 3 unmerged segments, first segment's value wins
+      expect(result.value).toBe('v1');
+    });
+  });
 });

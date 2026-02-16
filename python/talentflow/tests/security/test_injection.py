@@ -170,41 +170,39 @@ class TestOAuthSecurityFlaws:
     """Tests for OAuth security vulnerabilities."""
 
     @pytest.mark.bug_c2
-    def test_oauth_callback_without_state(self, db):
-        """Test OAuth callback accepts requests without state validation."""
-        from apps.accounts.oauth import process_oauth_callback
+    def test_oauth_callback_without_state_rejected(self, db):
+        """Test OAuth callback rejects requests without state."""
+        from apps.accounts.oauth import process_oauth_callback, OAuthError
 
-        result = process_oauth_callback(
-            provider='google',
-            code='test_code',
-            state=None
-        )
-
-        assert 'access_token' in result
-
-    @pytest.mark.bug_c2
-    def test_oauth_callback_with_invalid_state(self, db):
-        """Test OAuth callback with invalid state."""
-        from apps.accounts.oauth import process_oauth_callback
-
-        result = process_oauth_callback(
-            provider='google',
-            code='test_code',
-            state='invalid_state_value'
-        )
-
-        assert 'access_token' in result
+        with pytest.raises(OAuthError):
+            process_oauth_callback(
+                provider='google',
+                code='test_code',
+                state=None
+            )
 
     @pytest.mark.bug_c2
-    def test_oauth_state_not_validated(self, db):
-        """Test that OAuth state is NOT being validated (bug)."""
-        from apps.accounts.oauth import process_oauth_callback
+    def test_oauth_callback_with_invalid_state_rejected(self, db):
+        """Test OAuth callback rejects invalid state."""
+        from apps.accounts.oauth import process_oauth_callback, OAuthError
 
-        result1 = process_oauth_callback('google', 'code1', state='state1')
-        result2 = process_oauth_callback('google', 'code2', state='completely_different')
+        with pytest.raises(OAuthError):
+            process_oauth_callback(
+                provider='google',
+                code='test_code',
+                state='invalid_state_value'
+            )
 
-        assert result1 is not None
-        assert result2 is not None
+    @pytest.mark.bug_c2
+    def test_oauth_state_must_be_validated(self, db):
+        """Test that OAuth state IS validated (fabricated states rejected)."""
+        from apps.accounts.oauth import process_oauth_callback, OAuthError
+
+        with pytest.raises(OAuthError):
+            process_oauth_callback('google', 'code1', state='fabricated_state')
+
+        with pytest.raises(OAuthError):
+            process_oauth_callback('google', 'code2', state='completely_different')
 
 
 class TestCrossSiteVulnerabilities:

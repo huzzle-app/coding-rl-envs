@@ -152,7 +152,7 @@ impl Environment {
     }
 
     fn run_full_tests(&self) -> TestSummary {
-        let output = self.execute_command("cargo test").unwrap_or_default();
+        let output = self.execute_command("cargo test --no-fail-fast").unwrap_or_default();
         parse_cargo_test_summary(&output, false)
     }
 
@@ -161,7 +161,7 @@ impl Environment {
         if targets.is_empty() {
             return TestSummary::default();
         }
-        let mut command = String::from("cargo test");
+        let mut command = String::from("cargo test --no-fail-fast");
         for target in targets {
             command.push_str(" --test ");
             command.push_str(target);
@@ -190,8 +190,8 @@ impl Environment {
         let mut info = HashMap::new();
         info.insert("step".to_string(), "0".to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
-        info.insert("total_bugs".to_string(), "1270".to_string());
-        info.insert("target_tests".to_string(), "9212".to_string());
+        info.insert("total_bugs".to_string(), "23".to_string());
+        info.insert("target_tests".to_string(), "9283".to_string());
         info.insert("files_changed".to_string(), String::new());
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -239,7 +239,11 @@ impl Environment {
             }
         }
 
-        let reward = sparse_reward(summary.pass_rate);
+        let training_mode = std::env::var("TRAINING_MODE").ok();
+        let reward = match training_mode.as_deref() {
+            Some(mode) => training_reward(summary.pass_rate, mode),
+            None => sparse_reward(summary.pass_rate),
+        };
         self.last_test_summary = summary.clone();
         let done = self.step_count >= self.max_steps || (!summary.targeted && summary.total > 0 && summary.pass_rate >= 1.0);
 
@@ -264,8 +268,8 @@ impl Environment {
 
         info.insert("step".to_string(), self.step_count.to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
-        info.insert("total_bugs".to_string(), "1270".to_string());
-        info.insert("target_tests".to_string(), "9212".to_string());
+        info.insert("total_bugs".to_string(), "23".to_string());
+        info.insert("target_tests".to_string(), "9283".to_string());
         info.insert("files_changed".to_string(), self.files_changed.join(","));
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -310,12 +314,23 @@ fn extract_count(line: &str, marker: &str) -> usize {
 }
 
 fn sparse_reward(pass_rate: f64) -> f64 {
-    const THRESHOLDS: [f64; 10] = [0.10, 0.22, 0.36, 0.52, 0.67, 0.80, 0.90, 0.96, 0.99, 1.0];
-    const REWARDS: [f64; 10] = [0.0, 0.015, 0.05, 0.11, 0.19, 0.31, 0.47, 0.66, 0.85, 1.0];
+    // 8-threshold table for hyper-principal tier
+    const THRESHOLDS: [f64; 7] = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0];
+    const REWARDS: [f64; 7] = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0];
     for i in (0..THRESHOLDS.len()).rev() {
         if pass_rate >= THRESHOLDS[i] {
             return REWARDS[i];
         }
     }
     0.0
+}
+
+fn training_reward(pass_rate: f64, mode: &str) -> f64 {
+    let r = pass_rate.clamp(0.0, 1.0);
+    match mode {
+        "linear" => r,
+        "sublinear" => r.powf(0.7),
+        "smooth" => 3.0 * r * r - 2.0 * r * r * r,
+        _ => sparse_reward(pass_rate),
+    }
 }

@@ -30,7 +30,6 @@ public final class RoutingHeuristics {
         }
         for (String key : current.keySet()) {
             if (!previous.containsKey(key)) {
-                total += 1;
                 changed += 1;
             }
         }

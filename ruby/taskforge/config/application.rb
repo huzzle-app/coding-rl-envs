@@ -19,11 +19,11 @@ module TaskForge
     config.autoload_paths << Rails.root.join('lib')
     config.eager_load_paths << Rails.root.join('lib')
 
-    
+
     config.time_zone = 'UTC'
     # Missing: config.active_record.default_timezone = :utc
 
-    
+
     # config.active_job.queue_adapter = :sidekiq
 
     # Configure generators
@@ -32,7 +32,7 @@ module TaskForge
       g.fixture_replacement :factory_bot, dir: 'spec/factories'
     end
 
-    
+
     config.session_store :cookie_store, key: '_taskforge_session'
   end
 end

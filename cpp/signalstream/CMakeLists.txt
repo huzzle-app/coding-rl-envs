@@ -4,6 +4,42 @@ project(signalstream LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ---------------------------------------------------------------------------
+# Sanitizer options
+# ---------------------------------------------------------------------------
+option(ENABLE_ASAN  "Enable AddressSanitizer"           OFF)
+option(ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer"  OFF)
+option(ENABLE_TSAN  "Enable ThreadSanitizer"             OFF)
+option(ENABLE_SANITIZERS "Enable ASan + UBSan (convenience)" OFF)
+
+if(ENABLE_SANITIZERS)
+  set(ENABLE_ASAN  ON)
+  set(ENABLE_UBSAN ON)
+endif()
+
+if(ENABLE_ASAN AND ENABLE_TSAN)
+  message(FATAL_ERROR "ASan and TSan cannot be used together")
+endif()
+
+set(_SAN_FLAGS "")
+if(ENABLE_ASAN)
+  list(APPEND _SAN_FLAGS "-fsanitize=address")
+endif()
+if(ENABLE_UBSAN)
+  list(APPEND _SAN_FLAGS "-fsanitize=undefined")
+endif()
+if(ENABLE_TSAN)
+  list(APPEND _SAN_FLAGS "-fsanitize=thread")
+endif()
+
+if(_SAN_FLAGS)
+  add_compile_options(${_SAN_FLAGS} -fno-omit-frame-pointer)
+  add_link_options(${_SAN_FLAGS})
+endif()
+
+# ---------------------------------------------------------------------------
+# Library & test executable
+# ---------------------------------------------------------------------------
 add_library(signalstream
   src/config.cpp
   src/ingest.cpp
@@ -28,164 +64,259 @@ target_link_libraries(signalstream_tests PRIVATE signalstream)
 
 enable_testing()
 
+# ---------------------------------------------------------------------------
+# Helper: add_signalstream_test — wraps add_test with sanitizer env vars,
+# category labels, and optional timeout.
+#   Usage: add_signalstream_test(<name> LABEL <label> [TIMEOUT <seconds>])
+# ---------------------------------------------------------------------------
+function(add_signalstream_test NAME)
+  cmake_parse_arguments(PARSE_ARGV 1 ARG "" "LABEL;TIMEOUT" "")
+  add_test(NAME ${NAME} COMMAND signalstream_tests ${NAME})
+
+  # Sanitizer environment variables
+  set(_ENV "")
+  if(ENABLE_ASAN)
+    list(APPEND _ENV "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1")
+  endif()
+  if(ENABLE_UBSAN)
+    list(APPEND _ENV "UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1")
+  endif()
+  if(ENABLE_TSAN)
+    list(APPEND _ENV "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1")
+  endif()
+  if(_ENV)
+    set_tests_properties(${NAME} PROPERTIES ENVIRONMENT "${_ENV}")
+  endif()
+
+  # Category label (for ctest -L <label>)
+  if(ARG_LABEL)
+    set_tests_properties(${NAME} PROPERTIES LABELS "${ARG_LABEL}")
+  endif()
+
+  # Per-test timeout (for tests that spawn threads / could hang)
+  if(ARG_TIMEOUT)
+    set_tests_properties(${NAME} PROPERTIES TIMEOUT ${ARG_TIMEOUT})
+  endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
 # Setup/Configuration tests (L bugs)
-add_test(NAME setup_static_init COMMAND signalstream_tests setup_static_init)
-add_test(NAME setup_service_registry COMMAND signalstream_tests setup_service_registry)
-add_test(NAME setup_db_config_validation COMMAND signalstream_tests setup_db_config_validation)
-add_test(NAME setup_health_check COMMAND signalstream_tests setup_health_check)
-add_test(NAME setup_config_singleton COMMAND signalstream_tests setup_config_singleton)
+# ---------------------------------------------------------------------------
+add_signalstream_test(setup_static_init                LABEL setup)
+add_signalstream_test(setup_service_registry            LABEL setup)
+add_signalstream_test(setup_db_config_validation        LABEL setup)
+add_signalstream_test(setup_health_check                LABEL setup)
+add_signalstream_test(setup_config_singleton            LABEL setup)
 
+# ---------------------------------------------------------------------------
 # Concurrency tests (A bugs)
-add_test(NAME concurrency_aba_problem COMMAND signalstream_tests concurrency_aba_problem)
-add_test(NAME concurrency_memory_ordering COMMAND signalstream_tests concurrency_memory_ordering)
-add_test(NAME concurrency_false_sharing COMMAND signalstream_tests concurrency_false_sharing)
-add_test(NAME concurrency_data_race COMMAND signalstream_tests concurrency_data_race)
-add_test(NAME concurrency_spurious_wakeup COMMAND signalstream_tests concurrency_spurious_wakeup)
-add_test(NAME concurrency_reader_starvation COMMAND signalstream_tests concurrency_reader_starvation)
-add_test(NAME concurrency_tls_destruction COMMAND signalstream_tests concurrency_tls_destruction)
-add_test(NAME concurrency_mutex_exception COMMAND signalstream_tests concurrency_mutex_exception)
-add_test(NAME concurrency_writer_starvation COMMAND signalstream_tests concurrency_writer_starvation)
-add_test(NAME concurrency_spinlock_backoff COMMAND signalstream_tests concurrency_spinlock_backoff)
-add_test(NAME concurrency_thread_pool COMMAND signalstream_tests concurrency_thread_pool)
-add_test(NAME concurrency_atomic_counter COMMAND signalstream_tests concurrency_atomic_counter)
+# ---------------------------------------------------------------------------
+add_signalstream_test(concurrency_aba_problem           LABEL concurrency)
+add_signalstream_test(concurrency_memory_ordering       LABEL concurrency)
+add_signalstream_test(concurrency_false_sharing         LABEL concurrency)
+add_signalstream_test(concurrency_data_race             LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_spurious_wakeup       LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_reader_starvation     LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_tls_destruction       LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_mutex_exception       LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_writer_starvation     LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_spinlock_backoff      LABEL concurrency TIMEOUT 5)
+add_signalstream_test(concurrency_thread_pool           LABEL concurrency)
+add_signalstream_test(concurrency_atomic_counter        LABEL concurrency)
 
+# ---------------------------------------------------------------------------
 # Memory tests (B bugs)
-add_test(NAME memory_alignment COMMAND signalstream_tests memory_alignment)
-add_test(NAME memory_use_after_free COMMAND signalstream_tests memory_use_after_free)
-add_test(NAME memory_string_view_dangling COMMAND signalstream_tests memory_string_view_dangling)
-add_test(NAME memory_iterator_invalidation COMMAND signalstream_tests memory_iterator_invalidation)
-add_test(NAME memory_array_delete COMMAND signalstream_tests memory_array_delete)
-add_test(NAME memory_padding_memcmp COMMAND signalstream_tests memory_padding_memcmp)
-add_test(NAME memory_buffer_management COMMAND signalstream_tests memory_buffer_management)
+# ---------------------------------------------------------------------------
+add_signalstream_test(memory_alignment                  LABEL memory)
+add_signalstream_test(memory_use_after_free             LABEL memory)
+add_signalstream_test(memory_string_view_dangling       LABEL memory)
+add_signalstream_test(memory_iterator_invalidation      LABEL memory)
+add_signalstream_test(memory_array_delete               LABEL memory)
+add_signalstream_test(memory_padding_memcmp             LABEL memory)
+add_signalstream_test(memory_buffer_management          LABEL memory)
 
+# ---------------------------------------------------------------------------
 # Smart pointer tests (C bugs)
-add_test(NAME smartptr_cycle COMMAND signalstream_tests smartptr_cycle)
-add_test(NAME smartptr_unique_copy COMMAND signalstream_tests smartptr_unique_copy)
-add_test(NAME smartptr_shared_from_this COMMAND signalstream_tests smartptr_shared_from_this)
-add_test(NAME smartptr_weak_expired COMMAND signalstream_tests smartptr_weak_expired)
-add_test(NAME smartptr_destructor_throw COMMAND signalstream_tests smartptr_destructor_throw)
-add_test(NAME smartptr_ownership COMMAND signalstream_tests smartptr_ownership)
+# ---------------------------------------------------------------------------
+add_signalstream_test(smartptr_cycle                    LABEL smartptr)
+add_signalstream_test(smartptr_unique_copy              LABEL smartptr)
+add_signalstream_test(smartptr_shared_from_this         LABEL smartptr)
+add_signalstream_test(smartptr_weak_expired             LABEL smartptr)
+add_signalstream_test(smartptr_destructor_throw         LABEL smartptr)
+add_signalstream_test(smartptr_ownership                LABEL smartptr)
 
+# ---------------------------------------------------------------------------
 # Undefined behavior tests (D bugs)
-add_test(NAME ub_signed_overflow COMMAND signalstream_tests ub_signed_overflow)
-add_test(NAME ub_strict_aliasing COMMAND signalstream_tests ub_strict_aliasing)
-add_test(NAME ub_uninitialized COMMAND signalstream_tests ub_uninitialized)
-add_test(NAME ub_sequence_point COMMAND signalstream_tests ub_sequence_point)
-add_test(NAME ub_dangling_reference COMMAND signalstream_tests ub_dangling_reference)
-add_test(NAME ub_null_dereference COMMAND signalstream_tests ub_null_dereference)
+# ---------------------------------------------------------------------------
+add_signalstream_test(ub_signed_overflow                LABEL ub)
+add_signalstream_test(ub_strict_aliasing                LABEL ub)
+add_signalstream_test(ub_uninitialized                  LABEL ub)
+add_signalstream_test(ub_sequence_point                 LABEL ub)
+add_signalstream_test(ub_dangling_reference             LABEL ub)
+add_signalstream_test(ub_null_dereference               LABEL ub)
 
+# ---------------------------------------------------------------------------
 # Event/Distributed tests (E bugs)
-add_test(NAME event_ordering COMMAND signalstream_tests event_ordering)
-add_test(NAME event_idempotency COMMAND signalstream_tests event_idempotency)
-add_test(NAME event_subscription_leak COMMAND signalstream_tests event_subscription_leak)
-add_test(NAME event_snapshot_atomic COMMAND signalstream_tests event_snapshot_atomic)
-add_test(NAME event_compression_buffer COMMAND signalstream_tests event_compression_buffer)
-add_test(NAME event_dead_letter COMMAND signalstream_tests event_dead_letter)
-add_test(NAME event_publish_consume COMMAND signalstream_tests event_publish_consume)
+# ---------------------------------------------------------------------------
+add_signalstream_test(event_ordering                    LABEL event)
+add_signalstream_test(event_idempotency                 LABEL event)
+add_signalstream_test(event_subscription_leak           LABEL event)
+add_signalstream_test(event_snapshot_atomic             LABEL event)
+add_signalstream_test(event_compression_buffer          LABEL event)
+add_signalstream_test(event_dead_letter                 LABEL event)
+add_signalstream_test(event_publish_consume             LABEL event)
 
+# ---------------------------------------------------------------------------
 # Numerical tests (F bugs)
-add_test(NAME numerical_float_equality COMMAND signalstream_tests numerical_float_equality)
-add_test(NAME numerical_integer_overflow COMMAND signalstream_tests numerical_integer_overflow)
-add_test(NAME numerical_time_window COMMAND signalstream_tests numerical_time_window)
-add_test(NAME numerical_nan_handling COMMAND signalstream_tests numerical_nan_handling)
-add_test(NAME numerical_accumulate_type COMMAND signalstream_tests numerical_accumulate_type)
-add_test(NAME numerical_division_zero COMMAND signalstream_tests numerical_division_zero)
-add_test(NAME numerical_precision_loss COMMAND signalstream_tests numerical_precision_loss)
-add_test(NAME numerical_percentile COMMAND signalstream_tests numerical_percentile)
-add_test(NAME numerical_aggregates COMMAND signalstream_tests numerical_aggregates)
+# ---------------------------------------------------------------------------
+add_signalstream_test(numerical_float_equality          LABEL numerical)
+add_signalstream_test(numerical_integer_overflow        LABEL numerical)
+add_signalstream_test(numerical_time_window             LABEL numerical)
+add_signalstream_test(numerical_nan_handling            LABEL numerical)
+add_signalstream_test(numerical_accumulate_type         LABEL numerical)
+add_signalstream_test(numerical_division_zero           LABEL numerical)
+add_signalstream_test(numerical_precision_loss          LABEL numerical)
+add_signalstream_test(numerical_percentile              LABEL numerical)
+add_signalstream_test(numerical_aggregates              LABEL numerical)
 
+# ---------------------------------------------------------------------------
 # Database/Query tests (G bugs)
-add_test(NAME query_connection_leak COMMAND signalstream_tests query_connection_leak)
-add_test(NAME query_sql_injection COMMAND signalstream_tests query_sql_injection)
-add_test(NAME query_statement_leak COMMAND signalstream_tests query_statement_leak)
-add_test(NAME query_iterator_invalidation COMMAND signalstream_tests query_iterator_invalidation)
-add_test(NAME query_n_plus_one COMMAND signalstream_tests query_n_plus_one)
-add_test(NAME query_connection_string COMMAND signalstream_tests query_connection_string)
-add_test(NAME query_build COMMAND signalstream_tests query_build)
-add_test(NAME query_range COMMAND signalstream_tests query_range)
+# ---------------------------------------------------------------------------
+add_signalstream_test(query_connection_leak             LABEL query)
+add_signalstream_test(query_sql_injection               LABEL query)
+add_signalstream_test(query_statement_leak              LABEL query)
+add_signalstream_test(query_iterator_invalidation       LABEL query)
+add_signalstream_test(query_n_plus_one                  LABEL query)
+add_signalstream_test(query_connection_string           LABEL query)
+add_signalstream_test(query_build                       LABEL query)
+add_signalstream_test(query_range                       LABEL query)
 
+# ---------------------------------------------------------------------------
 # Distributed state tests (H bugs)
-add_test(NAME distributed_check_then_act COMMAND signalstream_tests distributed_check_then_act)
-add_test(NAME distributed_lock_lease COMMAND signalstream_tests distributed_lock_lease)
-add_test(NAME distributed_circuit_breaker COMMAND signalstream_tests distributed_circuit_breaker)
-add_test(NAME distributed_retry_backoff COMMAND signalstream_tests distributed_retry_backoff)
-add_test(NAME distributed_split_brain COMMAND signalstream_tests distributed_split_brain)
-add_test(NAME distributed_leader_election COMMAND signalstream_tests distributed_leader_election)
+# ---------------------------------------------------------------------------
+add_signalstream_test(distributed_check_then_act        LABEL distributed TIMEOUT 5)
+add_signalstream_test(distributed_lock_lease            LABEL distributed)
+add_signalstream_test(distributed_circuit_breaker       LABEL distributed)
+add_signalstream_test(distributed_retry_backoff         LABEL distributed)
+add_signalstream_test(distributed_split_brain           LABEL distributed)
+add_signalstream_test(distributed_leader_election       LABEL distributed)
 
+# ---------------------------------------------------------------------------
 # Security tests (I bugs)
-add_test(NAME security_buffer_overflow COMMAND signalstream_tests security_buffer_overflow)
-add_test(NAME security_path_traversal COMMAND signalstream_tests security_path_traversal)
-add_test(NAME security_rate_limit_bypass COMMAND signalstream_tests security_rate_limit_bypass)
-add_test(NAME security_jwt_none COMMAND signalstream_tests security_jwt_none)
-add_test(NAME security_timing_attack COMMAND signalstream_tests security_timing_attack)
-add_test(NAME security_weak_rng COMMAND signalstream_tests security_weak_rng)
-add_test(NAME security_cors_wildcard COMMAND signalstream_tests security_cors_wildcard)
-add_test(NAME security_password_hash COMMAND signalstream_tests security_password_hash)
-add_test(NAME security_session_validation COMMAND signalstream_tests security_session_validation)
+# ---------------------------------------------------------------------------
+add_signalstream_test(security_buffer_overflow          LABEL security)
+add_signalstream_test(security_path_traversal           LABEL security)
+add_signalstream_test(security_rate_limit_bypass        LABEL security)
+add_signalstream_test(security_jwt_none                 LABEL security)
+add_signalstream_test(security_timing_attack            LABEL security)
+add_signalstream_test(security_weak_rng                 LABEL security)
+add_signalstream_test(security_cors_wildcard            LABEL security)
+add_signalstream_test(security_password_hash            LABEL security)
+add_signalstream_test(security_session_validation       LABEL security)
 
+# ---------------------------------------------------------------------------
 # Observability tests (J bugs)
-add_test(NAME observability_trace_context COMMAND signalstream_tests observability_trace_context)
-add_test(NAME observability_metric_cardinality COMMAND signalstream_tests observability_metric_cardinality)
-add_test(NAME observability_metric_registration COMMAND signalstream_tests observability_metric_registration)
-add_test(NAME observability_log_level COMMAND signalstream_tests observability_log_level)
-add_test(NAME observability_log_injection COMMAND signalstream_tests observability_log_injection)
-add_test(NAME observability_telemetry COMMAND signalstream_tests observability_telemetry)
+# ---------------------------------------------------------------------------
+add_signalstream_test(observability_trace_context       LABEL observability)
+add_signalstream_test(observability_metric_cardinality  LABEL observability)
+add_signalstream_test(observability_metric_registration LABEL observability)
+add_signalstream_test(observability_log_level           LABEL observability)
+add_signalstream_test(observability_log_injection       LABEL observability)
+add_signalstream_test(observability_telemetry           LABEL observability)
 
+# ---------------------------------------------------------------------------
 # Template/Modern C++ tests (K bugs)
-add_test(NAME template_sfinae COMMAND signalstream_tests template_sfinae)
-add_test(NAME template_adl COMMAND signalstream_tests template_adl)
-add_test(NAME template_constexpr COMMAND signalstream_tests template_constexpr)
-add_test(NAME template_perfect_forward COMMAND signalstream_tests template_perfect_forward)
-add_test(NAME template_variant_visit COMMAND signalstream_tests template_variant_visit)
-add_test(NAME template_ctad COMMAND signalstream_tests template_ctad)
-add_test(NAME template_concept COMMAND signalstream_tests template_concept)
-add_test(NAME template_requires_clause COMMAND signalstream_tests template_requires_clause)
+# ---------------------------------------------------------------------------
+add_signalstream_test(template_sfinae                   LABEL template)
+add_signalstream_test(template_adl                      LABEL template)
+add_signalstream_test(template_constexpr                LABEL template)
+add_signalstream_test(template_perfect_forward          LABEL template)
+add_signalstream_test(template_variant_visit            LABEL template)
+add_signalstream_test(template_ctad                     LABEL template)
+add_signalstream_test(template_concept                  LABEL template)
+add_signalstream_test(template_requires_clause          LABEL template)
 
+# ---------------------------------------------------------------------------
 # Integration tests
-add_test(NAME integration_data_pipeline COMMAND signalstream_tests integration_data_pipeline)
-add_test(NAME integration_alert_workflow COMMAND signalstream_tests integration_alert_workflow)
-add_test(NAME integration_auth_flow COMMAND signalstream_tests integration_auth_flow)
-add_test(NAME integration_routing COMMAND signalstream_tests integration_routing)
-add_test(NAME integration_storage COMMAND signalstream_tests integration_storage)
+# ---------------------------------------------------------------------------
+add_signalstream_test(integration_data_pipeline         LABEL integration)
+add_signalstream_test(integration_alert_workflow        LABEL integration)
+add_signalstream_test(integration_auth_flow             LABEL integration)
+add_signalstream_test(integration_routing               LABEL integration)
+add_signalstream_test(integration_storage               LABEL integration)
 
+# ---------------------------------------------------------------------------
 # Object pool tests
-add_test(NAME pool_acquire_release COMMAND signalstream_tests pool_acquire_release)
-add_test(NAME pool_metrics COMMAND signalstream_tests pool_metrics)
-add_test(NAME pool_capacity COMMAND signalstream_tests pool_capacity)
+# ---------------------------------------------------------------------------
+add_signalstream_test(pool_acquire_release              LABEL pool)
+add_signalstream_test(pool_metrics                      LABEL pool)
+add_signalstream_test(pool_capacity                     LABEL pool)
 
-# Hyper-matrix parametric test (12678 scenarios)
-add_test(NAME hyper_matrix COMMAND signalstream_tests hyper_matrix)
-
+# ---------------------------------------------------------------------------
 # Latent bugs
-add_test(NAME latent_negative_aggregate COMMAND signalstream_tests latent_negative_aggregate)
-add_test(NAME latent_batch_reorder COMMAND signalstream_tests latent_batch_reorder)
+# ---------------------------------------------------------------------------
+add_signalstream_test(latent_negative_aggregate         LABEL latent)
+add_signalstream_test(latent_batch_reorder              LABEL latent)
 
+# ---------------------------------------------------------------------------
 # Domain logic bugs
-add_test(NAME domain_percentile_exact COMMAND signalstream_tests domain_percentile_exact)
-add_test(NAME domain_nan_alert_suppression COMMAND signalstream_tests domain_nan_alert_suppression)
+# ---------------------------------------------------------------------------
+add_signalstream_test(domain_percentile_exact           LABEL domain)
+add_signalstream_test(domain_nan_alert_suppression      LABEL domain)
 
+# ---------------------------------------------------------------------------
 # Multi-step bugs
-add_test(NAME multistep_ratelimit_boundary COMMAND signalstream_tests multistep_ratelimit_boundary)
-add_test(NAME multistep_ratelimit_window COMMAND signalstream_tests multistep_ratelimit_window)
+# ---------------------------------------------------------------------------
+add_signalstream_test(multistep_ratelimit_boundary      LABEL multistep)
+add_signalstream_test(multistep_ratelimit_window        LABEL multistep)
 
+# ---------------------------------------------------------------------------
 # State machine bugs
-add_test(NAME statemachine_healthcheck_degraded COMMAND signalstream_tests statemachine_healthcheck_degraded)
-add_test(NAME statemachine_circuit_reverse COMMAND signalstream_tests statemachine_circuit_reverse)
+# ---------------------------------------------------------------------------
+add_signalstream_test(statemachine_healthcheck_degraded  LABEL statemachine)
+add_signalstream_test(statemachine_circuit_reverse       LABEL statemachine)
 
-# Concurrency bugs
-add_test(NAME concurrency_event_fifo_order COMMAND signalstream_tests concurrency_event_fifo_order)
-add_test(NAME concurrency_span_collision COMMAND signalstream_tests concurrency_span_collision)
-add_test(NAME concurrency_rwlock_underflow COMMAND signalstream_tests concurrency_rwlock_underflow)
-add_test(NAME concurrency_trace_corruption COMMAND signalstream_tests concurrency_trace_corruption)
+# ---------------------------------------------------------------------------
+# Concurrency bugs (continued)
+# ---------------------------------------------------------------------------
+add_signalstream_test(concurrency_event_fifo_order      LABEL concurrency)
+add_signalstream_test(concurrency_span_collision        LABEL concurrency)
+add_signalstream_test(concurrency_rwlock_underflow      LABEL concurrency)
+add_signalstream_test(concurrency_trace_corruption      LABEL concurrency)
 
+# ---------------------------------------------------------------------------
 # Integration bugs
-add_test(NAME integration_inactive_route COMMAND signalstream_tests integration_inactive_route)
-add_test(NAME integration_pipeline_negative COMMAND signalstream_tests integration_pipeline_negative)
+# ---------------------------------------------------------------------------
+add_signalstream_test(integration_inactive_route        LABEL integration)
+add_signalstream_test(integration_pipeline_negative     LABEL integration)
 
+# ---------------------------------------------------------------------------
 # Complex bugs
-add_test(NAME domain_ema_decay COMMAND signalstream_tests domain_ema_decay)
-add_test(NAME statemachine_circuit_probe_limit COMMAND signalstream_tests statemachine_circuit_probe_limit)
-add_test(NAME multistep_event_dedup_collision COMMAND signalstream_tests multistep_event_dedup_collision)
-add_test(NAME integration_token_refresh_collision COMMAND signalstream_tests integration_token_refresh_collision)
-add_test(NAME concurrency_pool_shutdown_drain COMMAND signalstream_tests concurrency_pool_shutdown_drain)
-add_test(NAME latent_sample_variance COMMAND signalstream_tests latent_sample_variance)
+# ---------------------------------------------------------------------------
+add_signalstream_test(domain_ema_decay                  LABEL complex)
+add_signalstream_test(statemachine_circuit_probe_limit  LABEL complex)
+add_signalstream_test(multistep_event_dedup_collision   LABEL complex)
+add_signalstream_test(integration_token_refresh_collision LABEL complex)
+add_signalstream_test(concurrency_pool_shutdown_drain   LABEL complex)
+add_signalstream_test(latent_sample_variance            LABEL complex)
+
+# ---------------------------------------------------------------------------
+# Hyper-matrix chunks (127 entries x 100 scenarios each = 12678 total)
+# Replaces single hyper_matrix entry for granular CTest signal
+# ---------------------------------------------------------------------------
+set(_HYPER_TOTAL 12678)
+set(_HYPER_CHUNK 100)
+set(_HYPER_START 0)
+while(_HYPER_START LESS _HYPER_TOTAL)
+  if(_HYPER_START LESS 10)
+    set(_CHUNK_LABEL "hyper_chunk_000${_HYPER_START}")
+  elseif(_HYPER_START LESS 100)
+    set(_CHUNK_LABEL "hyper_chunk_00${_HYPER_START}")
+  elseif(_HYPER_START LESS 1000)
+    set(_CHUNK_LABEL "hyper_chunk_0${_HYPER_START}")
+  else()
+    set(_CHUNK_LABEL "hyper_chunk_${_HYPER_START}")
+  endif()
+  add_signalstream_test(${_CHUNK_LABEL} LABEL hyper TIMEOUT 30)
+  math(EXPR _HYPER_START "${_HYPER_START} + ${_HYPER_CHUNK}")
+endwhile()

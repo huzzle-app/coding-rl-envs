@@ -1,6 +1,6 @@
 # QuantumCore - High-Frequency Trading Platform
 
- in a Rust-based high-frequency trading platform with 10 microservices, NATS messaging, PostgreSQL, Redis, InfluxDB, and etcd.
+Debug 75 bugs in a Rust-based high-frequency trading platform with 10 microservices, NATS messaging, PostgreSQL, Redis, InfluxDB, and etcd.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ QuantumCore is a microservices platform with 10 Rust services:
 | Distributed Systems | 8 | Event ordering not guaranteed, distributed lock not released, split-brain in failover, idempotency key collision, saga compensation failure, circuit breaker state shared wrong, retry without backoff, leader election race |
 | Security | 5 | JWT secret hardcoded, timing attack in comparison, SQL injection, rate limit bypass, sensitive data in logs |
 
-**Total** | tests | Difficulty: Principal (8-16h)
+**Total** | 75 bugs | 960+ tests | Difficulty: Principal (8-16h)
 
 ## Getting Started
 

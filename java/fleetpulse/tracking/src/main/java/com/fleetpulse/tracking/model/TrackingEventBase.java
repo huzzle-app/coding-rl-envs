@@ -1,13 +1,17 @@
 package com.fleetpulse.tracking.model;
 
-
-// ViolationEvent extends TrackingEventBase but is not in permits clause
-// Fix: Add ViolationEvent to permits clause
+/**
+ * Sealed class hierarchy for tracking events.
+ *
+ * Bugs: K4
+ * Category: Templates/Modern Java (sealed classes)
+ */
+// Bug K4: ViolationEvent extends TrackingEventBase but is not in the permits clause.
+// Category: Templates/Modern Java
 public sealed class TrackingEventBase permits
     TrackingEventBase.LocationEvent,
     TrackingEventBase.SpeedEvent,
     TrackingEventBase.GeofenceEvent
-    
 {
     private final String vehicleId;
     private final long timestamp;
@@ -52,9 +56,8 @@ public sealed class TrackingEventBase permits
         public boolean isEntered() { return entered; }
     }
 
-    
-    // Compilation will fail because sealed class doesn't permit this subclass
-    // Fix: Add ViolationEvent to the permits clause above
+    // Bug K4: This subclass is not listed in the permits clause above.
+    // Category: Templates/Modern Java
     public static final class ViolationEvent extends TrackingEventBase {
         private final String violationType;
         public ViolationEvent(String vehicleId, String violationType) {

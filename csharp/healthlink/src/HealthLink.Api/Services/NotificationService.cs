@@ -44,7 +44,6 @@ public class NotificationService : INotificationService
 
         _logger.LogInformation("Sending confirmation for appointment {Id}", appointmentId);
 
-        // Simulate sending email
         await Task.Delay(10);
     }
 
@@ -69,7 +68,6 @@ public class NotificationService : INotificationService
     private async Task SendEmailInternalAsync(int patientId, string message)
     {
         await Task.Delay(50);
-        // Simulate failure
         if (string.IsNullOrEmpty(_smtpSettings.Value.Host))
         {
             throw new InvalidOperationException("SMTP host not configured");

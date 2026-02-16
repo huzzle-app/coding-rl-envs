@@ -12,4 +12,5 @@ COPY billing ./billing
 COPY analytics ./analytics
 COPY notifications ./notifications
 COPY compliance ./compliance
-CMD ["mvn", "test", "-B", "--fail-at-end"]
+RUN mvn dependency:go-offline -B -q 2>/dev/null || true
+CMD ["mvn", "test", "-B", "-Dmaven.test.failure.ignore=true", "--fail-at-end"]

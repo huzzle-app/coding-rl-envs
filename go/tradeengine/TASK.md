@@ -165,13 +165,12 @@ The platform consists of 10 microservices:
 ## Test Categories
 
 | Category | Tests | Focus |
-| Unit | ~180 | Individual functions, edge cases |
-| Integration | ~120 | Service interactions, message flow |
-| Security | ~50 | Authentication, authorization, injection |
-| Chaos | ~40 | Failure scenarios, resilience |
-| Performance | ~40 | Latency, throughput, memory |
-| Race | ~50 | Run with `-race` flag |
-| System | ~30 | End-to-end workflows |
+| Unit | ~237 | Individual functions, edge cases |
+| Integration | ~40 | Service interactions, message flow |
+| Security | ~23 | Authentication, authorization, injection |
+| Chaos | ~18 | Failure scenarios, resilience |
+| Performance | ~17 | Latency, throughput, memory |
+| Race | ~24 | Run with `-race` flag |
 
 ## Expected Behavior
 
@@ -201,7 +200,7 @@ The platform consists of 10 microservices:
 
 ## Success Criteria
 
-- All 510+ tests pass
+- All ~359 tests pass
 - No race conditions detected with `-race`
 - No goroutine leaks
 - No memory leaks

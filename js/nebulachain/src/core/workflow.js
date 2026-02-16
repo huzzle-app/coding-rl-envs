@@ -159,12 +159,37 @@ function shortestPath(from, to) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Transition chain resolver — applies sequential transitions to reach target
+// ---------------------------------------------------------------------------
+
+function resolveTransitionChain(engine, entityId, targetState) {
+  const current = engine.getState(entityId);
+  if (!current) return { success: false, reason: 'entity_not_found', steps: [] };
+  if (current === targetState) return { success: true, steps: [], finalState: current };
+
+  const path = shortestPath(current, targetState);
+  if (!path) return { success: false, reason: 'no_path', steps: [] };
+
+  const steps = [];
+  for (let i = 0; i < path.length; i++) {
+    const result = engine.transition(entityId, path[i]);
+    steps.push(result);
+    if (!result.success) {
+      return { success: false, reason: 'transition_failed', steps, failedAt: path[i] };
+    }
+  }
+
+  return { success: true, steps, finalState: engine.getState(entityId) };
+}
+
 module.exports = {
   canTransition,
   WorkflowEngine,
   allowedTransitions,
   isValidState,
   shortestPath,
+  resolveTransitionChain,
   GRAPH,
   TERMINAL_STATES,
 };

@@ -25,14 +25,9 @@ public:
     void broadcast(const std::string& message);
 
     
-    // to connections_ from the acceptor thread while broadcast() iterates
-    // it from another thread, without any synchronization.
-    // FIX: Protect connections_ with a mutex
     void accept_connection();
 
     
-    // volatile does NOT provide atomicity or memory ordering guarantees in C++
-    // FIX: Use std::atomic<bool> instead of volatile bool
     volatile bool accepting_ = true;
 
 private:

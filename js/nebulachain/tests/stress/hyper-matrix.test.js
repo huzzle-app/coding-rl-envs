@@ -36,15 +36,21 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
     }
 
     const blocked = idx % 5 === 0 ? ['beta'] : [];
-    const route = chooseRoute([
+    const routeOptions = [
       { channel: 'alpha', latency: 2 + (idx % 9) },
       { channel: 'beta', latency: idx % 3 },
       { channel: 'gamma', latency: 4 + (idx % 4) }
-    ], blocked);
+    ];
+    const route = chooseRoute(routeOptions, blocked);
     assert.ok(route !== null);
     if (blocked.includes('beta')) {
       assert.notEqual(route.channel, 'beta');
     }
+    // Route optimiser must select lowest-latency non-blocked channel
+    const candidates = routeOptions.filter(r => !blocked.includes(r.channel));
+    const minLatency = Math.min(...candidates.map(r => r.latency));
+    assert.equal(route.latency, minLatency,
+      `chooseRoute must return lowest latency (${minLatency}), got ${route.latency} via ${route.channel}`);
 
     const from = idx % 2 === 0 ? 'queued' : 'allocated';
     const to = from === 'queued' ? 'allocated' : 'departed';
@@ -64,7 +70,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       { id: `z-${idx % 13}`, sequence: 1 }
     ]);
     assert.ok(replayed.length >= 2);
-    assert.equal(replayed[replayed.length - 1].sequence >= 1, true);
+    // Disaster recovery replay must keep the latest (highest) sequence per entity
+    const kEvent = replayed.find(e => e.id === `k-${idx % 17}`);
+    assert.ok(kEvent, 'k-event must appear in replay result');
+    assert.equal(kEvent.sequence, 2,
+      `replay must keep latest sequence (2) for disaster recovery, got ${kEvent.sequence}`);
 
     const p = percentile([idx % 11, (idx * 7) % 11, (idx * 5) % 11, (idx * 3) % 11], 50);
     assert.ok(Number.isInteger(p));

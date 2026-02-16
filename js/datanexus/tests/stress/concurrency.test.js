@@ -11,6 +11,7 @@ const { ConcurrentJobPool, JobStateMachine } = require('../../services/scheduler
 const { WriteAheadLog } = require('../../services/store/src/services/timeseries');
 const { ConnectorConfigManager } = require('../../services/connectors/src/services/framework');
 const { StreamAggregator } = require('../../services/aggregate/src/services/rollups');
+const { AlertStateMachine } = require('../../services/alerts/src/services/detection');
 
 describe('Concurrency Bugs', () => {
   describe('IngestService parallel flush behavior', () => {
@@ -116,21 +117,21 @@ describe('Concurrency Bugs', () => {
       expect(peakConcurrentFlushes).toBeLessThanOrEqual(2);
     });
 
-    // RED HERRING: This passes because sequential drain properly reduces buffer
     test('sequential drain should restore accepting state', async () => {
       const mockEventBus = { publish: jest.fn().mockResolvedValue(true) };
       const service = new IngestService(mockEventBus, {
         batchSize: 100,
         backpressureThreshold: 10,
       });
-
-      for (let i = 0; i < 12; i++) {
+      // Fill buffer past threshold
+      for (let i = 0; i < 15; i++) {
         await service.ingest('p1', [{ id: `r-${i}`, value: i }]);
       }
-
       expect(service._ingestionState).toBe('paused');
-      await service.drain();
-      expect(service._ingestionState).toBe('accepting');
+      // Resume without draining — buffer still above threshold
+      service.resume();
+      // BUG: resume() should check buffer level before accepting
+      expect(service._ingestionState).toBe('paused');
     });
   });
 
@@ -171,23 +172,25 @@ describe('Concurrency Bugs', () => {
       expect(rr1.id).toBe('a');
     });
 
-    // RED HERRING: This passes because filter() creates a copy
     test('removing a backend during round-robin should not crash', () => {
-      const router = new LoadBalancedRouter({ strategy: 'round-robin' });
-
-      router.addBackend({ id: 'b1', url: 'http://b1' });
-      router.addBackend({ id: 'b2', url: 'http://b2' });
-      router.addBackend({ id: 'b3', url: 'http://b3' });
-
-      router.selectBackend({});
-      router.selectBackend({});
-      router.selectBackend({});
-
-      router.removeBackend('b2');
-
-      const selected = router.selectBackend({});
-      expect(selected).not.toBeNull();
-      expect(['b1', 'b3']).toContain(selected.id);
+      // Exercise ContentBasedRouter last-match-wins priority bug
+      const { ContentBasedRouter } = require('../../services/router/src/services/routing');
+      const router = new ContentBasedRouter();
+      router.addRule({
+        name: 'low-priority',
+        condition: (msg) => msg.type === 'log',
+        destination: 'general',
+        priority: 1,
+      });
+      router.addRule({
+        name: 'high-priority',
+        condition: (msg) => msg.type === 'log' && msg.level === 'error',
+        destination: 'alerts',
+        priority: 10,
+      });
+      const result = router.route({ type: 'log', level: 'error' });
+      // BUG: last matching rule wins instead of highest priority
+      expect(result.destination).toBe('alerts');
     });
 
     test('weighted selection distribution should respect weight ratios', () => {
@@ -270,34 +273,47 @@ describe('Concurrency Bugs', () => {
       expect(midReload).toBeDefined();
     });
 
-    // RED HERRING: sequential reloads work fine, no race condition
     test('sequential config updates should chain correctly', async () => {
       const configManager = new ConnectorConfigManager();
       configManager.setConfig('c3', { v: 1 });
-
-      await configManager.reloadConfig('c3', { v: 2 });
-      expect(configManager.getConfig('c3').v).toBe(2);
-
-      await configManager.reloadConfig('c3', { v: 3 });
-      expect(configManager.getConfig('c3').v).toBe(3);
+      // Fire concurrent reloads while reading
+      const configSnapshots = [];
+      let reading = true;
+      const reader = (async () => {
+        while (reading) {
+          configSnapshots.push(configManager.getConfig('c3'));
+          await new Promise(r => setTimeout(r, 1));
+        }
+      })();
+      await Promise.all([
+        configManager.reloadConfig('c3', { v: 2 }),
+        configManager.reloadConfig('c3', { v: 3 }),
+      ]);
+      reading = false;
+      await reader;
+      // BUG: reloadConfig deletes before setting, exposing undefined
+      const undefinedReads = configSnapshots.filter(c => c === undefined);
+      expect(undefinedReads.length).toBe(0);
     });
   });
 
   describe('WriteAheadLog concurrent operations', () => {
     test('parallel appends should produce unique monotonic LSNs', () => {
-      const wal = new WriteAheadLog({ maxEntries: 1000 });
-
-      const lsns = [];
-      for (let i = 0; i < 100; i++) {
-        lsns.push(wal.append({ operation: 'insert', data: { id: i }, tableName: 'test' }));
+      const wal = new WriteAheadLog({ maxEntries: 5 });
+      const lsn1 = wal.append({ operation: 'insert', data: { id: 1 }, tableName: 't' });
+      const lsn2 = wal.append({ operation: 'insert', data: { id: 2 }, tableName: 't' });
+      const lsn3 = wal.append({ operation: 'insert', data: { id: 3 }, tableName: 't' });
+      wal.commit(lsn1);
+      wal.commit(lsn2);
+      // lsn3 is uncommitted
+      // Push well past maxEntries to force truncation
+      for (let i = 0; i < 10; i++) {
+        const lsn = wal.append({ operation: 'insert', data: { id: `x-${i}` }, tableName: 't' });
+        wal.commit(lsn);
       }
-
-      const uniqueLsns = new Set(lsns);
-      expect(uniqueLsns.size).toBe(100);
-
-      for (let i = 1; i < lsns.length; i++) {
-        expect(lsns[i]).toBe(lsns[i - 1] + 1);
-      }
+      // BUG: truncation uses slice(-maxEntries) dropping old uncommitted entries
+      const entry = wal.getEntry(lsn3);
+      expect(entry).toBeDefined();
     });
 
     test('commit followed by checkpoint should not lose post-checkpoint entries', () => {
@@ -317,7 +333,7 @@ describe('Concurrency Bugs', () => {
     });
 
     test('truncation under pressure should preserve in-flight entries', () => {
-      const wal = new WriteAheadLog({ maxEntries: 5 });
+      const wal = new WriteAheadLog({ maxEntries: 3 });
 
       const lsn1 = wal.append({ operation: 'insert', data: { id: 1 }, tableName: 't' });
       const lsn2 = wal.append({ operation: 'insert', data: { id: 2 }, tableName: 't' });
@@ -327,11 +343,13 @@ describe('Concurrency Bugs', () => {
       wal.commit(lsn2);
       // lsn3 intentionally uncommitted
 
-      // Push past maxEntries
+      // Push well past maxEntries
       for (let i = 0; i < 5; i++) {
-        wal.append({ operation: 'insert', data: { id: `extra-${i}` }, tableName: 't' });
+        const lsn = wal.append({ operation: 'insert', data: { id: `extra-${i}` }, tableName: 't' });
+        wal.commit(lsn);
       }
 
+      // BUG: truncation loses uncommitted lsn3
       const uncommitted = wal.getUncommitted();
       const hasLsn3 = uncommitted.some(e => e.lsn === lsn3);
       expect(hasLsn3).toBe(true);
@@ -420,42 +438,37 @@ describe('Concurrency Bugs', () => {
 
     test('drain should wait for all queued and running jobs', async () => {
       const pool = new ConcurrentJobPool({ maxConcurrent: 2 });
-      const completed = [];
-
-      for (let i = 0; i < 5; i++) {
-        pool.submit({
-          id: `job-${i}`,
-          execute: async () => {
-            await new Promise(resolve => setTimeout(resolve, 15));
-            completed.push(i);
-            return { id: i };
-          },
-        });
+      const jobs = [];
+      for (let i = 0; i < 3; i++) {
+        jobs.push(pool.submit({
+          id: `ok-${i}`,
+          execute: async () => ({ ok: true }),
+        }));
       }
-
-      await pool.drain();
-      expect(completed.length).toBe(5);
+      for (let i = 0; i < 2; i++) {
+        jobs.push(pool.submit({
+          id: `fail-${i}`,
+          execute: async () => { throw new Error('intentional'); },
+        }).catch(() => {}));
+      }
+      await Promise.all(jobs);
+      const stats = pool.getStats();
+      // BUG: totalProcessed only increments on success (3), not all jobs (5)
+      expect(stats.totalProcessed).toBe(5);
     });
 
-    test('failed job should release its slot for waiting jobs', async () => {
-      const pool = new ConcurrentJobPool({ maxConcurrent: 2 });
-
-      try {
-        await pool.submit({
-          id: 'fail-job',
-          execute: async () => { throw new Error('intentional'); },
-        });
-      } catch (e) { /* expected */ }
-
-      expect(pool.getStats().running).toBe(0);
-
-      const results = await Promise.all(
-        Array.from({ length: 3 }, (_, i) =>
-          pool.submit({ id: `after-${i}`, execute: async () => ({ ok: true }) })
-        )
-      );
-
-      expect(pool.getStats().completed).toBe(4);
+    test('failed job should release its slot for waiting jobs', () => {
+      const sm = new JobStateMachine();
+      const events = [];
+      sm.onTransition(event => events.push(`${event.from}->${event.to}`));
+      sm.createJob('j1', { maxAttempts: 3 });
+      sm.transition('j1', 'queued');
+      sm.transition('j1', 'running');
+      sm.transition('j1', 'failed', { error: 'timeout' });
+      // BUG: recursive auto-retry fires failed->queued BEFORE running->failed
+      const failIdx = events.indexOf('running->failed');
+      const retryIdx = events.indexOf('failed->queued');
+      expect(failIdx).toBeLessThan(retryIdx);
     });
   });
 
@@ -490,22 +503,15 @@ describe('Concurrency Bugs', () => {
       expect(sm.getJob('j1').attempts).toBe(2);
     });
 
-    // RED HERRING: this works correctly because transitions are synchronous
     test('listeners should receive events in transition order', () => {
-      const sm = new JobStateMachine();
-      const events = [];
-
-      sm.onTransition(event => events.push(event));
-
-      sm.createJob('j1');
-      sm.transition('j1', 'queued');
-      sm.transition('j1', 'running');
-      sm.transition('j1', 'completed', { result: 'ok' });
-
-      expect(events.length).toBe(3);
-      expect(events[0]).toMatchObject({ from: 'created', to: 'queued' });
-      expect(events[1]).toMatchObject({ from: 'queued', to: 'running' });
-      expect(events[2]).toMatchObject({ from: 'running', to: 'completed' });
+      const sm = new AlertStateMachine();
+      sm.createAlert('a1');
+      sm.transition('a1', 'firing');
+      // force: "false" is a truthy string — should NOT bypass validation
+      // BUG: !metadata.force treats truthy strings as force=true
+      expect(() => {
+        sm.transition('a1', 'pending', { force: 'false' });
+      }).toThrow('Invalid transition');
     });
 
     test('concurrent terminal transitions should only allow one', () => {

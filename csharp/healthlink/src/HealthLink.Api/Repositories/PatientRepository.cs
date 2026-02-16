@@ -21,9 +21,6 @@ public class PatientRepository : IPatientRepository
         _context = context;
     }
 
-    // === BUG C4: Returning IEnumerable instead of IQueryable ===
-    // This materializes the query, preventing downstream LINQ
-    // from being translated to SQL (further filtering happens in memory)
     public IEnumerable<Patient> GetAll()
     {
         return _context.Patients.ToList();
@@ -43,9 +40,6 @@ public class PatientRepository : IPatientRepository
 
     public async Task ExecuteCustomQueryAsync(string fieldName, string value)
     {
-        // === BUG I1: SQL injection via ExecuteSqlRaw with interpolation ===
-        // ExecuteSqlRaw does NOT parameterize interpolated strings
-        // Should use ExecuteSqlInterpolated() instead
         await _context.Database.ExecuteSqlRawAsync(
             $"UPDATE \"Patients\" SET \"{fieldName}\" = '{value}' WHERE \"IsActive\" = true");
     }

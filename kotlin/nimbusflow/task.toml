@@ -2,10 +2,11 @@ version = "1.0"
 
 [metadata]
 name = "nimbusflow"
-description = "Debug a Kotlin hyper-principal dispatch platform"
+description = "Fix 25 bugs in a Kotlin hyper-principal maritime dispatch platform (9316 tests)"
 difficulty = "hard"
+tier = "hyper-principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "feature", "refactor", "optimize", "api", "migration", "greenfield"]
 language = "kotlin"
 
 [agent]

@@ -2,7 +2,7 @@
  * Billing Metering Tests (~30 tests)
  */
 
-const { UsageMeter } = require('../../../services/billing/src/services/metering');
+const { UsageMeter, BillingStateMachine, UsageAggregator } = require('../../../services/billing/src/services/metering');
 
 describe('UsageMeter', () => {
   let meter;
@@ -221,6 +221,100 @@ describe('UsageMeter', () => {
       meter.recordUsage('t1', 0, 2000);
       meter.recordUsage('t1', 0, 3000);
       expect(meter.getUsage('t1').bytesIngested).toBe(6000);
+    });
+  });
+
+  describe('UsageAggregator getDailyUsage sort (H2)', () => {
+    test('daily usage should be returned in chronological order', () => {
+      const agg = new UsageAggregator();
+      const day1 = 86400000 * 100;
+      const day3 = 86400000 * 102;
+      const day2 = 86400000 * 101;
+      // Insert out of order
+      agg.recordHourly('t1', day3, { dataPoints: 30, bytes: 300, queries: 3 });
+      agg.rollupToDaily('t1');
+      agg.recordHourly('t1', day1, { dataPoints: 10, bytes: 100, queries: 1 });
+      agg.rollupToDaily('t1');
+      agg.recordHourly('t1', day2, { dataPoints: 20, bytes: 200, queries: 2 });
+      agg.rollupToDaily('t1');
+      const daily = agg.getDailyUsage('t1', day1, day3);
+      expect(daily.length).toBe(3);
+      expect(daily[0].dayStart).toBeLessThanOrEqual(daily[1].dayStart);
+      expect(daily[1].dayStart).toBeLessThanOrEqual(daily[2].dayStart);
+    });
+  });
+
+  describe('BillingStateMachine refund bug (H3)', () => {
+    test('refund amount should equal amount at payment time', () => {
+      const sm = new BillingStateMachine();
+      sm.createInvoice('inv-1', { amount: 500 });
+      sm.transition('inv-1', 'pending');
+      sm.transition('inv-1', 'processing');
+      sm.transition('inv-1', 'paid');
+      const paidAmount = sm.getInvoice('inv-1').amount;
+      sm.getInvoice('inv-1').amount = 100;
+      sm.transition('inv-1', 'refunded');
+      expect(sm.getInvoice('inv-1').refundAmount).toBe(paidAmount);
+    });
+
+    test('refund amount should not change with post-payment amount mutation', () => {
+      const sm = new BillingStateMachine();
+      sm.createInvoice('inv-2', { amount: 300 });
+      sm.transition('inv-2', 'pending');
+      sm.transition('inv-2', 'processing');
+      sm.transition('inv-2', 'paid');
+      sm.getInvoice('inv-2').amount = 0;
+      sm.transition('inv-2', 'refunded');
+      expect(sm.getInvoice('inv-2').refundAmount).toBe(300);
+    });
+
+    test('refund on high-value invoice should capture exact paid amount', () => {
+      const sm = new BillingStateMachine();
+      sm.createInvoice('inv-3', { amount: 99999 });
+      sm.transition('inv-3', 'pending');
+      sm.transition('inv-3', 'processing');
+      sm.transition('inv-3', 'paid');
+      const original = sm.getInvoice('inv-3').amount;
+      sm.getInvoice('inv-3').amount = 1;
+      sm.transition('inv-3', 'refunded');
+      expect(sm.getInvoice('inv-3').refundAmount).toBe(original);
+    });
+  });
+
+  describe('UsageAggregator rollup idempotency (H1)', () => {
+    test('rollup with no new hourly data should be idempotent', () => {
+      const agg = new UsageAggregator();
+      const hour = 3600000 * 1000;
+      agg.recordHourly('t1', hour, { dataPoints: 100, bytes: 1000, queries: 5 });
+      agg.rollupToDaily('t1');
+      const dayStart = Math.floor(hour / 86400000) * 86400000;
+      const daily1 = agg.getDailyUsage('t1', dayStart, dayStart);
+      agg.rollupToDaily('t1');
+      const daily2 = agg.getDailyUsage('t1', dayStart, dayStart);
+      expect(daily2[0].dataPoints).toBe(daily1[0].dataPoints);
+    });
+
+    test('multiple rollups with new data should not double-count', () => {
+      const agg = new UsageAggregator();
+      const hour = 3600000 * 2000;
+      agg.recordHourly('t1', hour, { dataPoints: 50, bytes: 500, queries: 2 });
+      agg.rollupToDaily('t1');
+      agg.recordHourly('t1', hour + 3600000, { dataPoints: 30, bytes: 300, queries: 1 });
+      agg.rollupToDaily('t1');
+      const dayStart = Math.floor(hour / 86400000) * 86400000;
+      const daily = agg.getDailyUsage('t1', dayStart, dayStart);
+      expect(daily[0].dataPoints).toBe(80);
+    });
+
+    test('hourly count should reflect actual number of hourly buckets', () => {
+      const agg = new UsageAggregator();
+      const hour = 3600000 * 3000;
+      agg.recordHourly('t1', hour, { dataPoints: 10, bytes: 100, queries: 1 });
+      agg.recordHourly('t1', hour + 3600000, { dataPoints: 20, bytes: 200, queries: 2 });
+      agg.rollupToDaily('t1');
+      const dayStart = Math.floor(hour / 86400000) * 86400000;
+      const daily = agg.getDailyUsage('t1', dayStart, dayStart);
+      expect(daily[0].hourlyCount).toBe(2);
     });
   });
 });

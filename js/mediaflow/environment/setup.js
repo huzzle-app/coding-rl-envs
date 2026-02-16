@@ -714,9 +714,8 @@ class MediaFlowEnvironment {
    * Get success criteria description
    */
   getSuccessCriteria() {
-    return 'All 510 Jest tests must pass. Fix all 90 intentional bugs across 12 categories in 10 microservices.';
+    return 'All 537 Jest tests must pass. Fix all 90 intentional bugs across 12 categories in 10 microservices.';
   }
-}
 
   /**
    * Gymnasium-compatible step returning {observation, reward, done, truncated, info}

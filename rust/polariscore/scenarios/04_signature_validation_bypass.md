@@ -13,7 +13,7 @@ Severity: CRITICAL
 CVSS Score: 9.1
 Status: Active Exploitation Detected
 
-Title: Signature Validation Truncation Allows Request Forgery
+Title: Signature Validation Tolerance Allows Request Forgery
 Affected: PolarisCore Security Module
 Vector: Remote, No Authentication Required
 ```
@@ -26,26 +26,25 @@ Vector: Remote, No Authentication Required
 
 ### Executive Summary
 
-During a routine security audit, our red team discovered that the signature validation function in PolarisCore is vulnerable to a truncation attack. The validator only compares the first 8 characters of cryptographic signatures, allowing attackers to forge valid signatures with minimal computational effort.
+During a routine security audit, our red team discovered that the signature validation function in PolarisCore is vulnerable to a near-match bypass. The validator accepts signatures that are not identical to the expected value, allowing attackers to forge valid signatures by mutating a small number of bytes.
 
 ### Technical Details
 
-The `validate_signature` function truncates both the expected and provided signatures to 8 characters before comparison. This reduces the effective keyspace from 2^64 to 2^32, making brute-force attacks trivially feasible.
+The `validate_signature` function does not perform strict byte-for-byte comparison. Instead, it tolerates minor differences between the expected and provided signatures. This means an attacker who obtains a near-match of a valid signature can authenticate forged requests.
 
 **Proof of Concept:**
 ```
 Payload: "deploy-batch-17"
 Secret: "top-secret"
-Full signature: a7b3c9d2e1f48906
-Truncated check: a7b3c9d2
+Valid signature:  a7b3c9d2e1f48906
+Forged signature: a7b3c9d2e1f48916  (single byte changed)
 
-Attacker can use ANY signature starting with "a7b3c9d2"
-to authenticate requests.
+The forged signature is ACCEPTED as valid.
 ```
 
 ### Additional Findings
 
-1. Step-up authentication threshold uses `>` instead of `>=`, meaning requests with exactly 700 units bypass additional verification
+1. Step-up authentication threshold is miscalibrated, allowing high-privilege roles to bypass additional verification requirements
 2. Combined with signature bypass, attackers can forge requests for high-value shipments
 
 ---
@@ -55,11 +54,11 @@ to authenticate requests.
 | Time | Event |
 |------|-------|
 | 03:15 UTC | Anomalous API traffic detected from unknown IPs |
-| 03:22 UTC | Security alert: 47 requests with invalid full signatures but valid truncated prefixes |
+| 03:22 UTC | Security alert: 47 requests with near-match signatures accepted as valid |
 | 03:30 UTC | Red team confirms exploitation in staging environment |
 | 03:45 UTC | War room convened, investigation escalated to P0 |
 | 04:00 UTC | Temporary WAF rule deployed to block suspicious patterns |
-| 04:30 UTC | Root cause identified: signature truncation in validation |
+| 04:30 UTC | Root cause identified: signature comparison tolerance in validation |
 
 ---
 
@@ -69,13 +68,13 @@ to authenticate requests.
 Normal Request Flow:
 1. Client computes signature = HMAC(payload, secret)
 2. Client sends {payload, signature}
-3. Server validates full 16-char hex signature
+3. Server validates exact byte-for-byte match of 16-char hex signature
 4. Request processed if valid
 
 Exploited Flow:
-1. Attacker observes valid signature prefix (first 8 chars)
-2. Attacker forges payload with matching 8-char prefix
-3. Server validates only first 8 characters
+1. Attacker obtains a valid signature for a known payload
+2. Attacker mutates 1 byte to create a near-match signature
+3. Server tolerates up to 1 byte difference in comparison
 4. Forged request accepted as valid
 ```
 
@@ -93,9 +92,9 @@ Exploited Flow:
 
 ## Observed Symptoms
 
-1. Requests with partial signature matches being accepted
-2. Signature validation comparing only first 8 hex characters
-3. Step-up authentication not triggering at exactly 700 units
+1. Requests with near-match signatures being accepted (1 byte tolerance)
+2. Signature validation not performing strict byte-for-byte comparison
+3. Step-up authentication not triggering at exactly 700 units (using `>` instead of `>=`)
 4. Forged deployment commands executing successfully
 
 ---
@@ -125,16 +124,16 @@ Exploited Flow:
 
 ## Investigation Questions
 
-1. How many characters are being compared in signature validation?
-2. Is the comparison using the full signature or a substring?
-3. What is the exact boundary condition for step-up authentication?
-4. Are there other truncation or boundary issues in security paths?
+1. How many byte differences are tolerated in signature validation?
+2. Is the comparison using strict equality or a tolerance threshold?
+3. What is the exact boundary condition for step-up authentication (`>` vs `>=`)?
+4. Are there other tolerance or boundary issues in security paths?
 
 ---
 
 ## Resolution Criteria
 
-- Full 16-character signatures must be validated
+- Signatures must be compared with zero tolerance (exact byte-for-byte match)
 - Step-up must trigger at exactly 700 units (>=, not >)
 - All security tests must pass
 - No regression in path sanitization

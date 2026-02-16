@@ -39,7 +39,7 @@ Bugs are embedded in the source codes in source files. The issues IDs (MGL0001â€
 
 ## Bug Count
 
-1,issues across 18 modules (9 core + 8 services + 1 contracts) with deep cross-module dependency chains.
+1,240 issues across 18 modules (9 core + 8 services + 1 contracts) with deep cross-module dependency chains.
 
 ## Test Breakdown
 
@@ -47,27 +47,27 @@ Bugs are embedded in the source codes in source files. The issues IDs (MGL0001â€
 |----------|-------|
 | Unit tests | 10 |
 | Extended tests | 49 |
+| Advanced bug tests | 144 |
+| Anti-tampering tests | 12 |
 | Integration tests | 3 |
 | Contract tests | 1 |
 | Service tests | 32 |
 | Service mesh matrix | 2,168 |
 | Hyper matrix | 7,000 |
-| **Total** | **9,263** |
+| **Total** | **9,419** |
 
-## Reward Tiers (10-threshold)
+## Reward Tiers (8-threshold)
 
 | Pass Rate | Reward |
 |-----------|--------|
 | >= 1.00 | 1.0 |
-| >= 0.99 | 0.85 |
-| >= 0.96 | 0.66 |
-| >= 0.90 | 0.47 |
-| >= 0.80 | 0.31 |
-| >= 0.67 | 0.19 |
-| >= 0.52 | 0.11 |
-| >= 0.36 | 0.05 |
-| >= 0.22 | 0.015 |
-| < 0.22 | 0.0 |
+| >= 0.95 | 0.78 |
+| >= 0.85 | 0.55 |
+| >= 0.70 | 0.38 |
+| >= 0.55 | 0.22 |
+| >= 0.40 | 0.12 |
+| >= 0.25 | 0.05 |
+| < 0.25 | 0.0 |
 
 ## Running Tests
 

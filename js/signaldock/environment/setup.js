@@ -14,7 +14,7 @@ const FILE_TEST_MAP = {
   'src/core/workflow.js': ['tests/unit/workflow.test.js', 'tests/integration/dispatch-flow.test.js'],
   'src/models/': ['tests/unit/models.test.js'],
   'services/': ['tests/services/contracts.test.js'],
-  'shared/': ['tests/services/contracts.test.js'],
+  'shared/': ['tests/services/contracts.test.js', 'tests/stress/cross-module-matrix.test.js'],
   'migrations/': ['tests/services/contracts.test.js']
 };
 

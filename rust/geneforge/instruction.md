@@ -3,11 +3,11 @@
 **Language:** Rust
 **Difficulty:** Principal
 **Bugs:** 136
-**Tests:** 1168+
+**Tests:** 1200+
 
 ## Overview
 
- across a clinical genomics analysis platform. The codebase handles sequence ingestion, alignment orchestration, variant calling pipelines, cohort aggregation, phenotype correlation, and compliance-safe reporting.
+Fix bugs across a clinical genomics analysis platform. The codebase handles sequence ingestion, alignment orchestration, variant calling pipelines, cohort aggregation, phenotype correlation, and compliance-safe reporting.
 
 ## Getting Started
 
@@ -19,7 +19,7 @@ docker compose up -d
 cargo test
 
 # Run full verification
-bash harbor/test.sh
+bash tests/test.sh
 ```
 
 ## Source Files

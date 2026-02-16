@@ -13,6 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Service for vehicle management operations.
+ *
+ * Bugs: E4, E5, K2
+ * Categories: JPA/Persistence, Templates
+ */
 @Service
 public class VehicleService {
 
@@ -24,22 +30,21 @@ public class VehicleService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    // Bug E4: Method is not @Transactional, so persistence context is closed
+    // before lazy-loaded collections are accessed.
+    // Category: JPA/Persistence
     public Vehicle getVehicle(Long id) {
         Vehicle vehicle = vehicleRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Vehicle not found: " + id));
 
-        
-        // This method is not @Transactional, so persistence context is closed
-        // Fix: Add @Transactional(readOnly = true) to this method
         log.info("Vehicle {} has {} maintenance records",
             vehicle.getVin(), vehicle.getMaintenanceRecords().size());
 
         return vehicle;
     }
 
-    
-    // Manual EntityManager created but never closed → connection leak
-    // Fix: Use try-with-resources or let Spring manage EntityManager lifecycle
+    // Bug E5: Manual EntityManager created but never closed, causing connection leak.
+    // Category: JPA/Persistence
     public List<Vehicle> searchVehicles(String query) {
         EntityManager em = entityManager.getEntityManagerFactory().createEntityManager();
         var jpql = em.createQuery(
@@ -47,7 +52,6 @@ public class VehicleService {
             Vehicle.class);
         jpql.setParameter("query", "%" + query + "%");
         return jpql.getResultList();
-        
     }
 
     @Transactional
@@ -69,12 +73,10 @@ public class VehicleService {
         return vehicleRepository.save(vehicle);
     }
 
-    
-    // Raw type workaround causes heap pollution
-    // Fix: Accept List<Vehicle> or use helper with captured type
+    // Bug K2: Raw type cast causes heap pollution.
+    // Category: Templates
     @SuppressWarnings("unchecked")
     public void addToFleet(List<? extends Vehicle> fleet, Vehicle newVehicle) {
-        
         ((List) fleet).add(newVehicle);
     }
 

@@ -1,6 +1,12 @@
 #include <gtest/gtest.h>
 #include "persistence/snapshot.h"
 #include <filesystem>
+#include <fstream>
+#include <string>
+
+#ifndef SOURCE_DIR
+#define SOURCE_DIR "."
+#endif
 
 using namespace cacheforge;
 
@@ -100,4 +106,18 @@ TEST(SnapshotTest, test_add_entry) {
 
     // No crash, entries added to pending list
     std::filesystem::remove_all(dir);
+}
+
+// ========== Bug C4: Source check for exception-unsafe raw new ==========
+
+TEST(SnapshotTest, test_save_snapshot_exception_safety) {
+    std::string path = std::string(SOURCE_DIR) + "/src/persistence/snapshot.cpp";
+    std::ifstream f(path);
+    ASSERT_TRUE(f.is_open()) << "Could not read snapshot.cpp";
+    std::string src(std::istreambuf_iterator<char>(f),
+                    std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(src.find("new SnapshotWriter"), std::string::npos)
+        << "save_snapshot uses raw new SnapshotWriter (leaks on exception). "
+           "Use std::make_unique<SnapshotWriter>(...) instead.";
 }

@@ -135,53 +135,6 @@ Day 26: System crash with ArithmeticException
 
 ---
 
-## Required Corrective Actions
-
-1. **Timezone Handling** (Violations 1, 2, 3): Implement proper `ZonedDateTime` handling for all HOS calculations. Ensure timezone-aware arithmetic.
-
-2. **Negative Duration Guard** (Violation 2): Add validation to reject negative duration records and investigate root cause.
-
-3. **Vehicle Assignment Locking** (Violation 4): Implement database-level locking (`SELECT FOR UPDATE`) or optimistic locking to prevent concurrent booking.
-
-4. **Duration Data Type** (Violation 5): Use `long` instead of `int` for millisecond durations, or use `java.time.Duration` objects.
-
-5. **Rate Calculation** (Noted during audit): Some speed calculations use integer division, producing 0 mph for slow movements. Use floating-point division.
-
----
-
-## Audit Data Extract
-
-The following test cases demonstrate the violations:
-
-```java
-// Test Case: Timezone Duration
-LocalDateTime start = LocalDateTime.of(2024, 1, 15, 6, 0);  // 6 AM
-LocalDateTime end = LocalDateTime.of(2024, 1, 15, 18, 0);   // 6 PM
-ZoneId startZone = ZoneId.of("America/Chicago");
-ZoneId endZone = ZoneId.of("America/New_York");
-
-// Your system calculates:
-Duration.between(start, end);  // 12 hours (WRONG - ignores timezones)
-
-// Correct calculation:
-ZonedDateTime zStart = start.atZone(startZone);
-ZonedDateTime zEnd = end.atZone(endZone);
-Duration.between(zStart, zEnd);  // 11 hours (accounts for 1-hour offset)
-```
-
----
-
-## Files to Audit
-
-Based on our technical review, prioritize these files:
-- `compliance/src/main/java/com/fleetpulse/compliance/service/HoursOfServiceCalculator.java`
-- `compliance/src/main/java/com/fleetpulse/compliance/service/EtaCalculator.java`
-- `compliance/src/main/java/com/fleetpulse/compliance/service/VehicleBookingService.java`
-- `tracking/src/main/java/com/fleetpulse/tracking/service/DurationTracker.java`
-- `tracking/src/main/java/com/fleetpulse/tracking/service/SpeedCalculator.java`
-
----
-
 ## Compliance Deadline
 
 **Deadline**: March 8, 2024

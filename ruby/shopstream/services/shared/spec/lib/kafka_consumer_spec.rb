@@ -27,7 +27,7 @@ RSpec.describe ShopStream::KafkaConsumer do
       end
 
       # Fixed version should succeed after retries
-      expect { described_class.new(topics: topics, group_id: group_id) }.not_to raise_error rescue nil
+      expect { described_class.new(topics: topics, group_id: group_id) }.not_to raise_error
     end
 
     it 'includes broker addresses in error message' do
@@ -89,7 +89,7 @@ RSpec.describe ShopStream::KafkaConsumer do
       allow(ShopStream::EventSerializer).to receive(:deserialize).and_return({ 'type' => 'test' })
 
       # Fixed version should send to DLQ
-      expect(ShopStream::DLQProcessor).to receive(:send_to_dlq).with(message, kind_of(StandardError)) rescue nil
+      expect(ShopStream::DLQProcessor).to receive(:send_to_dlq).with(message, kind_of(StandardError))
       consumer.start rescue nil
     end
   end

@@ -69,7 +69,7 @@ orders.each { |o| puts o.line_items.map(&:product) }
 
 ## Related Documentation
 
-- [TASK.md](../TASK.md) - Full bug category documentation with 75 bugs across 10 services
+- [TASK.md](../TASK.md) - Full bug category documentation with 85 bugs across 10 services
 - Test files in each service's `spec/` directory contain assertions that exercise these bugs
 
 ## Service Architecture Reference

@@ -58,7 +58,7 @@ RSpec.describe StockService do
 
       info_after = service.get_stock_info(product.id) rescue nil
       if info_before && info_after
-        expect(info_after[:available]).to eq(info_before[:available] - 10) rescue nil
+        expect(info_after[:available]).to eq(info_before[:available] - 10)
       end
     end
 

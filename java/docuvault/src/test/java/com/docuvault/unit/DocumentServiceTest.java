@@ -14,6 +14,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.TypedQuery;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -23,6 +30,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +43,12 @@ public class DocumentServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private EntityManager entityManager;
+
+    @Mock
+    private EntityManagerFactory entityManagerFactory;
 
     @InjectMocks
     private DocumentService documentService;
@@ -105,6 +120,19 @@ public class DocumentServiceTest {
         assertNull(otherThreadUser.get(), "ThreadLocal should not leak across threads");
     }
 
+    @Test
+    void test_threadlocal_has_cleanup_mechanism() throws Exception {
+        // A1: DocumentService must have a cleanup method that calls ThreadLocal.remove()
+        // Without this, ThreadLocal values leak across request-reusing threads in servlet containers
+        String source = new String(Files.readAllBytes(
+            Paths.get("src/main/java/com/docuvault/service/DocumentService.java")));
+        String code = source.replaceAll("/\\*[\\s\\S]*?\\*/", "").replaceAll("//[^\n]*", "");
+
+        assertTrue(code.contains("currentUser.remove()") || code.contains(".remove()"),
+            "DocumentService must call ThreadLocal.remove() to prevent memory leaks. " +
+            "Add a clearCurrentUser() method that calls currentUser.remove()");
+    }
+
     // Tests for BUG C1: @Transactional proxy bypass
     @Test
     void test_transaction_active_in_nested_call() {
@@ -122,13 +150,24 @@ public class DocumentServiceTest {
     @Test
     void test_self_invocation_transactional() {
         // This test verifies that self-invocation of @Transactional methods works
-        
         when(documentRepository.save(any(Document.class))).thenReturn(testDoc);
-        when(documentRepository.findById(1L)).thenReturn(Optional.of(testDoc));
 
         assertDoesNotThrow(() ->
             documentService.createDocument("doc.pdf", "application/pdf", "/path", 100L, testUser)
         );
+    }
+
+    @Test
+    void test_no_self_invocation_of_transactional() throws Exception {
+        // C1: DocumentService.createDocument() must not call this.createVersion() directly
+        // Self-invocation bypasses Spring's @Transactional proxy
+        String source = new String(Files.readAllBytes(
+            Paths.get("src/main/java/com/docuvault/service/DocumentService.java")));
+        String code = source.replaceAll("/\\*[\\s\\S]*?\\*/", "").replaceAll("//[^\n]*", "");
+
+        assertFalse(code.contains("this.createVersion("),
+            "DocumentService must not use this.createVersion() - self-invocation bypasses " +
+            "@Transactional proxy. Inject self via @Lazy or extract to separate service.");
     }
 
     // Tests for BUG C2: @Async proxy bypass
@@ -180,9 +219,17 @@ public class DocumentServiceTest {
     // Tests for BUG D3: Connection pool exhaustion
     @Test
     void test_connection_pool_not_exhausted() {
-        
+        // Mock the EntityManager chain used in getDocumentsByOwner
+        EntityManager mockEm = mock(EntityManager.class);
+        TypedQuery<Document> mockQuery = mock(TypedQuery.class);
+        when(entityManager.getEntityManagerFactory()).thenReturn(entityManagerFactory);
+        when(entityManagerFactory.createEntityManager()).thenReturn(mockEm);
+        when(mockEm.createQuery(anyString(), eq(Document.class))).thenReturn(mockQuery);
+        when(mockQuery.setParameter(anyString(), any())).thenReturn(mockQuery);
+        when(mockQuery.getResultList()).thenReturn(List.of());
+
         // After multiple calls, connections should be returned to pool
-        // This test would fail in integration when pool runs out
+        // This test verifies EntityManager is closed after each call
         assertDoesNotThrow(() -> {
             for (int i = 0; i < 20; i++) {
                 try {
@@ -192,13 +239,27 @@ public class DocumentServiceTest {
                 }
             }
         });
+
+        // BUG D3: EntityManager.close() is never called, leaking connections
+        // After the fix, close() should be called once per invocation
+        verify(mockEm, atLeast(1)).close();
     }
 
     @Test
     void test_connections_returned_to_pool() {
-        // Verify that EntityManager is properly closed after query
-        
+        // Mock the EntityManager chain
+        EntityManager mockEm = mock(EntityManager.class);
+        TypedQuery<Document> mockQuery = mock(TypedQuery.class);
+        when(entityManager.getEntityManagerFactory()).thenReturn(entityManagerFactory);
+        when(entityManagerFactory.createEntityManager()).thenReturn(mockEm);
+        when(mockEm.createQuery(anyString(), eq(Document.class))).thenReturn(mockQuery);
+        when(mockQuery.setParameter(anyString(), any())).thenReturn(mockQuery);
+        when(mockQuery.getResultList()).thenReturn(List.of());
+
         assertDoesNotThrow(() -> documentService.getDocumentsByOwner(1L));
+
+        // Verify EntityManager is closed after use
+        verify(mockEm).close();
     }
 
     // Tests for BUG C4: @Cacheable key collision
@@ -227,12 +288,16 @@ public class DocumentServiceTest {
     void test_cache_key_explicit() {
         when(documentRepository.findById(1L)).thenReturn(Optional.of(testDoc));
 
-        // Call twice - second should use cache
-        documentService.getCachedDocument(1L);
-        documentService.getCachedDocument(1L);
+        // Verify getCachedDocument(Long) correctly delegates to repository
+        // Full @Cacheable behavior requires Spring AOP proxy (tested in CacheIntegrationTest)
+        Optional<Document> result1 = documentService.getCachedDocument(1L);
+        Optional<Document> result2 = documentService.getCachedDocument(1L);
 
-        // Should only call repository once (second call cached)
-        verify(documentRepository, times(1)).findById(1L);
+        assertTrue(result1.isPresent());
+        assertTrue(result2.isPresent());
+        assertEquals(testDoc.getId(), result1.get().getId());
+        // Each call hits repository (no cache proxy in unit test)
+        verify(documentRepository, atLeast(1)).findById(1L);
     }
 
     // General tests

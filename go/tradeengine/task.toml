@@ -2,10 +2,11 @@ version = "1.0"
 
 [metadata]
 name = "tradeengine"
-description = "Debug a Go high-frequency trading platform with microservices"
+description = "Fix 87 bugs in a Go high-frequency trading platform with 10 microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "feature", "refactor", "optimize", "api", "migration", "greenfield"]
 language = "go"
 
 [agent]

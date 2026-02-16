@@ -15,6 +15,9 @@ import java.util.Date;
  * (gateway, vehicles, dispatch, tracking, etc.) to validate them.
  * Also provides XML metadata parsing for compliance document processing
  * and API key validation for external integrations.
+ *
+ * Bugs: S1, S2
+ * Categories: Security
  */
 public class JwtTokenProvider {
 
@@ -55,20 +58,9 @@ public class JwtTokenProvider {
             .compact();
     }
 
-    
-    // The compliance service passes XML metadata documents through this method
-    // for parsing regulatory reports. The DocumentBuilderFactory is created
-    // with default settings, which allow external entity resolution.
-    // An attacker can craft an XML document with external entity references
-    // that read local files (e.g., /etc/passwd) or trigger SSRF attacks
-    // by making the server request attacker-controlled URLs.
+    // Bug S1: XML parsing with default DocumentBuilderFactory settings allows
+    // external entity resolution, enabling XXE attacks.
     // Category: Security
-    // Fix: Disable external entities and DTDs in the DocumentBuilderFactory:
-    //   factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-    //   factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-    //   factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-    //   factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-    //   factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 
     /**
      * Parses XML metadata content and returns the root element's text.
@@ -79,17 +71,8 @@ public class JwtTokenProvider {
      */
     public String parseXmlMetadata(String xmlContent) {
         try {
-            
-            // Default DocumentBuilderFactory resolves XXE entities, allowing:
-            //   <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-            //   <data>&xxe;</data>
-            // to read server files and return them in the parsed text content.
             javax.xml.parsers.DocumentBuilderFactory factory =
                 javax.xml.parsers.DocumentBuilderFactory.newInstance();
-            // Fix: Add these lines before newDocumentBuilder():
-            // factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            // factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            // factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             javax.xml.parsers.DocumentBuilder builder = factory.newDocumentBuilder();
             org.w3c.dom.Document doc = builder.parse(
                 new ByteArrayInputStream(xmlContent.getBytes(StandardCharsets.UTF_8)));
@@ -99,16 +82,9 @@ public class JwtTokenProvider {
         }
     }
 
-    
-    // String.equals() performs a short-circuit comparison that returns false
-    // as soon as it finds the first mismatched character. An attacker can
-    // measure response times to determine how many leading characters of
-    // their guess match the actual API key, effectively brute-forcing one
-    // character at a time. For a 32-character hex API key, this reduces
-    // the search space from 16^32 to 16*32 = 512 attempts.
+    // Bug S2: API key comparison uses String.equals() which is vulnerable
+    // to timing attacks due to short-circuit evaluation.
     // Category: Security
-    // Fix: Use java.security.MessageDigest.isEqual() which performs
-    //      constant-time comparison regardless of where the mismatch occurs.
 
     /**
      * Validates an API key for external integration authentication.
@@ -122,13 +98,7 @@ public class JwtTokenProvider {
         if (provided == null || expected == null) {
             return false;
         }
-        
-        // An attacker can measure response latency to determine how many
-        // leading characters of the API key are correct.
         return provided.equals(expected);
-        // Fix: return java.security.MessageDigest.isEqual(
-        //          provided.getBytes(StandardCharsets.UTF_8),
-        //          expected.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

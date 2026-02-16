@@ -60,7 +60,7 @@ RSpec.describe 'Ruby-Specific Bugs Integration' do
       end
 
       # Tables should still exist
-      expect(Product.count).to be >= 0 rescue nil
+      expect(Product.count).to be >= 0
     end
   end
 

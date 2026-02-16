@@ -1,5 +1,5 @@
 #!/bin/bash
-# Harbor verifier script for TalentFlow (Python/pytest)
+# Harbor verifier script for LatticeForge (Python/pytest)
 # Runs the test suite, computes sparse reward, writes to /logs/verifier/reward.txt
 set -o pipefail
 mkdir -p /logs/verifier
@@ -45,7 +45,10 @@ if [ "$TEST_FAST" = "1" ]; then
 fi
 
 # Run pytest and capture output
-TEST_OUTPUT=$($PYTEST_CMD 2>&1 || true)
+set +e
+TEST_OUTPUT=$($PYTEST_CMD 2>&1)
+TEST_EXIT=$?
+set -e
 echo "$TEST_OUTPUT" > /logs/verifier/test_output.txt
 
 # Parse pytest summary line: "X passed, Y failed, Z errors"
@@ -62,17 +65,21 @@ TOTAL=$((PASSED + FAILED + ERRORS))
 if [ "$TOTAL" -eq 0 ]; then
     echo "0.0" > /logs/verifier/reward.txt
     echo '{"passed": 0, "failed": 0, "total": 0, "reward": 0.0}' > /logs/verifier/results.json
+    if [ "$TEST_EXIT" -ne 0 ]; then
+      echo "Verifier error: test runner failed before any result could be parsed."
+      exit 1
+    fi
     echo "No tests found or all tests skipped. Reward: 0.0"
-    exit 0
+    exit 1
 fi
 
 RATIO=$(awk "BEGIN {printf \"%.6f\", $PASSED / $TOTAL}")
 
-# Calculate reward using scoring module
-REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "senior" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG 2>/dev/null || echo "0.0")
+# Calculate reward using scoring module (10-threshold, Apex-Principal)
+REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "apex-principal" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG 2>/dev/null || echo "0.0")
 
 # Get full JSON results
-RESULTS_JSON=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "senior" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG --json 2>/dev/null || echo '{}')
+RESULTS_JSON=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "apex-principal" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG --json 2>/dev/null || echo '{}')
 
 echo "$REWARD" > /logs/verifier/reward.txt
 echo "$RESULTS_JSON" > /logs/verifier/results.json

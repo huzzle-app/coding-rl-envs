@@ -711,4 +711,114 @@ class ComplexBugsMatrixTest < Minitest::Test
       assert_equal level.first, root
     end
   end
+
+  # ==========================================================================
+  # Cross-Module Interaction Tests
+  # Each test exercises 2-3 bugs across different modules, preventing
+  # single-module fixes from flipping these tests.
+  # ==========================================================================
+
+  def test_cross_settlement_riskgate_ratio_precision
+    # Settlement.netting_ratio + RiskGate.exposure_ratio: both have integer division
+    netting = ClearLedger::Core::Settlement.netting_ratio(100.0, 75.0)
+    exposure = ClearLedger::Core::RiskGate.exposure_ratio(75.0, 10.0)
+    assert_in_delta 0.75, netting, 1e-9
+    assert_in_delta 7.5, exposure, 1e-9
+  end
+
+  def test_cross_workflow_terminal_and_pending
+    # Workflow.terminal_state? + pending_count: both broken for :canceled
+    assert ClearLedger::Core::Workflow.terminal_state?(:canceled)
+    entities = [:drafted, :canceled, :reported, :validated]
+    pending = ClearLedger::Core::Workflow.pending_count(entities)
+    assert_equal 2, pending, ':canceled and :reported should not be counted as pending'
+  end
+
+  def test_cross_resilience_health_and_audit_score
+    # Resilience.health_score + AuditChain.audit_score: both have integer division
+    health = ClearLedger::Core::Resilience.health_score(7, 3)
+    audit = ClearLedger::Core::AuditChain.audit_score(7, 10)
+    assert_in_delta 0.7, health, 1e-9
+    assert_in_delta 0.7, audit, 1e-9
+  end
+
+  def test_cross_compliance_sla_percentage_consistency
+    # Compliance.compliance_score + SLA.sla_compliance_rate: both return ratio not percentage
+    comp_rate = ClearLedger::Core::Compliance.compliance_score(80, 100)
+    sla_rate = ClearLedger::Core::SLA.sla_compliance_rate(80, 100)
+    assert_in_delta 80.0, comp_rate, 1e-9
+    assert_in_delta 80.0, sla_rate, 1e-9
+  end
+
+  def test_cross_age_calculations_positive
+    # Reconciliation.age_seconds + Resilience.checkpoint_age + AuditChain.entry_age: all inverted
+    recon_age = ClearLedger::Core::Reconciliation.age_seconds(1000, 1100)
+    checkpoint_age = ClearLedger::Core::Resilience.checkpoint_age(1000, 2000)
+    entry_age = ClearLedger::Core::AuditChain.entry_age(1000, 2000)
+    assert_equal 100, recon_age
+    assert_equal 1000, checkpoint_age
+    assert_equal 1000, entry_age
+  end
+
+  def test_cross_routing_queue_admission
+    # Routing.congestion_score + QueuePolicy.should_throttle?: inverted division + boundary
+    congestion = ClearLedger::Core::Routing.congestion_score(80, 100)
+    should_throttle = ClearLedger::Core::QueuePolicy.should_throttle?(100.0, 100.0)
+    assert_in_delta 0.8, congestion, 1e-9
+    assert should_throttle, 'Should throttle at full capacity'
+  end
+
+  def test_cross_window_sla_boundary
+    # LedgerWindow.event_in_window? + SLA.sla_met?: both have boundary bugs
+    refute ClearLedger::Core::LedgerWindow.event_in_window?(150, 50, 150),
+           'Event at window_end should be outside half-open window [50, 150)'
+    assert ClearLedger::Core::SLA.sla_met?(60, 60),
+           'SLA at exactly deadline should be met'
+  end
+
+  def test_cross_statistics_median_and_ema
+    # Statistics.median + exponential_moving_average: two different stats bugs
+    med = ClearLedger::Core::Statistics.median([1, 2, 3, 4])
+    ema = ClearLedger::Core::Statistics.exponential_moving_average([0, 100], 0.8)
+    assert_in_delta 2.5, med, 1e-9
+    assert_in_delta 80.0, ema[1], 1e-6
+  end
+
+  def test_cross_command_auth_requirements
+    # CommandRouter + Authz: all missing-case bugs
+    settle_priority = ClearLedger::Core::CommandRouter.command_priority('settle')
+    needs_audit = ClearLedger::Core::CommandRouter.requires_audit?('reconcile')
+    needs_mfa = ClearLedger::Core::Authz.requires_mfa?('approve')
+    assert_equal 3, settle_priority
+    assert needs_audit, 'reconcile command should require audit'
+    assert needs_mfa, 'approve action should require MFA'
+  end
+
+  def test_cross_resilience_routing_healthy_paths
+    # Resilience.failover_candidates + Routing.feasible_routes: both have inverted filter logic
+    failover = ClearLedger::Core::Resilience.failover_candidates(%w[a b c], %w[b])
+    routes = { 'a' => 50, 'b' => 150, 'c' => 200 }
+    feasible = ClearLedger::Core::Routing.feasible_routes(routes, 100)
+    assert_equal %w[a c], failover
+    assert feasible.key?('a'), 'Route under max_latency should be feasible'
+    refute feasible.key?('c'), 'Route over max_latency should not be feasible'
+  end
+
+  def test_cross_settlement_fee_and_priority
+    # Settlement.settlement_fee + priority_settlement?: wrong constant + boundary
+    fee = ClearLedger::Core::Settlement.settlement_fee(10_000, 'premium')
+    is_priority = ClearLedger::Core::Settlement.priority_settlement?(3, 100_001)
+    assert_in_delta 20.0, fee, 1e-9
+    assert is_priority, 'urgency 3 with amount > 100k should be priority'
+  end
+
+  def test_cross_compliance_authz_thresholds
+    # Compliance.override_allowed? + escalation_needed? + Authz.role_hierarchy_rank: threshold bugs
+    override_ok = ClearLedger::Core::Compliance.override_allowed?('short reas', 2, 90)
+    escalate = ClearLedger::Core::Compliance.escalation_needed?(3, 2)
+    rank = ClearLedger::Core::Authz.role_hierarchy_rank(:admin)
+    assert override_ok, 'Valid override with 10-char reason + 2 approvals should be allowed'
+    assert escalate, 'Severity 3 with failures 2 should trigger escalation'
+    assert_equal 3, rank
+  end
 end

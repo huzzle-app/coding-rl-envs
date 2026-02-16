@@ -5,6 +5,13 @@
 #include "server/connection.h"
 #include <cstring>
 #include <climits>
+#include <fstream>
+#include <string>
+#include <regex>
+
+#ifndef SOURCE_DIR
+#define SOURCE_DIR "."
+#endif
 
 using namespace cacheforge;
 
@@ -90,27 +97,18 @@ TEST(SecurityTest, test_binary_key_preserved) {
 // ========== Bug E4: Unvalidated key length ==========
 
 TEST(SecurityTest, test_key_length_limit) {
-    
+
     HashTable ht;
 
-    // Very large key (1MB) - should be rejected or truncated
+    // Very large key (1MB) - should be rejected to prevent DoS
     std::string huge_key(1024 * 1024, 'x');
-    // A well-implemented cache should reject keys over a reasonable limit
-    // (e.g., 512KB or 1MB)
     bool inserted = ht.set(huge_key, Value("tiny_value"));
 
-    // After fix: either the set was rejected (key doesn't exist),
-    // or if accepted, the data is retrievable without corruption
-    auto val = ht.get(huge_key);
-    if (!inserted || !val.has_value()) {
-        // Key was rejected - correct behavior for unvalidated key length fix
-        EXPECT_FALSE(ht.contains(huge_key))
-            << "Key was rejected but still appears in the table";
-    } else {
-        // Key was accepted - verify data integrity (no buffer overflow/corruption)
-        EXPECT_EQ(val->as_string(), "tiny_value")
-            << "Value corrupted after storing oversized key";
-    }
+    // After fix: the oversized key must be rejected
+    EXPECT_FALSE(inserted)
+        << "Oversized key (1MB) should be rejected to prevent DoS";
+    EXPECT_FALSE(ht.contains(huge_key))
+        << "Oversized key should not be stored in the table";
 
     // A normal-sized key should always work
     ht.set("normal_key", Value("normal_value"));
@@ -237,4 +235,19 @@ TEST(SecurityTest, test_large_value_handling) {
     auto val = ht.get("large_key");
     ASSERT_TRUE(val.has_value());
     EXPECT_EQ(val->as_string().size(), 1024 * 1024);
+}
+
+// ========== Bug E2: Source check for format string vulnerability ==========
+
+TEST(SecurityTest, test_log_does_not_use_user_data_as_format_string) {
+    std::string path = std::string(SOURCE_DIR) + "/src/server/connection.cpp";
+    std::ifstream f(path);
+    ASSERT_TRUE(f.is_open()) << "Could not read connection.cpp";
+    std::string src(std::istreambuf_iterator<char>(f),
+                    std::istreambuf_iterator<char>());
+
+    // spdlog::xxx(msg) where msg is user data = format string vulnerability
+    std::regex pattern(R"(spdlog::\w+\(\s*msg\s*\))");
+    EXPECT_FALSE(std::regex_search(src, pattern))
+        << "connection.cpp passes user data directly as spdlog format string";
 }

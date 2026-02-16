@@ -80,7 +80,7 @@ func TestVersioningCompareVersions(t *testing.T) {
 	})
 }
 
-func TestFileVersionModel(t *testing.T) {
+func TestFileVersionModelFromVersioning(t *testing.T) {
 	t.Run("should create file version", func(t *testing.T) {
 		version := &models.FileVersion{
 			ID:         uuid.New(),

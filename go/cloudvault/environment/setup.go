@@ -211,10 +211,9 @@ func (e *Environment) Step(action map[string]interface{}) StepResult {
 	// Calculate reward
 	passRate := e.getPassRateFromResults(results)
 	reward := CalculateReward(passRate)
-	bugBonus := CalculateBugBonus(results)
 	regressionPenalty := CalculateRegressionPenalty(results, e.previousResults)
 
-	totalReward := reward*0.40 + bugBonus*0.25 - regressionPenalty*0.15
+	totalReward := reward - regressionPenalty*RegressionPenalty
 	if totalReward < 0.0 {
 		totalReward = 0.0
 	}
@@ -238,7 +237,6 @@ func (e *Environment) Step(action map[string]interface{}) StepResult {
 	info := map[string]interface{}{
 		"reward_breakdown": map[string]interface{}{
 			"test_pass_score":    reward,
-			"bug_bonus":          bugBonus,
 			"regression_penalty": regressionPenalty,
 		},
 		"pass_rate": passRate,

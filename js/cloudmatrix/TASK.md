@@ -120,23 +120,19 @@ The codebase needs attention. Failures span configuration, service logic, and in
 ## Reward Function
 
 ```
-Pass Rate -> Reward (Very Sparse)
-< 10% -> 0.00
-10-25% -> 0.05
-25-40% -> 0.12
-40-55% -> 0.22
-55-70% -> 0.38
-70-85% -> 0.55
-85-95% -> 0.78
-100% -> 1.00
+Pass Rate -> Reward (8-Threshold, Very Sparse)
+>= 100% -> 1.00
+>= 95%  -> 0.78
+>= 85%  -> 0.55
+>= 70%  -> 0.38
+>= 55%  -> 0.22
+>= 40%  -> 0.12
+>= 25%  -> 0.05
+< 25%   -> 0.00
 ```
 
-Additional bonuses:
-- Category completion: +0.03 per fully passing category
-- Chaos test bonus: +0.10 for all chaos tests passing
-- Bug fix bonus: up to +0.10 for fixing specific bugs
-- Efficiency bonus: +0.05 for fast completion (only at 100%)
-- Regression penalty: -0.15 for breaking previously passing tests
+Plus small solution quality bonus (up to +0.10) for surgical, minimal fixes over large changes.
+Regression penalty: -0.15 for breaking previously passing tests.
 
 ## Debugging Scenarios
 

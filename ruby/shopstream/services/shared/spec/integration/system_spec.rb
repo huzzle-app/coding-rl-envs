@@ -14,7 +14,7 @@ RSpec.describe 'System-Level Integration' do
       registry = ServiceRegistry.new rescue nil
       next unless registry
       registry.register('test', 'http://test:3000') rescue nil
-      expect(registry.get_endpoint('test')).to be_a(String) rescue nil
+      expect(registry.get_endpoint('test')).to be_a(String)
     end
 
     it 'L3: Database pool handles concurrent connections' do
@@ -23,7 +23,7 @@ RSpec.describe 'System-Level Integration' do
     end
 
     it 'L4: Redis connections are thread-safe' do
-      expect { Redis.current.ping }.not_to raise_error rescue nil
+      expect { Redis.current.ping }.not_to raise_error
     end
 
     it 'L5: Elasticsearch indices exist or are auto-created' do
@@ -37,7 +37,7 @@ RSpec.describe 'System-Level Integration' do
     end
 
     it 'L7: Application timezone is UTC' do
-      expect(Time.zone.name).to eq('UTC') rescue nil
+      expect(Time.zone.name).to eq('UTC')
     end
 
     it 'L8: Kafka topics are auto-created when missing' do
@@ -176,7 +176,7 @@ RSpec.describe 'System-Level Integration' do
 
     it 'C5: Cascading destroy completes within timeout' do
       order = create(:order, :with_line_items) rescue create(:order)
-      expect { Timeout.timeout(10) { order.destroy! } }.not_to raise_error rescue nil
+      expect { Timeout.timeout(10) { order.destroy! } }.not_to raise_error
     end
 
     it 'C6: No notifications on rolled-back transactions' do
@@ -206,7 +206,7 @@ RSpec.describe 'System-Level Integration' do
       if defined?(Category)
         parent = create(:category)
         child = create(:category, parent: parent) rescue create(:category)
-        expect { Timeout.timeout(5) { child.touch } }.not_to raise_error rescue nil
+        expect { Timeout.timeout(5) { child.touch } }.not_to raise_error
       end
     end
   end
@@ -293,7 +293,7 @@ RSpec.describe 'System-Level Integration' do
       if defined?(RateLimiter)
         limiter = RateLimiter.new(limit: 3, window: 60)
         5.times { limiter.allow?('attacker-ip') rescue nil }
-        expect(limiter.allow?('attacker-ip')).to be false rescue nil
+        expect(limiter.allow?('attacker-ip')).to be false
       end
     end
 

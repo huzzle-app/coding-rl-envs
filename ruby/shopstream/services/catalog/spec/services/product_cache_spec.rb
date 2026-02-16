@@ -52,7 +52,7 @@ RSpec.describe ProductCache do
     it 'removes product from cache' do
       redis.setex('product:1', 300, '{"id":1}') rescue nil
       cache.invalidate(1)
-      expect(redis.get('product:1')).to be_nil rescue nil
+      expect(redis.get('product:1')).to be_nil
     end
   end
 end

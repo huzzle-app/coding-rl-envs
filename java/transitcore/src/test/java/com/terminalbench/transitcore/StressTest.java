@@ -307,7 +307,7 @@ public class StressTest {
     @TestFactory
     Collection<DynamicTest> complianceLedgerOverrideTests() {
         List<DynamicTest> tests = new ArrayList<>();
-        String[] reasons = {"short", "exactly12char", "this is a longer reason"};
+        String[] reasons = {"short", "twelve_chars", "this is a longer reason"};
         for (String reason : reasons) {
             for (int approvals = 0; approvals <= 3; approvals++) {
                 for (int ttl : new int[]{60, 120, 180}) {

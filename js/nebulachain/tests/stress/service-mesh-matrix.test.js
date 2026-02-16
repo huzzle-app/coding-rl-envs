@@ -51,6 +51,14 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       ];
       const health = analytics.computeFleetHealth(vessels);
       assert.ok(health.total === 2);
+
+      // Audit trail must sort chronologically, not alphabetically by entryId
+      const trail2 = new audit.AuditTrail();
+      trail2.append(new audit.AuditEntry(`z-${idx}`, 'gateway', 'create', 1000));
+      trail2.append(new audit.AuditEntry(`a-${idx}`, 'routing', 'update', 2000));
+      const sorted = trail2.toSorted();
+      assert.equal(sorted[0].timestamp, 1000,
+        'audit trail toSorted must return chronological order (earliest first)');
     }
 
     if (bucket === 2) {
@@ -67,6 +75,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
         priority: (idx % 4) + 2,
       });
       assert.ok(typeof gate.allowed === 'boolean');
+
+      // Severity 5+ operations require pager notification for critical alerting
+      const critPlan = planner.plan(`crit-${idx}`, 5);
+      assert.ok(critPlan.channels.includes('pager'),
+        'severity 5 must include pager channel for critical alerting');
     }
 
     if (bucket === 3) {
@@ -81,6 +94,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       ];
       const path = routingSvc.computeOptimalPath(legs);
       assert.equal(path.legCount, 2);
+
+      // Verify parallel replay divides by parallelism factor, not parallelism-1
+      const exactPlan = resilience.buildReplayPlan({ eventCount: 200, timeoutS: 60, parallel: 2 });
+      assert.equal(exactPlan.estimatedS, 5.0,
+        'parallel=2 must halve replay time: 200 × 0.05 / 2 = 5.0s');
     }
 
     if (bucket === 4) {
@@ -99,6 +117,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
 
       const sanitized = security.sanitizeInput(`<script>alert(${idx})</script>`, 50);
       assert.ok(!sanitized.includes('<'));
+
+      // Rate limiting must use actual window, not hardcoded 60s
+      const rlCheck = security.rateLimitCheck({ requestCount: 80, limit: 100, windowS: 30 });
+      assert.equal(rlCheck.limited, false,
+        'rate 2.67/s under limit 3.33/s (windowS=30) must not be rate-limited');
     }
 
     if (bucket === 5) {
@@ -109,6 +132,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       trail.append(new audit.AuditEntry(`cross-${idx}`, 'gateway', action, Date.now()));
       trail.append(new audit.AuditEntry(`cross-${idx}-audit`, 'audit', 'logged', Date.now()));
       assert.equal(audit.isCompliant(trail, ['gateway', 'audit']), true);
+
+      // At high load, only low-priority (>2) operations should be shed
+      const highPriAdmission = gateway.admissionControl({ currentLoad: 92, maxCapacity: 100, priority: 2 });
+      assert.equal(highPriAdmission.admitted, true,
+        'priority 2 (high) must be admitted at 92% load — only routine priority >2 shed');
     }
 
     if (bucket === 6) {
@@ -122,6 +150,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
 
       const batch = notifications.batchNotify({ operators: [`op${idx}`, `op${idx + 1}`], severity: 4, message: `fleet update ${idx}` });
       assert.equal(batch.length, 2);
+
+      // Trend analysis boundary: slope of exactly 0.1 must be rising (>= not >)
+      const trend = analytics.trendAnalysis([0, 0.1], 2);
+      assert.equal(trend.trend, 'rising',
+        'slope of exactly 0.1 must be classified as rising, not flat');
     }
 
     if (bucket === 7) {
@@ -132,6 +165,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
 
       const rlResult = security.rateLimitCheck({ requestCount: idx % 200, limit: 100, windowS: 60 });
       assert.ok(typeof rlResult.limited === 'boolean');
+
+      // Rate limiting must respect actual window for longer intervals
+      const rl2 = security.rateLimitCheck({ requestCount: 120, limit: 100, windowS: 120 });
+      assert.equal(rl2.limited, true,
+        'rate 1.0/s exceeds limit 0.83/s (windowS=120) — must be rate-limited');
     }
   });
 }

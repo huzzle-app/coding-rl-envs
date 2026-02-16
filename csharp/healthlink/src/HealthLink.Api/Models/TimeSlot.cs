@@ -1,10 +1,5 @@
 namespace HealthLink.Api.Models;
 
-// === BUG B3: default(TimeSlot) creates zero-value struct ===
-// For value types, default() initializes all fields to zero/null/false.
-// A TimeSlot with StartHour=0, EndHour=0 is technically valid but meaningless.
-// Code that doesn't check for default values may treat 00:00-00:00 as a real slot.
-
 public struct TimeSlot
 {
     public int StartHour { get; set; }
@@ -12,8 +7,6 @@ public struct TimeSlot
 
     public bool IsValid => StartHour >= 0 && EndHour > StartHour && StartHour < 24 && EndHour <= 24;
 
-    
-    // IsValid returns false for default, but code often doesn't check
     public TimeSpan Duration => TimeSpan.FromHours(EndHour - StartHour);
 }
 

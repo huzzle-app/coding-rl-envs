@@ -783,3 +783,60 @@ class TestThroughput:
 
         amplification = physical_writes / logical_writes
         assert amplification < 3.0, f"Write amplification {amplification:.2f} exceeds 3x"
+
+
+# ---------------------------------------------------------------------------
+# Source-code-verifying tests for caching & request coalescing bugs
+# ---------------------------------------------------------------------------
+
+
+class TestServiceClientCoalescingIsolation:
+    """Tests that ServiceClient request coalescing isolates users (BUG C3)."""
+
+    def test_coalescing_cache_key_format(self):
+        """ServiceClient coalescing cache key must include user context."""
+        import inspect
+        from shared.clients.base import ServiceClient
+        src = inspect.getsource(ServiceClient.get)
+        if "cache_key" in src:
+            # The cache_key should include auth/user context, not just path:params
+            key_line = [l for l in src.split('\n') if 'cache_key' in l and '=' in l]
+            for line in key_line:
+                if 'f"' in line or "f'" in line:
+                    has_user = any(w in line.lower() for w in
+                                  ['header', 'user', 'auth', 'token', 'session'])
+                    assert has_user, \
+                        f"Coalescing key must include user context: {line.strip()}"
+
+    def test_coalescing_does_not_share_across_users(self):
+        """Two users with same path+params must not share coalesced responses."""
+        import inspect
+        from shared.clients.base import ServiceClient
+        src = inspect.getsource(ServiceClient.get)
+        # Check that the cache key formation includes user-specific info
+        if "coalesce" in src and "cache_key" in src:
+            # path:params is not sufficient for isolation
+            assert 'path}:{params}' not in src.replace(' ', '') or \
+                   'header' in src.lower(), \
+                "Cache key f'{path}:{params}' leaks data between users"
+
+
+class TestCircuitBreakerInCacheScenarios:
+    """Tests that CircuitBreaker threshold works correctly in cache miss scenarios."""
+
+    def test_circuit_breaker_opens_at_exact_threshold(self):
+        """Circuit breaker must open at exactly failure_threshold failures."""
+        from shared.clients.base import CircuitBreaker, CircuitState
+        cb = CircuitBreaker(failure_threshold=5)
+        for _ in range(5):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN, \
+            "Circuit must open at exactly failure_threshold (not threshold+1)"
+
+    def test_circuit_breaker_threshold_gte_check(self):
+        """record_failure must use >= for threshold comparison (BUG C1)."""
+        import inspect
+        from shared.clients.base import CircuitBreaker
+        src = inspect.getsource(CircuitBreaker.record_failure)
+        assert ">= self.failure_threshold" in src, \
+            "record_failure must use >= (not >) for threshold comparison"

@@ -35,6 +35,10 @@ func TestRateLimitCheckRespectsLimit(t *testing.T) {
 	if security.RateLimitCheck(10, 10, 60) {
 		t.Fatal("expected at limit to be blocked")
 	}
+	// Window size should not inflate the count into a false rejection
+	if !security.RateLimitCheck(5, 10, 30) {
+		t.Fatal("expected 5 requests in 30s window to be under limit of 10")
+	}
 }
 
 func TestComputeRiskScoreInRange(t *testing.T) {

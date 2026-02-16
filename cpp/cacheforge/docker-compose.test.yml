@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile.test
     environment:
       - CACHEFORGE_PORT=6380
-      - CACHEFORGE_MAX_MEMORY=256mb
+      - CACHEFORGE_MAX_MEMORY=256m
       - CACHEFORGE_LOG_LEVEL=debug
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/cacheforge_test
       - REDIS_URL=redis://redis:6379

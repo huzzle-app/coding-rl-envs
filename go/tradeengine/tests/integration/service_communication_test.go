@@ -80,14 +80,18 @@ func TestNATSMessaging(t *testing.T) {
 	})
 
 	t.Run("should handle reconnection", func(t *testing.T) {
-		
-		// After disconnect/reconnect, subscriptions may be lost
+		// After disconnect/reconnect, subscriptions should be restored
 
 		connected := isConnected()
 		assert.True(t, connected)
 
 		// Simulate disconnect
 		disconnect()
+
+		// Bug L1: isConnected doesn't reflect actual disconnected state
+		disconnectedState := isConnected()
+		assert.False(t, disconnectedState,
+			"isConnected should return false after disconnect")
 
 		// Reconnect
 		reconnect()
@@ -97,13 +101,13 @@ func TestNATSMessaging(t *testing.T) {
 	})
 
 	t.Run("should preserve message order", func(t *testing.T) {
-		
-		messages := make(chan int, 10)
+		received := make([]int, 0, 10)
+		var mu sync.Mutex
 
 		subscribe("order.test", func(data []byte) {
-			var seq int
-			// Parse sequence number
-			messages <- seq
+			mu.Lock()
+			received = append(received, int(data[0]))
+			mu.Unlock()
 		})
 
 		// Publish in order
@@ -111,8 +115,20 @@ func TestNATSMessaging(t *testing.T) {
 			publish("order.test", []byte{byte(i)})
 		}
 
-		// Check order (may fail due to bug)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		// Bug C1/C8: publish/subscribe stubs are no-ops, so nothing received
+		assert.Len(t, received, 10,
+			"All 10 messages should be received")
+
+		// Verify order is preserved
+		for i := 0; i < len(received)-1; i++ {
+			assert.LessOrEqual(t, received[i], received[i+1],
+				"Messages should be received in order")
+		}
 	})
 }
 
@@ -143,11 +159,17 @@ func TestCircuitBreaker(t *testing.T) {
 
 		assert.True(t, breaker.IsOpen())
 
+		// Before timeout, should NOT be half-open
+		assert.False(t, breaker.IsHalfOpen(),
+			"Breaker should not be half-open while still in open state before timeout")
+
 		// Wait for timeout
 		time.Sleep(150 * time.Millisecond)
 
-		
+		// After timeout, should transition to half-open (not still open)
 		assert.True(t, breaker.IsHalfOpen())
+		assert.False(t, breaker.IsOpen(),
+			"After timeout, breaker should be half-open, not open")
 	})
 
 	t.Run("should handle concurrent state checks", func(t *testing.T) {
@@ -236,17 +258,24 @@ func TestDistributedLocking(t *testing.T) {
 	t.Run("should handle lock expiration", func(t *testing.T) {
 		ctx := context.Background()
 
-		
-		lock, _ := acquireLock(ctx, "expiring-lock", 100*time.Millisecond)
+		lock1, _ := acquireLock(ctx, "expiring-lock", 100*time.Millisecond)
+		_ = lock1
+
+		// Before expiration, second acquire should fail
+		ctxShort, cancelShort := context.WithTimeout(ctx, 50*time.Millisecond)
+		defer cancelShort()
+		_, err := acquireLock(ctxShort, "expiring-lock", 5*time.Second)
+		assert.Error(t, err,
+			"Lock should not be acquirable before TTL expires (Bug D2: lock not properly exclusive)")
 
 		// Wait for expiration
 		time.Sleep(150 * time.Millisecond)
 
-		// Another client should be able to acquire
-		lock2, err := acquireLock(ctx, "expiring-lock", 5*time.Second)
-		assert.NoError(t, err)
+		// After TTL, second acquire should succeed
+		lock2, err2 := acquireLock(ctx, "expiring-lock", 5*time.Second)
+		assert.NoError(t, err2)
 
-		releaseLock(lock)
+		releaseLock(lock1)
 		releaseLock(lock2)
 	})
 }
@@ -276,12 +305,15 @@ func TestDatabaseConnections(t *testing.T) {
 	})
 
 	t.Run("should handle connection timeout", func(t *testing.T) {
-		
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		// Use an already-expired context to simulate timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 		defer cancel()
+		time.Sleep(time.Millisecond) // ensure context is expired
 
 		conn := getDBConnectionWithContext(ctx)
-		assert.NotNil(t, conn)
+		// Bug L8: getDBConnectionWithContext ignores context, always returns conn
+		assert.Nil(t, conn,
+			"Connection request with expired context should return nil (timeout)")
 	})
 }
 
@@ -333,7 +365,10 @@ func (c *CircuitBreakerTest) RecordFailure() {
 
 func (c *CircuitBreakerTest) IsOpen() bool { return c.state == "open" }
 
-func (c *CircuitBreakerTest) IsHalfOpen() bool { return c.state == "half-open" || c.state == "open" }
+func (c *CircuitBreakerTest) IsHalfOpen() bool {
+	// Bug C3: Returns true for "open" state too — should only be true for "half-open"
+	return c.state == "half-open" || c.state == "open"
+}
 
 func checkHealth(endpoint string) bool {
 	return endpoint != "failing-service:9999"

@@ -138,12 +138,29 @@ function estimateWaitTime(depth, processingRatePerSecond) {
   return depth / processingRatePerSecond; 
 }
 
+// ---------------------------------------------------------------------------
+// Backpressure processor — processes items in batches with error isolation
+// ---------------------------------------------------------------------------
+
+async function processWithBackpressure(items, handler, maxConcurrent) {
+  const max = maxConcurrent || 5;
+  const results = [];
+  const errors = [];
+  for (let i = 0; i < items.length; i += max) {
+    const batch = items.slice(i, i + max);
+    const batchResults = await Promise.all(batch.map(item => handler(item)));
+    results.push(...batchResults);
+  }
+  return { results, errors };
+}
+
 module.exports = {
   shouldShed,
   PriorityQueue,
   RateLimiter,
   queueHealth,
   estimateWaitTime,
+  processWithBackpressure,
   DEFAULT_HARD_LIMIT,
   EMERGENCY_RATIO,
 };

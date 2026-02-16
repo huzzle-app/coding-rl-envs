@@ -167,7 +167,7 @@ func TestSQLInjection(t *testing.T) {
 
 			// Parameterized queries should prevent SQL injection
 			assert.NotPanics(t, func() {
-				_, _ = repo.Search(context.Background(), uuid.New(), tc.payload)
+				_, _ = repo.Search(context.Background(), uuid.New(), tc.payload, 10)
 			}, "SQL injection should not cause panic: %s", tc.name)
 		})
 	}

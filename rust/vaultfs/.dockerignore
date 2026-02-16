@@ -1,0 +1,12 @@
+target/
+.git/
+.gitignore
+logs/
+*.log
+**/*.swp
+**/*.swo
+*~
+.vscode/
+.idea/
+scenarios/
+solution/

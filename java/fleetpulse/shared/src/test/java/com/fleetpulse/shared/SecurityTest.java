@@ -24,7 +24,7 @@ public class SecurityTest {
         String xxePayload = "<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><root>&xxe;</root>";
         
         String result = provider.parseXmlMetadata(xxePayload);
-        // In the fixed version, XXE should be blocked
+        // XXE attacks must be blocked
         // Result should be null or not contain file contents
         if (result != null) {
             assertFalse(result.contains("root:"), "XXE should not expose file contents");
@@ -53,7 +53,7 @@ public class SecurityTest {
         String wrong2 = "c";
 
         
-        // Fixed version should use constant-time comparison
+        // API key comparison should not leak timing information
         boolean result1 = provider.validateApiKey(correct, correct);
         assertTrue(result1);
 

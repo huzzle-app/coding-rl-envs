@@ -366,7 +366,7 @@ public class TrackingServiceTest {
         TrackingData d2 = new TrackingData("v1", 41.0, -73.0, 60.0, 90.0);
         TrackingData d3 = new TrackingData("v1", 42.0, -72.0, 70.0, 180.0);
 
-        // After fix: should not throw, should merge duplicates
+        // Should handle duplicate keys without throwing
         // With BUG B3: throws IllegalStateException
         assertDoesNotThrow(() -> trackingService.getLatestPositionsByVehicle(List.of(d1, d2, d3)),
             "Duplicate vehicleIds should not cause IllegalStateException (BUG B3)");

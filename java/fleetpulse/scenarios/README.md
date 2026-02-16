@@ -33,27 +33,12 @@ These scenarios are ordered roughly by investigation complexity:
 - **Scenario 4**: Security vulnerabilities - requires knowledge of common attack patterns
 - **Scenario 5**: Business logic and data type issues - requires domain knowledge
 
-## Bug Categories Covered
-
-| Scenario | Bug Categories | Bug IDs |
-|----------|----------------|---------|
-| 01 | Setup/Config | L1-L5 |
-| 02 | Financial/Numerical | F1-F10 |
-| 03 | Concurrency, Memory/Collections, Spring | A1-A12, B1-B8, C1-C5 |
-| 04 | Security | I1-I8 |
-| 05 | Business Logic, Modern Java | G5-G6, F9-F10, K4 |
-
 ## Tips for Investigation
 
 1. **Run tests first**: `mvn test` to see which tests are failing
 2. **Target specific modules**: `mvn test -pl vehicles` to run tests for one service
 3. **Check for patterns**: Many bugs share common Java anti-patterns
 4. **Follow dependency chains**: Some bugs cannot be fixed until prerequisites are resolved
-5. **Watch for Java pitfalls**:
-   - `BigDecimal.equals()` considers scale
-   - `@Transactional` on private methods doesn't work
-   - `Collectors.toMap()` throws on duplicate keys
-   - Virtual threads get pinned on `synchronized` blocks
 
 ## Related Documentation
 

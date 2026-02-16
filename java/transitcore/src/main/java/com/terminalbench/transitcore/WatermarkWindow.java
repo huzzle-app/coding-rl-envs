@@ -7,7 +7,7 @@ public final class WatermarkWindow {
     }
 
     public long lagSeconds(long nowTs, long processedTs) {
-        return Math.max(nowTs - processedTs, 0);
+        return Math.abs(nowTs - processedTs);
     }
 
     public long bucketFor(long epochSec, long windowSec) {

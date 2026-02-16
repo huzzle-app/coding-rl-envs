@@ -22,10 +22,13 @@ cmake --build build --parallel
 # Run tests
 cd build && ctest --output-on-failure
 
-# Run specific test categories
-ctest -R unit_tests --output-on-failure
-ctest -R concurrency_tests --output-on-failure
-ctest -R security_tests --output-on-failure
+# Run specific test categories (fine-grained CTest targets)
+ctest -R setup_tests --output-on-failure
+ctest -R parser_core_tests --output-on-failure
+ctest -R deadlock_tests --output-on-failure
+ctest -R source_check_tests --output-on-failure
+ctest -R ub_detection_tests --output-on-failure
+ctest -R security_suite --output-on-failure
 ```
 
 **Critical**: Setup bugs (L1-L4) prevent the project from building correctly. Fix these first before tackling other categories.
@@ -58,22 +61,24 @@ Test failures indicate issues in core modules. Some infrastructure code may also
 
 ## Success Criteria
 
-Pass all tests across 4 categories:
-- Unit tests (~55)
-- Integration tests (~35)
-- Concurrency tests (~20)
-- Security tests (~15)
+Pass all 149 tests across 4 categories (16 CTest targets with dependency chains):
+- Unit tests (82) — config, parser, value, hashtable, eviction, expiry, memory pool, snapshot, UB detection
+- Integration tests (35) — server integration, replication, persistence, source checks
+- Concurrency tests (14) — concurrent access, deadlock
+- Security tests (18) — TTL overflow, format string, buffer overflow, key length, shared_ptr cycle
 
-**Reward function** (5-threshold sparse):
-- 0% - 24%: 0.00
-- 25% - 49%: 0.15
-- 50% - 74%: 0.35
-- 75% - 89%: 0.65
-- 90% - 100%: 1.00
+**Reward function** (hybrid: 70% test pass rate + 30% code correctness):
 
-**Bonuses**: Category completion, concurrency fix (+3%), security fix (+2%)
+Test pass rate thresholds:
+- < 50%: 0.00
+- >= 50%: 0.15
+- >= 75%: 0.35
+- >= 90%: 0.65
+- 100%: 1.00
 
-**Penalties**: Regression (-15%) for re-breaking tests
+Code correctness checks 12 source-level patterns (signal safety, const correctness, RAII, etc.)
+
+**Final reward** = 0.70 * test_pass_reward + 0.30 * code_correctness_score
 
 ---
 

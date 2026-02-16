@@ -21,17 +21,9 @@ public:
     void record_remove(const std::string& key);
 
     
-    // get_victim returns the next key to evict. Internally uses unique_ptr
-    // but returns raw pointer. If caller deletes it, double-free occurs.
-    // Actually, the bug here is more subtle: the eviction node is managed
-    // by unique_ptr in the node map, but evict_one() also tries to delete it.
-    // FIX: Don't expose raw pointers; return std::string instead
     std::string evict_one();
 
     
-    // to the front. It erases and re-inserts, which invalidates the iterator
-    // stored in the lookup map, causing subsequent lookups to dangle.
-    // FIX: Use std::list::splice() which moves nodes without invalidation
     void touch(const std::string& key);
 
     size_t current_size() const;

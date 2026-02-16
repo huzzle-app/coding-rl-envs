@@ -24,30 +24,26 @@ public class AppointmentControllerTests
     }
 
     [Fact]
-    public async Task test_no_task_result_deadlock()
+    public void test_no_task_result_deadlock()
     {
-        
-        _appointmentServiceMock
-            .Setup(s => s.GetByIdAsync(1))
-            .ReturnsAsync(new Appointment { Id = 1, Status = AppointmentStatus.Scheduled });
-
-        // This test verifies that the controller action completes without deadlock
-        // With the bug, calling .Result on an async method deadlocks
-        var act = () => Task.Run(() => _controller.GetAppointment(1));
-        var result = await act.Should().CompleteWithinAsync(TimeSpan.FromSeconds(5));
+        // GetAppointment should be async (return Task<IActionResult>), not block with .Result
+        var method = typeof(AppointmentController).GetMethod("GetAppointment");
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().BeAssignableTo(typeof(Task),
+            "GetAppointment should be async to avoid .Result deadlocks");
     }
 
     [Fact]
-    public async Task test_async_controller_completes()
+    public void test_async_controller_completes()
     {
-        
-        _appointmentServiceMock
-            .Setup(s => s.GetByIdAsync(1))
-            .ReturnsAsync(new Appointment { Id = 1, Status = AppointmentStatus.Scheduled });
-
-        // Should complete without deadlock
-        var result = _controller.GetAppointment(1);
-        result.Should().NotBeNull();
+        // Verify the controller action doesn't use synchronous .Result or .Wait()
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Controllers", "AppointmentController.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().NotContain(".Result",
+            "controller should use await instead of .Result to prevent deadlocks");
+        source.Should().NotContain(".Wait()",
+            "controller should use await instead of .Wait() to prevent deadlocks");
     }
 
     [Fact]

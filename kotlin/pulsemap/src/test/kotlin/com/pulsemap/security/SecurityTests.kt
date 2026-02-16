@@ -1,5 +1,6 @@
 package com.pulsemap.security
 
+import com.pulsemap.core.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,12 +24,9 @@ class SecurityTests {
 
     @Test
     fun test_sql_injection_prevented() {
-        
-        // Allowing SQL injection via the name parameter
         val dao = SensorDao()
         val maliciousName = "'; DROP TABLE sensors; --"
         val result = dao.findByName(maliciousName)
-        // The query should use parameterized statements and NOT execute injected SQL
         assertFalse(
             result.queryExecuted.contains("DROP TABLE"),
             "SQL injection should be prevented by parameterized queries"
@@ -37,7 +35,6 @@ class SecurityTests {
 
     @Test
     fun test_parameterized_query_used() {
-        
         val dao = SensorDao()
         val normalName = "temperature_sensor"
         val result = dao.findByName(normalName)
@@ -53,8 +50,7 @@ class SecurityTests {
 
     @Test
     fun test_path_traversal_blocked() {
-        
-        val tileService = TileService()
+        val tileService = TileServiceSecurity()
         val maliciousPaths = listOf(
             "../../../etc/passwd",
             "..\\..\\..\\etc\\passwd",
@@ -78,8 +74,7 @@ class SecurityTests {
 
     @Test
     fun test_tile_path_validated() {
-        
-        val tileService = TileService()
+        val tileService = TileServiceSecurity()
         val validPath = "tiles/12/345/678.png"
         val result = tileService.getTile(validPath)
         assertTrue(result.pathValidated, "Tile path should be validated before serving")
@@ -156,7 +151,7 @@ class SecurityTests {
 
     @Test
     fun test_tile_path_rejects_null_bytes() {
-        val tileService = TileService()
+        val tileService = TileServiceSecurity()
         val nullBytePath = "tiles/12/345/678\u0000.png"
         val result = tileService.getTile(nullBytePath)
         assertFalse(result.served, "Paths with null bytes should be rejected")
@@ -164,8 +159,7 @@ class SecurityTests {
 
     @Test
     fun test_valid_tile_path_format() {
-        val tileService = TileService()
-        // Standard slippy map tile format: z/x/y.ext
+        val tileService = TileServiceSecurity()
         val result = tileService.getTile("tiles/15/16384/10000.png")
         assertTrue(result.pathValidated, "Standard tile path should be validated as safe")
     }
@@ -173,102 +167,8 @@ class SecurityTests {
     @Test
     fun test_rate_limiting_exists() {
         val rateLimiter = RateLimiter(maxRequests = 100, windowSeconds = 60)
-        // First request should be allowed
         assertTrue(rateLimiter.allowRequest("client1"), "First request should be allowed")
-        // Simulate exhausting the limit
         repeat(100) { rateLimiter.allowRequest("client1") }
         assertFalse(rateLimiter.allowRequest("client1"), "Should be rate limited after 100 requests")
-    }
-
-    // =========================================================================
-    // Local stubs simulating buggy production code
-    // =========================================================================
-
-    data class QueryResult(
-        val data: List<Map<String, Any>> = emptyList(),
-        val queryExecuted: String,
-        val usedParameterizedQuery: Boolean
-    )
-
-    class SensorDao {
-        fun findByName(name: String): QueryResult {
-            
-            val query = "SELECT * FROM sensors WHERE name = '$name'"
-            return QueryResult(
-                queryExecuted = query,
-                usedParameterizedQuery = false 
-            )
-        }
-
-        fun findById(id: String): QueryResult {
-            // Same pattern for ID queries
-            val query = "SELECT * FROM sensors WHERE id = '$id'"
-            return QueryResult(
-                queryExecuted = query,
-                usedParameterizedQuery = false 
-            )
-        }
-    }
-
-    data class TileResult(
-        val served: Boolean,
-        val statusCode: Int,
-        val pathValidated: Boolean
-    )
-
-    class TileService {
-        fun getTile(path: String): TileResult {
-            
-            val containsTraversal = path.contains("..") || path.contains("%2F") || path.startsWith("/")
-            val containsNullByte = path.contains('\u0000')
-
-            if (containsTraversal || containsNullByte) {
-                
-                // Simulating the BUG by still serving the file
-                return TileResult(
-                    served = true, 
-                    statusCode = 200, 
-                    pathValidated = false 
-                )
-            }
-
-            return TileResult(served = true, statusCode = 200, pathValidated = true)
-        }
-    }
-
-    data class TokenValidation(val valid: Boolean, val userId: String? = null)
-
-    class AuthService {
-        fun generateToken(userId: String, role: String): String {
-            return "valid.jwt.$userId.$role"
-        }
-
-        fun validateToken(token: String?): TokenValidation {
-            if (token == null) return TokenValidation(false)
-            if (!token.startsWith("valid.jwt.")) return TokenValidation(false)
-            val parts = token.split(".")
-            if (parts.size < 3) return TokenValidation(false)
-            return TokenValidation(valid = true, userId = parts[2])
-        }
-
-        fun getJwtSecret(): String {
-            // Note: The actual config uses "short-secret" which is too short
-            return "short-secret" // 12 chars -- insufficient
-        }
-
-        fun validateApiKey(key: String): Boolean {
-            return key.isNotEmpty() && key.length >= 10
-        }
-    }
-
-    class RateLimiter(private val maxRequests: Int, private val windowSeconds: Int) {
-        private val requestCounts = mutableMapOf<String, Int>()
-
-        fun allowRequest(clientId: String): Boolean {
-            val count = requestCounts.getOrDefault(clientId, 0)
-            if (count >= maxRequests) return false
-            requestCounts[clientId] = count + 1
-            return true
-        }
     }
 }

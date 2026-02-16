@@ -4,10 +4,11 @@ require_relative '../test_helper'
 require_relative '../../services/resilience/service'
 
 class ResilienceServiceTest < Minitest::Test
-  def test_build_replay_plan_has_batches
+  def test_build_replay_plan_budget_is_timeout_times_parallel
     plan = MercuryLedger::Services::Resilience.build_replay_plan(100, 60, 4)
     assert_operator plan[:batches], :>, 0
-    assert_operator plan[:budget], :>, 0
+    assert_equal 240, plan[:budget],
+      'Budget must equal timeout * parallel (60 * 4 = 240)'
   end
 
   def test_classify_replay_mode_complete

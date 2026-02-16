@@ -103,29 +103,28 @@ describe('Latent Bugs', () => {
 
   describe('WriteAheadLog silent data loss', () => {
     test('WAL truncation should not remove uncommitted entries', () => {
-      const wal = new WriteAheadLog({ maxEntries: 5 });
+      const wal = new WriteAheadLog({ maxEntries: 3 });
 
-      // Append entries, commit some
-      const lsns = [];
-      for (let i = 0; i < 5; i++) {
-        lsns.push(wal.append({ operation: 'insert', data: { id: i }, tableName: 'metrics' }));
+      // Append 3 entries
+      const lsn1 = wal.append({ operation: 'insert', data: { id: 1 }, tableName: 'metrics' });
+      const lsn2 = wal.append({ operation: 'insert', data: { id: 2 }, tableName: 'metrics' });
+      const lsn3 = wal.append({ operation: 'insert', data: { id: 3 }, tableName: 'metrics' });
+
+      // Commit only first two
+      wal.commit(lsn1);
+      wal.commit(lsn2);
+      // lsn3 is uncommitted
+
+      // Push past maxEntries with 3 more entries
+      for (let i = 0; i < 3; i++) {
+        const lsn = wal.append({ operation: 'insert', data: { id: `new-${i}` }, tableName: 'metrics' });
+        wal.commit(lsn);
       }
 
-      // Commit first 3
-      wal.commit(lsns[0]);
-      wal.commit(lsns[1]);
-      wal.commit(lsns[2]);
-
-      // Append more entries (triggers truncation)
-      const newLsn = wal.append({ operation: 'insert', data: { id: 'new' }, tableName: 'metrics' });
-
-      // Uncommitted entries 3 and 4 should still exist
-      const entry3 = wal.getEntry(lsns[3]);
-      const entry4 = wal.getEntry(lsns[4]);
+      // lsn3 (uncommitted) should still exist after truncation
+      // BUG: slice(-maxEntries) drops old entries regardless of commit status
+      const entry3 = wal.getEntry(lsn3);
       expect(entry3).toBeDefined();
-      expect(entry4).toBeDefined();
-      expect(entry3.committed).toBe(false);
-      expect(entry4.committed).toBe(false);
     });
 
     test('checkpoint should only remove entries before checkpoint LSN', () => {

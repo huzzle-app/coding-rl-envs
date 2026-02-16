@@ -98,13 +98,8 @@ class TestSkillMatching:
 
         score = calculate_skill_match_score(candidate, job)
 
-        
-        # The fix should make this return 1.0
-        assert score >= 0.99, f"Score was {score}"
-
-        # This is the actual expected behavior - will fail until bug is fixed
-        # Uncomment after verifying the bug exists:
-        # assert score == 1.0, f"Perfect match should be 1.0, got {score}"
+        # Perfect match should be exactly 1.0 — off-by-one bug produces ~0.99
+        assert score == 1.0, f"Perfect match should be 1.0, got {score}"
 
     @pytest.mark.bug_e1
     def test_skill_match_with_no_requirements(self, candidate, company, user):

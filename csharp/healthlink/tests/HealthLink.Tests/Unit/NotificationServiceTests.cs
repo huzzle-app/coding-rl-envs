@@ -31,20 +31,22 @@ public class NotificationServiceTests : IDisposable
     [Fact]
     public async Task test_async_void_throws_handled()
     {
-        
-        var act = () => _service.OnAppointmentChanged(null, new AppointmentScheduledEventArgs { AppointmentId = 1 });
-        // async void exceptions crash the process
-        // After fix, should propagate correctly
+        // OnAppointmentChanged should return Task (not async void) so exceptions propagate
+        var method = typeof(NotificationService).GetMethod("OnAppointmentChanged");
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(Task),
+            "event handler should return Task, not void, so exceptions are observable");
     }
 
     [Fact]
     public async Task test_event_handler_error_propagates()
     {
-        
-        var eventArgs = new AppointmentScheduledEventArgs { AppointmentId = 999, PatientId = 1 };
-        // The async void handler throws but exception is lost
-        _service.OnAppointmentChanged(null, eventArgs);
-        await Task.Delay(100); // Give async void time to complete
+        // Verify the method signature is async Task, not async void
+        var method = typeof(NotificationService).GetMethod("OnAppointmentChanged");
+        method.Should().NotBeNull();
+        // async void methods have return type void; async Task methods return Task
+        (method!.ReturnType == typeof(void)).Should().BeFalse(
+            "async void swallows exceptions; method should return Task");
     }
 
     [Fact]
@@ -58,10 +60,17 @@ public class NotificationServiceTests : IDisposable
     [Fact]
     public async Task test_notification_errors_logged()
     {
-        
-        await _service.SendReminderAsync(1, "Test");
-        await Task.Delay(200); // Wait for fire-and-forget
-        // If SMTP is not configured, exception should be logged, not lost
+        // SendReminderAsync should await the fire-and-forget task or observe its errors
+        var method = typeof(NotificationService).GetMethod("SendReminderAsync");
+        method.Should().NotBeNull();
+        // Verify the method properly awaits (check source for unobserved Task.Run)
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "NotificationService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Fire-and-forget Task.Run without await is a bug; should be awaited
+        var hasUnawaitedTaskRun = source.Contains("Task.Run(") && !source.Contains("await Task.Run(");
+        hasUnawaitedTaskRun.Should().BeFalse(
+            "Task.Run should be awaited to observe errors, not fire-and-forget");
     }
 
     [Fact]
@@ -74,13 +83,18 @@ public class NotificationServiceTests : IDisposable
         _context.Appointments.Add(appt);
         await _context.SaveChangesAsync();
 
-        await _service.SendAppointmentConfirmationAsync(appt.Id);
+        var act = () => _service.SendAppointmentConfirmationAsync(appt.Id);
+        await act.Should().NotThrowAsync(
+            "sending confirmation for existing appointment should succeed");
     }
 
     [Fact]
     public async Task test_send_confirmation_nonexistent()
     {
-        await _service.SendAppointmentConfirmationAsync(99999);
+        // Sending confirmation for a non-existent appointment should not throw
+        var act = () => _service.SendAppointmentConfirmationAsync(99999);
+        await act.Should().NotThrowAsync(
+            "sending confirmation for non-existent appointment should be handled gracefully");
     }
 
     public void Dispose() => _context.Dispose();

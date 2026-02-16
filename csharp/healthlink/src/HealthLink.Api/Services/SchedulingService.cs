@@ -20,14 +20,10 @@ public class AppointmentScheduledEventArgs : EventArgs
 public class SchedulingService : ISchedulingService
 {
     private readonly HealthLinkDbContext _context;
-    // === Part of BUG L1: Circular dependency ===
-    // SchedulingService depends on INotificationService
-    // NotificationService depends on ISchedulingService
     private readonly INotificationService _notificationService;
 
     public event EventHandler<AppointmentScheduledEventArgs>? AppointmentScheduled;
 
-    // === BUG D2: Event handler leak - no cleanup of subscribers ===
     public event EventHandler? SlotAvailable;
 
     public SchedulingService(
@@ -38,7 +34,6 @@ public class SchedulingService : ISchedulingService
         _notificationService = notificationService;
     }
 
-    // Parameterless constructor for testing event handler leak (D2)
     public SchedulingService()
     {
         _context = null!;
@@ -53,9 +48,6 @@ public class SchedulingService : ISchedulingService
 
     public async Task<Appointment?> ScheduleAppointmentAsync(int patientId, DateTime dateTime, int doctorId)
     {
-        // === BUG A2: Missing ConfigureAwait(false) in library code ===
-        // In a library method called from ASP.NET, not using ConfigureAwait(false)
-        // can cause deadlocks if the caller blocks with .Result
         var existing = await _context.Appointments
             .AnyAsync(a => a.DoctorId == doctorId && a.DateTime == dateTime);
 

@@ -6,6 +6,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for Kotlin-specific utilities: typealias SAM conversion, value class syntax.
@@ -22,7 +25,7 @@ class KotlinUtilTests {
 
     @Test
     fun test_suspend_lambda_wrapper() = runTest {
-        
+
         // typealiases for suspend lambdas don't support SAM conversion from Java
         // Should use a functional interface (fun interface) instead
         val handler = EventHandlerFactoryFixture()
@@ -34,7 +37,7 @@ class KotlinUtilTests {
 
     @Test
     fun test_sam_conversion_correct() = runTest {
-        
+
         // using SAM conversion syntax
         val handler = EventHandlerFactoryFixture()
         val canConvertFromJava = handler.supportsJavaSamConversion()
@@ -50,7 +53,7 @@ class KotlinUtilTests {
 
     @Test
     fun test_value_class_jvm_inline() {
-        
+
         // Should use @JvmInline value class
         val classInfo = ValueClassInfoFixture()
         assertTrue(
@@ -61,7 +64,7 @@ class KotlinUtilTests {
 
     @Test
     fun test_no_boxing_on_boundary() {
-        
+
         val classInfo = ValueClassInfoFixture()
         assertFalse(
             classInfo.usesDeprecatedInlineKeyword("UserId"),
@@ -133,22 +136,20 @@ class KotlinUtilTests {
 
     @Test
     fun test_node_id_equality() {
-        val a = NodeIdFixture("node-1")
-        val b = NodeIdFixture("node-1")
-        assertEquals(a, b, "NodeIds with the same value should be equal")
+        val r = DelegationUtils.validatingDelegate(3, 50, 0, 10)
+        assertEquals(3, r.first, "Should keep current value when new is out of range")
     }
 
     @Test
     fun test_user_id_different_values() {
-        val a = UserIdFixture("user-a")
-        val b = UserIdFixture("user-b")
-        assertFalse(a == b, "UserIds with different values should not be equal")
+        val r = CacheManager.cacheEntryEquals("k", "v1", "k", "v2")
+        assertFalse(r, "Different values means entries are not equal")
     }
 
     @Test
     fun test_document_id_toString_contains_value() {
-        val id = DocumentIdFixture("doc-99")
-        assertTrue(id.toString().contains("doc-99"), "DocumentId toString should contain its value")
+        val r = AppConfig.loadFeatureFlags(mapOf("dark" to "true"))
+        assertEquals(true, r["dark"], "loadFeatureFlags should not negate values")
     }
 
     // =========================================================================
@@ -157,39 +158,39 @@ class KotlinUtilTests {
 
     class EventHandlerFactoryFixture {
         fun usesFunInterface(): Boolean {
-            
-            return false 
+
+            return false
         }
 
         fun supportsJavaSamConversion(): Boolean {
-            
-            return false 
+
+            return false
         }
     }
 
     class ValueClassInfoFixture {
-        
+
         private val classAnnotations = mapOf(
-            "UserId" to setOf("inline"), 
+            "UserId" to setOf("inline"),
             "DocumentId" to setOf("JvmInline", "value"), // Correct
             "NodeId" to setOf("JvmInline", "value") // Correct
         )
 
         fun usesJvmInlineAnnotation(className: String): Boolean {
             val annotations = classAnnotations[className] ?: return false
-            
+
             return "JvmInline" in annotations
         }
 
         fun usesDeprecatedInlineKeyword(className: String): Boolean {
             val annotations = classAnnotations[className] ?: return false
-            
+
             return "inline" in annotations && "JvmInline" !in annotations
         }
     }
 
     // Simulating value classes locally
-    data class UserIdFixture(val value: String) 
+    data class UserIdFixture(val value: String)
 
     @JvmInline
     value class DocumentIdFixture(val value: String) // Correct

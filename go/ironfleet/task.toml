@@ -2,10 +2,11 @@ version = "1.0"
 
 [metadata]
 name = "ironfleet"
-description = "Resolve critical defects in a go apex-principal reliability platform"
+description = "Fix 1250 bugs across 8 modules in a Go apex-principal fleet management platform (9491 tests)"
 difficulty = "hard"
+tier = "apex-principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "feature", "refactor", "optimize", "api", "migration", "greenfield"]
 language = "go"
 
 [agent]

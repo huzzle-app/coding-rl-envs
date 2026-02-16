@@ -4,6 +4,7 @@ version = "1.0"
 name = "tensorforge"
 description = "Resolve critical defects in a rust apex-principal reliability platform"
 difficulty = "hard"
+tier = "apex-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "rust"

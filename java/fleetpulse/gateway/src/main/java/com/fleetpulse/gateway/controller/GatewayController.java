@@ -21,6 +21,12 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Gateway controller handling request routing, file downloads, and proxy requests.
+ *
+ * Bugs: S3, S4, S5
+ * Categories: Security
+ */
 @RestController
 @RequestMapping("/api/gateway")
 public class GatewayController {
@@ -36,25 +42,21 @@ public class GatewayController {
     @Value("${upload.directory:/tmp/fleetpulse/uploads}")
     private String uploadDirectory;
 
-    
-    // User input directly embedded in SQL query
-    // Fix: Use parameterized queries with setParameter()
+    // Bug S3: User input directly embedded in SQL query string.
+    // Category: Security
     @GetMapping("/search")
     @SuppressWarnings("unchecked")
     public ResponseEntity<List<Object[]>> searchVehicles(@RequestParam String query) {
-        
         String sql = "SELECT * FROM vehicles WHERE license_plate LIKE '%" + query + "%'";
         Query q = entityManager.createNativeQuery(sql);
         return ResponseEntity.ok(q.getResultList());
     }
 
-    
-    // User-supplied filename used directly in path construction
-    // Fix: Normalize path and verify it stays within upload directory
+    // Bug S4: User-supplied filename used directly in path construction without validation.
+    // Category: Security
     @GetMapping("/files/{filename}")
     public ResponseEntity<Resource> downloadFile(@PathVariable String filename) {
         try {
-            
             Path filePath = Paths.get(uploadDirectory).resolve(filename);
             Resource resource = new UrlResource(filePath.toUri());
 
@@ -69,15 +71,11 @@ public class GatewayController {
         }
     }
 
-    
-    // User-supplied URL fetched by server without validation
-    // Fix: Validate URL against whitelist, block internal IPs
+    // Bug S5: User-supplied URL fetched by server without validation.
+    // Category: Security
     @PostMapping("/proxy")
     public ResponseEntity<String> proxyRequest(@RequestParam String url) {
         try {
-            
-            // e.g., http://169.254.169.254/latest/meta-data/ (AWS metadata)
-            // or http://localhost:8001/api/admin/secrets
             URL targetUrl = new URL(url);
             HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
             conn.setRequestMethod("GET");

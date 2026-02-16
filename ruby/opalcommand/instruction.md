@@ -27,12 +27,17 @@ ruby -Ilib -Itests tests/run_all.rb
 
 | Category | Count |
 |----------|-------|
-| Unit tests | 60 |
-| Integration tests | 3 |
+| Unit tests (basic) | 7 |
+| Unit tests (advanced_core) | 51 |
+| Unit tests (extended) | 49 |
+| Unit tests (migrations) | 3 |
+| Integration tests (advanced) | 41 |
+| Integration tests (basic) | 3 |
 | Service tests | 49 |
+| Stress: advanced_matrix | 1,500 |
 | Stress: hyper_matrix | 7,000 |
 | Stress: service_mesh_matrix | 2,152 |
-| **Total** | **9,263+** |
+| **Total** | **10,855** |
 
 ## Reward Tiers (10-threshold Apex)
 

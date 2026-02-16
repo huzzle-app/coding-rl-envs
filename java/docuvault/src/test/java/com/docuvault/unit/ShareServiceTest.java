@@ -14,6 +14,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -92,13 +94,31 @@ public class ShareServiceTest {
 
         AtomicBoolean exceptionHandled = new AtomicBoolean(false);
 
-        doThrow(new RuntimeException("Network error"))
+        // Notification runs async in CompletableFuture.supplyAsync(), so the stub
+        // may not be invoked before Mockito's strict-stubs check - use lenient
+        lenient().doThrow(new RuntimeException("Network error"))
             .when(notificationService).notifyDocumentShared(any(), any());
 
         // The share operation should succeed even if notification fails
         Permission result = shareService.shareDocument(1L, targetUser, "READ", testUser);
         assertNotNull(result);
         assertEquals("READ", result.getPermissionType());
+    }
+
+    @Test
+    void test_completable_future_has_exception_handler() throws Exception {
+        // A3: ShareService must attach an exception handler to CompletableFuture
+        // Without .exceptionally() or .whenComplete(), exceptions are silently swallowed
+        String source = new String(Files.readAllBytes(
+            Paths.get("src/main/java/com/docuvault/service/ShareService.java")));
+        String code = source.replaceAll("/\\*[\\s\\S]*?\\*/", "").replaceAll("//[^\n]*", "");
+
+        boolean hasExceptionHandler = code.contains(".exceptionally(")
+            || code.contains(".whenComplete(")
+            || code.contains(".handle(");
+        assertTrue(hasExceptionHandler,
+            "ShareService must attach .exceptionally() or .whenComplete() to CompletableFuture " +
+            "to prevent silent exception swallowing in async notification");
     }
 
     // Tests for BUG E2: Wildcard capture failure

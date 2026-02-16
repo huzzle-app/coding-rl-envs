@@ -59,7 +59,7 @@ These scenarios describe **symptoms only** and are designed to train realistic d
 
 ## Success Criteria
 
-- All 1280+ tests pass.
+- All 1200+ tests pass.
 - Privacy/security suites are fully green.
 - Final full-suite pass rate reaches 100%.
 

@@ -94,9 +94,9 @@ class DataNexusEnvironment {
         test_results: {
           type: 'Dict',
           spaces: {
-            total: { type: 'Discrete', n: 800, description: 'Total test count' },
-            passed: { type: 'Discrete', n: 800, description: 'Passing test count' },
-            failed: { type: 'Discrete', n: 800, description: 'Failing test count' },
+            total: { type: 'Discrete', n: 925, description: 'Total test count' },
+            passed: { type: 'Discrete', n: 925, description: 'Passing test count' },
+            failed: { type: 'Discrete', n: 925, description: 'Failing test count' },
             pass_rate: { type: 'Box', low: 0.0, high: 1.0, shape: [1], description: 'Test pass rate' },
           },
         },
@@ -793,7 +793,7 @@ class DataNexusEnvironment {
    * Get success criteria description
    */
   getSuccessCriteria() {
-    return 'All 750+ Jest tests must pass. Fix all 120 intentional bugs across 13 categories in 15 microservices.';
+    return 'All 921 Jest tests must pass. Fix all 120 intentional bugs across 13 categories in 15 microservices.';
   }
 
   /**

@@ -1,6 +1,6 @@
 """
 MindVault Reward Function
-Principal difficulty: 75 bugs, 510+ tests
+Principal difficulty: 80 bugs, 536 tests
 Very sparse reward with regression penalties
 
 Kotlin 1.9, Ktor 2.3, Exposed ORM, 10 Microservices
@@ -36,24 +36,30 @@ class RewardBreakdown:
 # Service to bug mapping (11 modules)
 # ==============================================================================
 SERVICE_BUG_MAP = {
-    "shared": [],
-    "gateway": [],
-    "auth": [],
-    "documents": [],
-    "search": [],
-    "graph": [],
-    "embeddings": [],
-    "collab": [],
-    "billing": [],
-    "notifications": [],
-    "analytics": [],
+    "shared": [
+        "L1", "L2", "L3", "L4", "L5",
+        "C7", "C8", "F7", "G4", "G5",
+        "H4", "H5", "I7", "I8", "J2", "J4",
+        "K7", "K8", "E8", "A9", "A10",
+        "B6", "D5", "E7", "J3", "J5", "K2",
+    ],
+    "gateway": ["A1", "A2", "D1", "D2", "I1", "I2", "I3"],
+    "auth": ["D3", "G1", "I4", "I5"],
+    "documents": ["A3", "A4", "B1", "C1", "C2", "E1", "E2", "F1", "I6"],
+    "search": ["A5", "B2", "C3", "E3", "F2", "H1", "H2", "K1"],
+    "graph": ["A6", "B3", "C4", "C5", "E4", "F3", "F4", "H3"],
+    "embeddings": ["A7", "B4", "F5", "K3"],
+    "collab": ["A8", "D4", "G2", "K4"],
+    "billing": ["B5", "C6", "E5", "E6", "K5"],
+    "notifications": ["F6", "K6"],
+    "analytics": ["G3", "J1"],
 }
 
 # ==============================================================================
 # Reward thresholds and values (Principal - 8 thresholds, very sparse)
 # ==============================================================================
-REWARD_THRESHOLDS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
-REWARD_VALUES = [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
+REWARD_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+REWARD_VALUES = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
 CATEGORY_BONUS = 0.01
 SERVICE_BONUS = 0.01
 REGRESSION_PENALTY = -0.03
@@ -516,7 +522,141 @@ def calculate_reward(current_results, initial_results):
         "regressions": regressions,
     }
 
-# Legacy stubs - kept for backward compatibility with setup.py imports
-BUG_TEST_MAPPING = {}
-BUG_DEPENDENCIES = {}
-BUG_CATEGORIES = {}
+# Bug categories (12 categories, 80 bugs)
+BUG_CATEGORIES = {
+    "A": {"name": "Coroutines & Structured Concurrency", "bugs": ["A1","A2","A3","A4","A5","A6","A7","A8","A9","A10"]},
+    "B": {"name": "Platform Types & Null Safety", "bugs": ["B1","B2","B3","B4","B5","B6"]},
+    "C": {"name": "Data Classes & Enums", "bugs": ["C1","C2","C3","C4","C5","C6","C7","C8"]},
+    "D": {"name": "Error Handling", "bugs": ["D1","D2","D3","D4","D5"]},
+    "E": {"name": "Database & Exposed ORM", "bugs": ["E1","E2","E3","E4","E5","E6","E7","E8"]},
+    "F": {"name": "Serialization", "bugs": ["F1","F2","F3","F4","F5","F6","F7"]},
+    "G": {"name": "Objects & Delegation", "bugs": ["G1","G2","G3","G4","G5"]},
+    "H": {"name": "Caching", "bugs": ["H1","H2","H3","H4","H5"]},
+    "I": {"name": "Security", "bugs": ["I1","I2","I3","I4","I5","I6","I7","I8"]},
+    "J": {"name": "Observability", "bugs": ["J1","J2","J3","J4","J5"]},
+    "K": {"name": "Kotlin Idioms", "bugs": ["K1","K2","K3","K4","K5","K6","K7","K8"]},
+    "L": {"name": "Setup & Infrastructure", "bugs": ["L1","L2","L3","L4","L5"]},
+}
+
+# Bug dependency graph
+BUG_DEPENDENCIES = {
+    "L1": [],
+    "L2": ["L1"],
+    "L3": ["L1"],
+    "L4": ["L1"],
+    "L5": ["L1"],
+    "A1": ["L1", "L2"],
+    "A2": ["A1"],
+    "A3": ["L1", "L2"],
+    "A4": ["A3"],
+    "A5": ["L1", "L2"],
+    "A6": ["L1", "L2"],
+    "A7": ["L1", "L2"],
+    "A8": ["L1", "L2"],
+    "A9": ["L1", "L2"],
+    "A10": ["A9"],
+    "D1": ["A1"],
+    "D2": ["D1"],
+    "I1": ["L1", "L2"],
+    "I2": ["I1"],
+    "I3": ["I1", "I2"],
+    "I4": ["L1", "L2"],
+    "I5": ["I4"],
+    "F1": ["L1", "L2"],
+    "F2": ["F1"],
+    "F3": ["F1"],
+    "F4": ["F3"],
+    "F5": ["F1"],
+    "F6": ["F1"],
+    "F7": ["F1"],
+    "E1": ["L1", "L2"],
+    "E2": ["E1"],
+    "E3": ["E1"],
+    "E4": ["E1"],
+    "E5": ["E1"],
+    "E6": ["E5"],
+}
+
+# Bug to test mapping (maps bug IDs to test method names that verify the fix)
+BUG_TEST_MAPPING = {
+    "A1": ["test_no_run_blocking_in_handler"],
+    "A2": ["test_no_global_scope"],
+    "A3": ["test_flow_cancellation_respected"],
+    "A4": ["test_structured_scope_used"],
+    "A5": ["test_produce_channel_consumed", "test_no_producer_leak"],
+    "A6": ["test_lock_scope_within_dispatcher"],
+    "A7": ["test_await_all_partial_failure", "test_supervisor_scope_independent"],
+    "A8": ["test_late_subscriber_receives"],
+    "A9": ["test_callback_flow_await_close", "test_flow_completes_properly"],
+    "A10": ["test_thread_safe_state_access"],
+    "B1": ["test_jdbc_result_null_safe"],
+    "B2": ["test_platform_type_cast_safe"],
+    "B3": ["test_null_let_returns_null"],
+    "B4": ["test_meaningful_init_error", "test_lateinit_initialized"],
+    "B5": ["test_bigdecimal_null_check", "test_no_balance_returns_zero"],
+    "B6": ["test_map_cast_safe", "test_nested_json_typed"],
+    "C1": ["test_bytearray_content_equals"],
+    "C2": ["test_metadata_copy_deep", "test_original_tags_unchanged"],
+    "C3": ["test_discriminator_no_collision", "test_type_field_distinct"],
+    "C4": ["test_edge_type_serialization"],
+    "C5": ["test_value_class_map_key"],
+    "C6": ["test_invoice_copy_recalculates"],
+    "C7": ["test_object_state_isolated", "test_no_singleton_leak"],
+    "C8": ["test_enum_serial_name_correct", "test_wire_format_matches"],
+    "D1": ["test_status_pages_rethrows_cancel", "test_cancellation_not_caught"],
+    "D2": ["test_single_respond_per_call", "test_no_double_respond"],
+    "D3": ["test_expired_token_returns_401"],
+    "D4": ["test_websocket_close_handled", "test_disconnect_no_exception"],
+    "D5": ["test_error_handler_preserves_type", "test_error_handler_not_generic_catch"],
+    "E1": ["test_suspended_transaction_used"],
+    "E2": ["test_schema_create_in_transaction", "test_init_tables_wrapped"],
+    "E3": ["test_op_build_precedence", "test_query_correct_parentheses"],
+    "E4": ["test_entity_cache_cleared", "test_fresh_data_after_dsl_update"],
+    "E5": ["test_large_batch_no_oom", "test_batch_insert_no_returning"],
+    "E6": ["test_isolation_level_correct", "test_lock_held_in_transaction"],
+    "E7": ["test_varchar_length_validated", "test_no_silent_truncation"],
+    "E8": ["test_pool_size_sufficient", "test_concurrent_transactions_succeed"],
+    "F1": ["test_instant_serializer_registered"],
+    "F2": ["test_discriminator_no_collision"],
+    "F3": ["test_ignore_unknown_keys", "test_extra_fields_tolerated"],
+    "F4": ["test_field_not_serialized", "test_kotlinx_transient_used"],
+    "F5": ["test_mixed_type_serialization"],
+    "F6": ["test_enum_case_insensitive", "test_lowercase_enum_deserialized"],
+    "F7": ["test_json_element_used", "test_no_map_string_any"],
+    "G1": ["test_delegation_not_recreated", "test_cache_singleton_instance"],
+    "G2": ["test_lazy_thread_safe_mode"],
+    "G3": ["test_companion_logger_class", "test_log_correct_class_name"],
+    "G4": ["test_companion_serializer_stateless"],
+    "G5": ["test_delegation_correct_receiver", "test_interface_delegation_this"],
+    "H1": ["test_cache_key_stable", "test_no_timestamp_in_key"],
+    "H2": ["test_cache_stampede_prevented", "test_single_flight_pattern"],
+    "H3": ["test_cache_schema_evolution", "test_old_cache_deserializes"],
+    "H4": ["test_cache_bounded_size", "test_no_unbounded_growth"],
+    "H5": ["test_kotlin_duration_used"],
+    "I1": ["test_sql_injection_prevented", "test_exposed_dsl_parameterized"],
+    "I2": ["test_path_traversal_blocked", "test_canonical_path_checked"],
+    "I3": ["test_ssrf_internal_blocked"],
+    "I4": ["test_jwt_none_rejected", "test_algorithm_enforced"],
+    "I5": ["test_no_timing_leak", "test_constant_time_comparison"],
+    "I6": ["test_safe_deserialization"],
+    "I7": ["test_xxe_disabled", "test_external_entities_blocked"],
+    "I8": ["test_api_key_constant_time"],
+    "J1": ["test_mdc_propagated_in_coroutine", "test_trace_id_preserved"],
+    "J2": ["test_exception_handler_error_level", "test_errors_visible"],
+    "J3": ["test_kafka_trace_header_extracted", "test_distributed_trace_continues"],
+    "J4": ["test_run_catching_rethrows_cancel", "test_cancellation_not_swallowed"],
+    "J5": ["test_call_logging_before_status", "test_error_responses_logged"],
+    "K1": ["test_dsl_scope_restricted", "test_no_outer_scope_access"],
+    "K2": ["test_sequence_terminal_operation", "test_no_eager_collection_in_pipeline"],
+    "K3": ["test_retry_iterative", "test_no_stack_overflow_on_retry"],
+    "K4": ["test_operator_commutative", "test_merge_order_independent"],
+    "K5": ["test_bigdecimal_rounding_explicit", "test_extension_correct_scale"],
+    "K6": ["test_build_list_immutable", "test_list_not_cast_to_mutable"],
+    "K7": ["test_suspend_lambda_wrapper", "test_sam_conversion_correct"],
+    "K8": ["test_value_class_jvm_inline", "test_no_boxing_on_boundary"],
+    "L1": ["test_gradle_root_plugin_config", "test_subprojects_build"],
+    "L2": ["test_hocon_optional_substitution", "test_missing_env_var_fallback"],
+    "L3": ["test_http_client_shared", "test_no_client_per_request"],
+    "L4": ["test_consul_lazy_init", "test_consul_retry_on_startup"],
+    "L5": ["test_settings_module_paths", "test_all_modules_resolved"],
+}

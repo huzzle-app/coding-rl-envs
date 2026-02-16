@@ -24,18 +24,12 @@ public:
     ~ExpiryManager();
 
     
-    // the mutex, which can cause the expiry thread to miss the notification
-    // and sleep for the full check interval even when keys need immediate expiry.
-    // FIX: Call notify_one() while holding the mutex, or use notify_all()
     void set_expiry(const std::string& key, std::chrono::seconds ttl);
     void remove_expiry(const std::string& key);
     bool is_expired(const std::string& key) const;
     std::chrono::seconds get_ttl(const std::string& key) const;
 
     
-    // value is passed (e.g., INT_MAX seconds), the computation
-    // now + std::chrono::seconds(ttl) overflows, setting expiry in the PAST.
-    // FIX: Clamp TTL to a maximum reasonable value (e.g., 365 days)
     void set_expiry_seconds(const std::string& key, int64_t ttl_seconds);
 
     void start_expiry_thread();

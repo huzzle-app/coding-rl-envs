@@ -4,6 +4,7 @@ version = "1.0"
 name = "collabcanvas"
 description = "Debug a real-time collaborative whiteboard application"
 difficulty = "medium"
+tier = "senior"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "javascript"

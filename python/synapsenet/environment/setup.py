@@ -469,6 +469,7 @@ class SynapseNetEnvironment:
                     "python", "-m", "pytest",
                     "--tb=short",
                     "-v",
+                    "--continue-on-collection-errors",
                 ],
                 cwd=self.project_root,
                 capture_output=True,
@@ -554,6 +555,7 @@ class SynapseNetEnvironment:
                 "python", "-m", "pytest",
                 "--tb=short",
                 "-v",
+                "--continue-on-collection-errors",
             ] + sorted(target_tests)
 
             result = subprocess.run(

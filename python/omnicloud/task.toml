@@ -4,6 +4,7 @@ version = "1.0"
 name = "omnicloud"
 description = "Debug a multi-cloud Python infrastructure orchestration platform with microservices"
 difficulty = "hard"
+tier = "distinguished"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "python"

@@ -41,7 +41,9 @@ func TestServiceMeshMatrix(t *testing.T) {
 					// At least 2 healthy nodes
 				}
 				admitted := gateway.AdmissionControl(load*100, 80.0, (i%5)+1)
-				_ = admitted
+				if load*100 < 80.0 && (i%5)+1 < 5 && !admitted {
+					t.Fatalf("should admit when load (%.1f) < capacity (80.0)", load*100)
+				}
 
 			case 1:
 				// audit + analytics

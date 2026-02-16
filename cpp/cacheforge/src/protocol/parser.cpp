@@ -18,8 +18,6 @@ std::optional<Command> Parser::parse_raw(const uint8_t* data, size_t length) {
     offset += 4;
 
     
-    // If cmd_len > (length - offset), we read beyond the buffer
-    // FIX: Add check: if (offset + cmd_len > length) return std::nullopt;
     Command cmd;
     cmd.name = std::string(reinterpret_cast<const char*>(data + offset), cmd_len);
     offset += cmd_len;
@@ -38,7 +36,6 @@ std::optional<Command> Parser::parse_raw(const uint8_t* data, size_t length) {
         offset += 4;
 
         
-        // FIX: if (offset + arg_len > length) return std::nullopt;
         std::string arg(reinterpret_cast<const char*>(data + offset), arg_len);
         offset += arg_len;
         cmd.args.push_back(std::move(arg));
@@ -68,10 +65,7 @@ std::optional<Command> Parser::parse_text(const std::string& input) {
 
 std::string Parser::extract_key(const uint8_t* data, size_t length) {
     
-    // If the data contains embedded null bytes, this truncates the key,
-    // potentially conflating different keys (security issue)
-    // FIX: return std::string(reinterpret_cast<const char*>(data), length);
-    return std::string(reinterpret_cast<const char*>(data));  // uses strlen, ignores length param
+    return std::string(reinterpret_cast<const char*>(data));
 }
 
 std::string Parser::read_bulk_string(const uint8_t* data, size_t available, size_t& offset) {
@@ -88,11 +82,6 @@ std::string Parser::read_bulk_string(const uint8_t* data, size_t available, size
 // Serialization methods
 std::string Parser::serialize_ok() { return "+OK\r\n"; }
 
-// directly into the error response. If this msg is later logged with spdlog/fmt
-// as a format string (e.g., spdlog::error(serialize_error(user_key))), format
-// specifiers like %s, %n, or {} in the key can cause crashes or memory corruption.
-// FIX: Sanitize user input before embedding in error messages, or ensure error
-// strings are never used as format strings in logging calls.
 std::string Parser::serialize_error(const std::string& msg) { return "-ERR " + msg + "\r\n"; }
 std::string Parser::serialize_string(const std::string& value) { return "$" + std::to_string(value.size()) + "\r\n" + value + "\r\n"; }
 std::string Parser::serialize_integer(int64_t value) { return ":" + std::to_string(value) + "\r\n"; }

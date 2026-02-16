@@ -13,10 +13,8 @@ import java.util.List;
 /**
  * Service for invoice creation, calculation, and billing zone management.
  *
- * Contains intentional bugs:
- *   F6 - Division by zero in average calculation
- *   F7 - Accumulator precision loss (double for monetary values)
- *   F8 - Geo-coordinate truncation in billing zone calculation
+ * Bugs: F6, F7, F8
+ * Categories: Precision/Arithmetic
  */
 @Service
 public class InvoiceService {
@@ -30,19 +28,13 @@ public class InvoiceService {
      * @return the average item price, rounded to 2 decimal places
      * @throws ArithmeticException when the invoice has no items (division by zero)
      */
-    
-    // When no items exist, dividing by zero causes ArithmeticException.
-    // The method does not guard against an empty items list before performing
-    // the division, so BigDecimal.divide throws ArithmeticException.
-    // Fix: Check for empty list before dividing:
-    //   if (invoice.getItems().isEmpty()) return BigDecimal.ZERO;
+    // Bug F6: No guard against empty items list before dividing.
+    // Category: Precision/Arithmetic
     public BigDecimal calculateAverageItemPrice(Invoice invoice) {
         BigDecimal total = invoice.getItems().stream()
             .map(InvoiceItem::getTotalPrice)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        
-        // invoice.getItems().size() is 0, causing ArithmeticException
         return total.divide(BigDecimal.valueOf(invoice.getItems().size()), 2, RoundingMode.HALF_UP);
     }
 
@@ -52,18 +44,11 @@ public class InvoiceService {
      * @param invoices the list of invoices to sum
      * @return the total revenue as a double (lossy)
      */
-    
-    // Converting BigDecimal to double and accumulating with += loses precision
-    // due to IEEE 754 floating-point representation. Over many invoices the
-    // cumulative rounding error can become significant (e.g., pennies lost).
-    // Fix: Use BigDecimal throughout:
-    //   return invoices.stream()
-    //       .map(Invoice::getTotalAmount)
-    //       .reduce(BigDecimal.ZERO, BigDecimal::add);
+    // Bug F7: Converting BigDecimal to double and accumulating with += loses precision.
+    // Category: Precision/Arithmetic
     public double calculateTotalRevenue(List<Invoice> invoices) {
         double total = 0.0;
         for (Invoice invoice : invoices) {
-            
             total += invoice.getTotalAmount().doubleValue();
         }
         return total;
@@ -76,24 +61,11 @@ public class InvoiceService {
      * @param lng longitude of the location
      * @return a zone identifier string like "ZONE-N-E"
      */
-    
-    // Truncating coordinates to 2 decimal places loses approximately 1.1 km
+    // Bug F8: Truncating coordinates to 2 decimal places loses approximately 1.1 km
     // of precision, causing vehicles near zone boundaries to be assigned to
     // the wrong billing zone.
-    // Fix: Use at least 6 decimal places for geo coordinates:
-    //   double truncatedLat = Math.floor(lat * 1000000) / 1000000;
-    //   double truncatedLng = Math.floor(lng * 1000000) / 1000000;
-    //
-    
-    //   1. Fix precision HERE in InvoiceService.getBillingZone()
-    //   2. Fix TrackingService.recordPosition() to store full precision coordinates
-    //      (currently TrackingData may truncate on storage - see TrackingData model)
-    //   3. Update RouteService.calculateRouteCost() to use consistent zone boundaries
-    //      (zone boundaries affect per-km rates)
-    // Fixing only this file will cause zone mismatch: billing uses high precision
-    // but tracking provides low precision coordinates, resulting in incorrect zone lookups.
+    // Category: Precision/Arithmetic
     public String getBillingZone(double lat, double lng) {
-        
         double truncatedLat = Math.floor(lat * 100) / 100;
         double truncatedLng = Math.floor(lng * 100) / 100;
 

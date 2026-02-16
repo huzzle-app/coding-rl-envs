@@ -1,308 +1,401 @@
 /**
  * Gateway Middleware Tests
  *
- * Tests auth middleware, error handling, rate limiting, request validation
+ * Tests authMiddleware, oauthCallback, WebSocketAuthenticator, errorHandler from actual source code.
+ * Exercises bugs: JWT without issuer/audience validation, CSRF state not validated in OAuth,
+ * error handler leaks req.body in response.
  */
 
+const jwt = require('jsonwebtoken');
+
+const TEST_JWT_SECRET = 'cloudmatrix-jwt-secret-dev';
+
 describe('Auth Middleware', () => {
-  let authMiddleware;
+  let authModule;
 
   beforeEach(() => {
     jest.resetModules();
-    authMiddleware = require('../../../services/gateway/src/middleware/auth');
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
+    authModule = require('../../../services/gateway/src/middleware/auth');
   });
 
-  describe('token validation', () => {
-    it('should pass with valid token', () => {
-      const jwt = require('jsonwebtoken');
-      const secret = 'test-secret';
-      const token = jwt.sign({ userId: 'user-1' }, secret, { expiresIn: '15m' });
+  afterEach(() => {
+    delete process.env.JWT_SECRET;
+  });
 
-      const req = {
-        headers: { authorization: `Bearer ${token}` },
+  describe('authMiddleware', () => {
+    const createReq = (token) => ({
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      method: 'GET',
+      path: '/api/documents',
+    });
+
+    const createRes = () => {
+      const res = {
+        statusCode: 200,
+        body: null,
+        status: jest.fn(function(code) { this.statusCode = code; return this; }),
+        json: jest.fn(function(body) { this.body = body; return this; }),
       };
+      return res;
+    };
 
-      const decoded = jwt.verify(token, secret);
-      expect(decoded.userId).toBe('user-1');
+    it('should reject requests without authorization header', async () => {
+      const req = createReq(null);
+      const res = createRes();
+      const next = jest.fn();
+
+      await authModule.authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it('should reject expired token', () => {
-      const jwt = require('jsonwebtoken');
-      const token = jwt.sign({ userId: 'user-1' }, 'secret', { expiresIn: '0s' });
+    it('should reject expired tokens', async () => {
+      const token = jwt.sign({ userId: 'u1' }, TEST_JWT_SECRET, { expiresIn: '0s' });
+      // Small delay to ensure token is expired
+      await new Promise(r => setTimeout(r, 10));
+      const req = createReq(token);
+      const res = createRes();
+      const next = jest.fn();
 
-      expect(() => {
-        jwt.verify(token, 'secret');
-      }).toThrow();
+      await authModule.authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.body.code).toBe('TOKEN_EXPIRED');
     });
 
-    it('should reject invalid signature', () => {
-      const jwt = require('jsonwebtoken');
-      const token = jwt.sign({ userId: 'user-1' }, 'wrong-secret');
+    it('should reject tokens with wrong secret', async () => {
+      const token = jwt.sign({ userId: 'u1' }, 'wrong-secret');
+      const req = createReq(token);
+      const res = createRes();
+      const next = jest.fn();
 
-      expect(() => {
-        jwt.verify(token, 'correct-secret');
-      }).toThrow();
+      await authModule.authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
     });
 
-    it('should reject missing authorization header', () => {
-      const req = { headers: {} };
-      const hasAuth = !!req.headers.authorization;
-      expect(hasAuth).toBe(false);
-    });
-
-    it('should reject malformed bearer token', () => {
-      const headers = { authorization: 'Bearer' };
-      const parts = headers.authorization.split(' ');
-      expect(parts.length).toBeLessThanOrEqual(2);
-    });
-
-    it('should extract user from token', () => {
-      const jwt = require('jsonwebtoken');
+    // BUG: JWT verification does not check issuer or audience claims.
+    // This means tokens from other services are accepted.
+    it('should validate JWT issuer and audience', async () => {
+      // Create a token with wrong issuer
       const token = jwt.sign(
-        { userId: 'user-1', email: 'test@test.com', roles: ['user'] },
-        'secret'
+        { userId: 'u1', iss: 'malicious-service', aud: 'wrong-api' },
+        TEST_JWT_SECRET
       );
+      const req = createReq(token);
+      const res = createRes();
+      const next = jest.fn();
 
-      const decoded = jwt.verify(token, 'secret');
-      expect(decoded.userId).toBe('user-1');
-      expect(decoded.email).toBe('test@test.com');
+      await authModule.authMiddleware(req, res, next);
+      // Should reject because issuer/audience don't match
+      // BUG: it accepts the token because verify() has no issuer/audience options
+      expect(res.status).toHaveBeenCalledWith(401);
     });
   });
 
-  describe('public routes', () => {
-    it('should allow health check without auth', () => {
-      const publicPaths = ['/health', '/ready', '/api/auth/login', '/api/auth/register'];
-      const isPublic = (path) => publicPaths.some(p => path.startsWith(p));
-
-      expect(isPublic('/health')).toBe(true);
-      expect(isPublic('/api/auth/login')).toBe(true);
-      expect(isPublic('/api/documents')).toBe(false);
+  describe('WebSocketAuthenticator', () => {
+    it('should authenticate valid token', () => {
+      const wsAuth = new authModule.WebSocketAuthenticator('test-secret');
+      const token = jwt.sign({ userId: 'u1' }, 'test-secret');
+      const decoded = wsAuth.authenticate(token);
+      expect(decoded).not.toBeNull();
+      expect(decoded.userId).toBe('u1');
     });
 
-    it('should allow OPTIONS requests', () => {
-      const method = 'OPTIONS';
-      expect(method).toBe('OPTIONS');
+    it('should return null for invalid token', () => {
+      const wsAuth = new authModule.WebSocketAuthenticator('test-secret');
+      const decoded = wsAuth.authenticate('garbage-token');
+      expect(decoded).toBeNull();
     });
   });
 });
 
 describe('Error Middleware', () => {
-  let errorMiddleware;
+  let errorModule;
 
   beforeEach(() => {
     jest.resetModules();
-    errorMiddleware = require('../../../services/gateway/src/middleware/error');
+    errorModule = require('../../../services/gateway/src/middleware/error');
   });
 
-  describe('error formatting', () => {
-    it('should format validation errors', () => {
-      const error = {
-        name: 'ValidationError',
-        status: 400,
-        message: 'Validation failed',
-        details: [{ field: 'title', message: 'Required' }],
-      };
-
-      expect(error.status).toBe(400);
-      expect(error.details).toBeDefined();
+  describe('errorHandler', () => {
+    const createReq = (body = {}) => ({
+      path: '/api/test',
+      body,
     });
 
-    it('should format not found errors', () => {
-      const error = {
-        name: 'NotFoundError',
-        status: 404,
-        message: 'Document not found',
+    const createRes = () => {
+      const res = {
+        statusCode: 200,
+        body: null,
+        status: jest.fn(function(code) { this.statusCode = code; return this; }),
+        json: jest.fn(function(body) { this.body = body; return this; }),
       };
+      return res;
+    };
 
-      expect(error.status).toBe(404);
+    it('should return error status code', () => {
+      const err = new Error('Not found');
+      err.statusCode = 404;
+      const req = createReq();
+      const res = createRes();
+
+      errorModule.errorHandler(err, req, res, jest.fn());
+      expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('should format internal errors without stack', () => {
-      const error = new Error('Internal failure');
-      error.status = 500;
+    it('should default to 500 for errors without statusCode', () => {
+      const err = new Error('Internal error');
+      const req = createReq();
+      const res = createRes();
 
-      const response = {
-        status: error.status,
-        error: 'InternalServerError',
-        message: 'An unexpected error occurred',
-      };
-
-      expect(response.status).toBe(500);
-      expect(response).not.toHaveProperty('stack');
+      errorModule.errorHandler(err, req, res, jest.fn());
+      expect(res.status).toHaveBeenCalledWith(500);
     });
 
-    it('should handle unknown errors', () => {
-      const error = { message: 'Something went wrong' };
-      const status = error.status || 500;
-      expect(status).toBe(500);
+    // BUG: Error handler includes req.body in the response (line 17: input: req.body)
+    // This leaks sensitive user input (passwords, tokens) in error responses.
+    it('should NOT leak request body in error response', () => {
+      const err = new Error('Validation failed');
+      err.statusCode = 400;
+      const req = createReq({ password: 'secret123', email: 'test@test.com' });
+      const res = createRes();
+
+      errorModule.errorHandler(err, req, res, jest.fn());
+      // BUG: res.body.input contains req.body with sensitive data
+      expect(res.body.input).toBeUndefined();
     });
 
-    it('should log errors', () => {
-      const logged = [];
-      const logError = (err) => {
-        logged.push({ message: err.message, timestamp: Date.now() });
-      };
+    it('should include error message in response', () => {
+      const err = new Error('Something went wrong');
+      err.statusCode = 500;
+      const req = createReq();
+      const res = createRes();
 
-      logError(new Error('Test error'));
-      expect(logged).toHaveLength(1);
+      errorModule.errorHandler(err, req, res, jest.fn());
+      expect(res.body.error).toBe('Something went wrong');
     });
-  });
-});
 
-describe('Rate Limiting', () => {
-  describe('rate limiter', () => {
-    it('should allow requests under limit', () => {
-      const limits = new Map();
-      const maxRequests = 100;
-      const windowMs = 60000;
+    it('should include path in error response', () => {
+      const err = new Error('fail');
+      const req = createReq();
+      const res = createRes();
 
-      const checkLimit = (clientId) => {
-        const now = Date.now();
-        const entry = limits.get(clientId) || { count: 0, windowStart: now };
+      errorModule.errorHandler(err, req, res, jest.fn());
+      expect(res.body.path).toBe('/api/test');
+    });
 
-        if (now - entry.windowStart > windowMs) {
-          entry.count = 0;
-          entry.windowStart = now;
-        }
+    it('should not expose sensitive credentials in error response', () => {
+      const err = new Error('Bad request');
+      err.statusCode = 400;
+      const req = createReq({ apiKey: 'sk-secret-key-12345', token: 'refresh-token-abc' });
+      const res = createRes();
 
-        entry.count++;
-        limits.set(clientId, entry);
+      errorModule.errorHandler(err, req, res, jest.fn());
+      const responseStr = JSON.stringify(res.body);
+      expect(responseStr).not.toContain('sk-secret-key-12345');
+      expect(responseStr).not.toContain('refresh-token-abc');
+    });
 
-        return entry.count <= maxRequests;
-      };
+    it('should not include request body fields in 500 error response', () => {
+      const err = new Error('Server error');
+      err.statusCode = 500;
+      const req = createReq({ creditCard: '4111111111111111', cvv: '123' });
+      const res = createRes();
 
-      for (let i = 0; i < 50; i++) {
-        expect(checkLimit('client-1')).toBe(true);
+      errorModule.errorHandler(err, req, res, jest.fn());
+      expect(res.body).not.toHaveProperty('input');
+    });
+
+    it('should not leak PII from request body in error responses', () => {
+      const err = new Error('Processing failed');
+      err.statusCode = 422;
+      const req = createReq({ ssn: '123-45-6789', name: 'Jane Doe' });
+      const res = createRes();
+
+      errorModule.errorHandler(err, req, res, jest.fn());
+      const responseStr = JSON.stringify(res.body);
+      expect(responseStr).not.toContain('123-45-6789');
+    });
+
+    it('error response should only contain error, path, and stack fields', () => {
+      const err = new Error('Validation error');
+      err.statusCode = 400;
+      const req = createReq({ data: 'sensitive' });
+      const res = createRes();
+
+      errorModule.errorHandler(err, req, res, jest.fn());
+      const allowedKeys = ['error', 'path', 'stack'];
+      const responseKeys = Object.keys(res.body).filter(k => res.body[k] !== undefined);
+      for (const key of responseKeys) {
+        expect(allowedKeys).toContain(key);
       }
     });
-
-    it('should block requests over limit', () => {
-      const counter = { count: 0 };
-      const max = 10;
-
-      const isAllowed = () => {
-        counter.count++;
-        return counter.count <= max;
-      };
-
-      for (let i = 0; i < 10; i++) isAllowed();
-      expect(isAllowed()).toBe(false);
-    });
-
-    it('should track limits per client', () => {
-      const limits = new Map();
-
-      const increment = (clientId) => {
-        const count = (limits.get(clientId) || 0) + 1;
-        limits.set(clientId, count);
-        return count;
-      };
-
-      for (let i = 0; i < 5; i++) increment('client-a');
-      for (let i = 0; i < 3; i++) increment('client-b');
-
-      expect(limits.get('client-a')).toBe(5);
-      expect(limits.get('client-b')).toBe(3);
-    });
-
-    it('should reset after window expires', async () => {
-      let count = 0;
-      const windowMs = 50;
-
-      count = 100;
-
-      await new Promise(resolve => setTimeout(resolve, windowMs + 10));
-
-      count = 0;
-      expect(count).toBe(0);
-    });
-
-    it('should return rate limit headers', () => {
-      const headers = {
-        'X-RateLimit-Limit': 100,
-        'X-RateLimit-Remaining': 75,
-        'X-RateLimit-Reset': Date.now() + 60000,
-      };
-
-      expect(headers['X-RateLimit-Limit']).toBe(100);
-      expect(headers['X-RateLimit-Remaining']).toBe(75);
-    });
   });
 });
 
-describe('Request Validation', () => {
-  describe('body validation', () => {
-    it('should validate required fields', () => {
-      const validate = (body, required) => {
-        const missing = required.filter(f => !(f in body));
-        return missing.length === 0 ? null : { missing };
-      };
+describe('Auth Middleware - JWT Validation', () => {
+  let authModule;
 
-      expect(validate({ title: 'Test' }, ['title'])).toBeNull();
-      expect(validate({}, ['title'])).toEqual({ missing: ['title'] });
-    });
-
-    it('should validate field types', () => {
-      const validateType = (value, expectedType) => {
-        return typeof value === expectedType;
-      };
-
-      expect(validateType('hello', 'string')).toBe(true);
-      expect(validateType(42, 'number')).toBe(true);
-      expect(validateType(42, 'string')).toBe(false);
-    });
-
-    it('should validate string length', () => {
-      const validateLength = (str, min, max) => {
-        return str.length >= min && str.length <= max;
-      };
-
-      expect(validateLength('Hello', 1, 100)).toBe(true);
-      expect(validateLength('', 1, 100)).toBe(false);
-      expect(validateLength('a'.repeat(101), 1, 100)).toBe(false);
-    });
-
-    it('should validate URL format', () => {
-      const isValidUrl = (str) => {
-        try {
-          new URL(str);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      expect(isValidUrl('https://example.com')).toBe(true);
-      expect(isValidUrl('not-a-url')).toBe(false);
-    });
-
-    it('should sanitize HTML in input', () => {
-      const sanitize = (str) => {
-        return str.replace(/<[^>]*>/g, '');
-      };
-
-      expect(sanitize('<script>alert(1)</script>Hello')).toBe('alert(1)Hello');
-    });
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
+    authModule = require('../../../services/gateway/src/middleware/auth');
   });
 
-  describe('query validation', () => {
-    it('should validate pagination params', () => {
-      const validatePagination = (page, limit) => {
-        return page >= 1 && limit >= 1 && limit <= 100;
-      };
+  afterEach(() => {
+    delete process.env.JWT_SECRET;
+  });
 
-      expect(validatePagination(1, 20)).toBe(true);
-      expect(validatePagination(0, 20)).toBe(false);
-      expect(validatePagination(1, 200)).toBe(false);
-    });
+  const createReq = (token) => ({
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    method: 'GET',
+    path: '/api/documents',
+  });
 
-    it('should validate sort params', () => {
-      const allowedSorts = ['createdAt', 'updatedAt', 'title', '-createdAt', '-updatedAt', '-title'];
+  const createRes = () => {
+    const res = {
+      statusCode: 200,
+      body: null,
+      status: jest.fn(function(code) { this.statusCode = code; return this; }),
+      json: jest.fn(function(body) { this.body = body; return this; }),
+    };
+    return res;
+  };
 
-      const isValidSort = (sort) => allowedSorts.includes(sort);
+  it('should reject token without issuer claim', async () => {
+    const token = jwt.sign({ userId: 'u1' }, TEST_JWT_SECRET, { expiresIn: '1h' });
+    const req = createReq(token);
+    const res = createRes();
+    const next = jest.fn();
 
-      expect(isValidSort('createdAt')).toBe(true);
-      expect(isValidSort('id; DROP TABLE docs')).toBe(false);
-    });
+    await authModule.authMiddleware(req, res, next);
+    // Should verify issuer; token without iss should be rejected
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('should reject token with mismatched audience', async () => {
+    const token = jwt.sign(
+      { userId: 'u1' },
+      TEST_JWT_SECRET,
+      { issuer: 'cloudmatrix', audience: 'wrong-api', expiresIn: '1h' }
+    );
+    const req = createReq(token);
+    const res = createRes();
+    const next = jest.fn();
+
+    await authModule.authMiddleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('should accept token with correct issuer and audience', async () => {
+    const token = jwt.sign(
+      { userId: 'u1' },
+      TEST_JWT_SECRET,
+      { issuer: 'cloudmatrix', audience: 'cloudmatrix-api', expiresIn: '1h' }
+    );
+    const req = createReq(token);
+    const res = createRes();
+    const next = jest.fn();
+
+    await authModule.authMiddleware(req, res, next);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('should reject token from another service (wrong issuer)', async () => {
+    const token = jwt.sign(
+      { userId: 'u1' },
+      TEST_JWT_SECRET,
+      { issuer: 'evil-service', audience: 'cloudmatrix-api', expiresIn: '1h' }
+    );
+    const req = createReq(token);
+    const res = createRes();
+    const next = jest.fn();
+
+    await authModule.authMiddleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+});
+
+describe('OAuth Callback - CSRF', () => {
+  let authModule;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
+    authModule = require('../../../services/gateway/src/middleware/auth');
+  });
+
+  afterEach(() => {
+    delete process.env.JWT_SECRET;
+  });
+
+  it('oauthCallback should validate state parameter against session', async () => {
+    const req = {
+      query: { code: 'auth-code', state: 'attacker-state' },
+      session: { oauthState: 'legitimate-state' },
+    };
+    const res = {
+      statusCode: 200,
+      body: null,
+      status: jest.fn(function(code) { this.statusCode = code; return this; }),
+      json: jest.fn(function(body) { this.body = body; return this; }),
+    };
+
+    await authModule.oauthCallback(req, res);
+    // Should reject because state doesn't match session
+    // BUG: state parameter is not validated at all
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('oauthCallback should reject when no state parameter provided', async () => {
+    const req = {
+      query: { code: 'auth-code' },
+      session: { oauthState: 'expected-state' },
+    };
+    const res = {
+      statusCode: 200,
+      body: null,
+      status: jest.fn(function(code) { this.statusCode = code; return this; }),
+      json: jest.fn(function(body) { this.body = body; return this; }),
+    };
+
+    await authModule.oauthCallback(req, res);
+    // Missing state should be rejected
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('oauthCallback should reject CSRF attack with forged state', async () => {
+    const req = {
+      query: { code: 'stolen-code', state: 'forged-csrf-token' },
+      session: { oauthState: 'real-csrf-token' },
+    };
+    const res = {
+      statusCode: 200,
+      body: null,
+      status: jest.fn(function(code) { this.statusCode = code; return this; }),
+      json: jest.fn(function(body) { this.body = body; return this; }),
+    };
+
+    await authModule.oauthCallback(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('oauthCallback should not exchange code when CSRF validation fails', async () => {
+    const req = {
+      query: { code: 'auth-code', state: 'wrong' },
+      session: { oauthState: 'correct' },
+    };
+    const res = {
+      statusCode: 200,
+      body: null,
+      status: jest.fn(function(code) { this.statusCode = code; return this; }),
+      json: jest.fn(function(body) { this.body = body; return this; }),
+    };
+
+    await authModule.oauthCallback(req, res);
+    // Should NOT return tokens when state is invalid
+    if (res.body) {
+      expect(res.body).not.toHaveProperty('accessToken');
+    }
   });
 });

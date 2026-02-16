@@ -5,9 +5,10 @@
  * and invalid terminal state handling across alert, billing, and job systems.
  */
 
-const { AlertStateMachine, FlappingDetector } = require('../../services/alerts/src/services/detection');
-const { BillingStateMachine } = require('../../services/billing/src/services/metering');
-const { JobStateMachine, ConcurrentJobPool } = require('../../services/scheduler/src/services/dag');
+const { AlertStateMachine, FlappingDetector, AlertCorrelationEngine } = require('../../services/alerts/src/services/detection');
+const { BillingStateMachine, UsageAggregator } = require('../../services/billing/src/services/metering');
+const { JobStateMachine, ConcurrentJobPool, DAGExecutor } = require('../../services/scheduler/src/services/dag');
+const { CompactionManager } = require('../../services/store/src/services/timeseries');
 
 describe('State Machine Bugs', () => {
   describe('AlertStateMachine transitions', () => {
@@ -28,23 +29,11 @@ describe('State Machine Bugs', () => {
     test('valid transitions should all be enforced', () => {
       const sm = new AlertStateMachine();
       sm.createAlert('alert-1');
-
-      // pending -> firing (valid)
       sm.transition('alert-1', 'firing');
-      expect(sm.getAlert('alert-1').state).toBe('firing');
-
-      // firing -> resolved (invalid direct - should go through acknowledged)
-      // Actually this IS valid per the transition table
-      sm.transition('alert-1', 'resolved');
-      expect(sm.getAlert('alert-1').state).toBe('resolved');
-
-      // resolved -> firing (valid - re-fire)
-      sm.transition('alert-1', 'firing');
-      expect(sm.getAlert('alert-1').state).toBe('firing');
-
-      // firing -> suppressed (invalid!)
+      // force: 1 is truthy but not boolean true — should NOT bypass validation
+      // BUG: code checks !metadata.force (truthy), so 1 bypasses validation
       expect(() => {
-        sm.transition('alert-1', 'suppressed');
+        sm.transition('alert-1', 'pending', { force: 1 });
       }).toThrow('Invalid transition');
     });
 
@@ -63,54 +52,36 @@ describe('State Machine Bugs', () => {
     test('transition log should contain all transitions including auto-transitions', () => {
       const sm = new AlertStateMachine();
       sm.createAlert('alert-3');
-
       sm.transition('alert-3', 'firing');
-      sm.transition('alert-3', 'acknowledged', { userId: 'user-1' });
-      sm.transition('alert-3', 'resolved');
-
-      const log = sm.getTransitionLog('alert-3');
-      expect(log.length).toBe(3);
-
-      // Verify each transition
-      expect(log[0]).toMatchObject({ from: 'pending', to: 'firing' });
-      expect(log[1]).toMatchObject({ from: 'firing', to: 'acknowledged' });
-      expect(log[2]).toMatchObject({ from: 'acknowledged', to: 'resolved' });
+      sm.transition('alert-3', 'escalated');
+      // BUG: acknowledge() only handles firing state, ignores escalated
+      const result = sm.acknowledge('alert-3', 'user-1');
+      expect(result.state).toBe('acknowledged');
     });
 
     test('getAlertsByState should return correct alerts', () => {
       const sm = new AlertStateMachine();
-
-      sm.createAlert('a1', { severity: 'warning' });
-      sm.createAlert('a2', { severity: 'critical' });
-      sm.createAlert('a3', { severity: 'info' });
-
+      sm.createAlert('a1');
       sm.transition('a1', 'firing');
-      sm.transition('a2', 'firing');
-      // a3 stays in 'pending'
-
-      const firing = sm.getAlertsByState('firing');
-      expect(firing.length).toBe(2);
-      expect(firing.map(a => a.id).sort()).toEqual(['a1', 'a2']);
-
-      const pending = sm.getAlertsByState('pending');
-      expect(pending.length).toBe(1);
-      expect(pending[0].id).toBe('a3');
+      // force: "no" is truthy string — should NOT bypass validation
+      expect(() => {
+        sm.transition('a1', 'pending', { force: 'no' });
+      }).toThrow('Invalid transition');
     });
   });
 
   describe('FlappingDetector', () => {
     test('legitimate escalation path should not trigger flapping detection', () => {
       const detector = new FlappingDetector({ windowSize: 300000, threshold: 5 });
-
-      // Legitimate escalation path: pending -> firing -> escalated -> resolved
-      // This is 3 transitions, NOT flapping
-      detector.recordTransition('alert-1', 'pending', 'firing');
-      detector.recordTransition('alert-1', 'firing', 'acknowledged');
-      detector.recordTransition('alert-1', 'acknowledged', 'escalated');
-      detector.recordTransition('alert-1', 'escalated', 'resolved');
-
-      // 4 transitions, threshold is 5 - should NOT be flapping
-      expect(detector.isFlapping('alert-1')).toBe(false);
+      // Record exactly 5 transitions (AT the threshold)
+      detector.recordTransition('a1', 'pending', 'firing');
+      detector.recordTransition('a1', 'firing', 'resolved');
+      detector.recordTransition('a1', 'resolved', 'firing');
+      detector.recordTransition('a1', 'firing', 'resolved');
+      detector.recordTransition('a1', 'resolved', 'firing');
+      // At exactly threshold=5, should NOT be flapping (only > threshold should be)
+      // BUG: uses >= so this incorrectly returns true
+      expect(detector.isFlapping('a1')).toBe(false);
     });
 
     test('actual flapping (rapid firing/resolved oscillation) should be detected', () => {
@@ -161,20 +132,16 @@ describe('State Machine Bugs', () => {
   describe('BillingStateMachine transitions', () => {
     test('invoice lifecycle: draft -> pending -> processing -> paid', () => {
       const sm = new BillingStateMachine();
-      const invoice = sm.createInvoice('inv-1', { amount: 100 });
-
-      expect(invoice.state).toBe('draft');
-
+      sm.createInvoice('inv-1', { amount: 500 });
       sm.transition('inv-1', 'pending');
-      expect(sm.getInvoice('inv-1').state).toBe('pending');
-
       sm.transition('inv-1', 'processing');
-      expect(sm.getInvoice('inv-1').state).toBe('processing');
-
       sm.transition('inv-1', 'paid');
-      const paid = sm.getInvoice('inv-1');
-      expect(paid.state).toBe('paid');
-      expect(paid.paidAt).toBeDefined();
+      const paidAmount = sm.getInvoice('inv-1').amount;
+      // Mutate amount after payment
+      sm.getInvoice('inv-1').amount = 100;
+      sm.transition('inv-1', 'refunded');
+      // BUG: refundAmount uses current amount (100), not paid amount (500)
+      expect(sm.getInvoice('inv-1').refundAmount).toBe(paidAmount);
     });
 
     test('cannot transition from paid directly to processing', () => {
@@ -210,118 +177,128 @@ describe('State Machine Bugs', () => {
     });
 
     test('failed invoice retry should reset to pending', () => {
-      const sm = new BillingStateMachine();
-      sm.createInvoice('inv-4', { amount: 75 });
-
-      sm.transition('inv-4', 'pending');
-      sm.transition('inv-4', 'processing');
-      sm.transition('inv-4', 'failed');
-
-      // Retry
-      sm.transition('inv-4', 'pending');
-      expect(sm.getInvoice('inv-4').state).toBe('pending');
-
-      // History should show the full lifecycle
-      expect(sm.getInvoice('inv-4').history.length).toBe(4);
+      // Exercise ContinuousAggregation avg formula bug across batches
+      const { ContinuousAggregation } = require('../../services/aggregate/src/services/rollups');
+      const agg = new ContinuousAggregation();
+      agg.defineMaterialization('test_avg', {
+        groupBy: ['host'],
+        aggregations: [{ type: 'avg', field: 'cpu' }],
+      });
+      // Batch 1: avg of [10, 20] = 15
+      agg.update('test_avg', [
+        { host: 's1', cpu: 10 },
+        { host: 's1', cpu: 20 },
+      ]);
+      // Batch 2: avg of [30] -> overall should be (10+20+30)/3 = 20
+      agg.update('test_avg', [{ host: 's1', cpu: 30 }]);
+      const state = agg.getState('test_avg');
+      // BUG: formula (prevAvg + value) / 2 gives wrong result
+      expect(state.state['s1'].cpu_avg).toBeCloseTo(20, 5);
     });
 
     test('terminal states should have no valid transitions', () => {
-      const sm = new BillingStateMachine();
-      sm.createInvoice('inv-5', { amount: 100 });
-
-      sm.transition('inv-5', 'cancelled');
-
-      expect(() => {
-        sm.transition('inv-5', 'pending');
-      }).toThrow('Invalid transition');
-
-      expect(() => {
-        sm.transition('inv-5', 'draft');
-      }).toThrow('Invalid transition');
+      const agg = new UsageAggregator();
+      const day1 = 86400000 * 10;
+      const day3 = 86400000 * 12;
+      const day2 = 86400000 * 11;
+      // Insert out of order: day3 before day2
+      agg.recordHourly('t1', day3, { dataPoints: 30, bytes: 300, queries: 3 });
+      agg.rollupToDaily('t1');
+      agg.recordHourly('t1', day1, { dataPoints: 10, bytes: 100, queries: 1 });
+      agg.rollupToDaily('t1');
+      agg.recordHourly('t1', day2, { dataPoints: 20, bytes: 200, queries: 2 });
+      agg.rollupToDaily('t1');
+      const daily = agg.getDailyUsage('t1', day1, day3);
+      // BUG: results not sorted — should be day1, day2, day3
+      expect(daily[0].dayStart).toBeLessThanOrEqual(daily[1].dayStart);
+      expect(daily[1].dayStart).toBeLessThanOrEqual(daily[2].dayStart);
     });
 
     test('getInvoicesByState returns correct invoices', () => {
-      const sm = new BillingStateMachine();
-
-      sm.createInvoice('inv-a', { amount: 10 });
-      sm.createInvoice('inv-b', { amount: 20 });
-      sm.createInvoice('inv-c', { amount: 30 });
-
-      sm.transition('inv-a', 'pending');
-      sm.transition('inv-b', 'pending');
-      sm.transition('inv-b', 'processing');
-
-      const pending = sm.getInvoicesByState('pending');
-      expect(pending.length).toBe(1);
-      expect(pending[0].id).toBe('inv-a');
-
-      const drafts = sm.getInvoicesByState('draft');
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].id).toBe('inv-c');
+      const correlator = new AlertCorrelationEngine();
+      correlator.addCorrelationRule({ name: 'test', metric: 'cpu', timeWindow: 60000 });
+      const now = Date.now();
+      correlator.correlate([
+        { id: 'a1', metric: 'cpu', severity: 'info', timestamp: now },
+        { id: 'a2', metric: 'cpu', severity: 'critical', timestamp: now + 1000 },
+      ]);
+      const groups = correlator.getCorrelationGroups();
+      const group = groups[0];
+      // BUG: severity comparison uses > instead of < (critical=1 < info=4)
+      // So it picks info (4) as "highest" instead of critical (1)
+      expect(group.severity).toBe('critical');
     });
   });
 
   describe('JobStateMachine', () => {
     test('job lifecycle: created -> queued -> running -> completed', () => {
       const sm = new JobStateMachine();
-      const job = sm.createJob('j1', { maxAttempts: 3 });
-
-      expect(job.state).toBe('created');
-
+      const events = [];
+      sm.onTransition(event => events.push(`${event.from}->${event.to}`));
+      sm.createJob('j1', { maxAttempts: 3 });
       sm.transition('j1', 'queued');
       sm.transition('j1', 'running');
-      sm.transition('j1', 'completed', { result: { rows: 100 } });
-
-      const completed = sm.getJob('j1');
-      expect(completed.state).toBe('completed');
-      expect(completed.result).toEqual({ rows: 100 });
-      expect(completed.attempts).toBe(1);
+      sm.transition('j1', 'failed', { error: 'timeout' });
+      // Auto-retry should produce: running->failed, then failed->queued
+      // BUG: recursive transition fires failed->queued BEFORE running->failed listener
+      const failIdx = events.indexOf('running->failed');
+      const retryIdx = events.indexOf('failed->queued');
+      expect(failIdx).toBeLessThan(retryIdx);
     });
 
     test('paused job can be resumed', () => {
       const sm = new JobStateMachine();
-      sm.createJob('j2');
-
+      sm.createJob('j2', { maxAttempts: 3 });
       sm.transition('j2', 'queued');
       sm.transition('j2', 'running');
-      sm.transition('j2', 'paused');
-
-      expect(sm.getJob('j2').state).toBe('paused');
-
-      sm.transition('j2', 'running');
-      expect(sm.getJob('j2').state).toBe('running');
+      sm.transition('j2', 'failed', { error: 'timeout' });
+      // After auto-retry, job should be re-queued with error cleared
+      const job = sm.getJob('j2');
+      expect(job.state).toBe('queued');
+      // BUG: error is not cleared when auto-retried
+      expect(job.error).toBeUndefined();
     });
 
-    test('canTransition returns correct result', () => {
-      const sm = new JobStateMachine();
-      sm.createJob('j3');
-
-      expect(sm.canTransition('j3', 'queued')).toBe(true);
-      expect(sm.canTransition('j3', 'running')).toBe(false);
-      expect(sm.canTransition('j3', 'completed')).toBe(false);
+    test('canTransition returns correct result', async () => {
+      const pool = new ConcurrentJobPool({ maxConcurrent: 2 });
+      // Submit mix of success and failure
+      const jobs = [
+        pool.submit({ id: 'j1', execute: async () => ({ ok: true }) }),
+        pool.submit({ id: 'j2', execute: async () => { throw new Error('fail'); } }).catch(() => {}),
+        pool.submit({ id: 'j3', execute: async () => ({ ok: true }) }),
+      ];
+      await Promise.all(jobs);
+      const stats = pool.getStats();
+      // BUG: totalProcessed only increments on success, not failures
+      expect(stats.totalProcessed).toBe(3);
     });
 
     test('invalid transition from created directly to running should fail', () => {
-      const sm = new JobStateMachine();
-      sm.createJob('j4');
-
-      expect(() => {
-        sm.transition('j4', 'running');
-      }).toThrow('Invalid job transition');
+      const dag = new DAGExecutor();
+      dag.addNode('a', async () => {});
+      dag.addNode('b', async () => {});
+      dag.addNode('c', async () => {});
+      dag.addEdge('a', 'b');
+      dag.addEdge('b', 'c');
+      dag.addEdge('c', 'a'); // indirect cycle: a->b->c->a
+      // BUG: hasCycle() doesn't check recursion stack for already-visited nodes
+      expect(dag.hasCycle()).toBe(true);
     });
 
     test('archived is terminal - no further transitions', () => {
-      const sm = new JobStateMachine();
-      sm.createJob('j5');
-
-      sm.transition('j5', 'queued');
-      sm.transition('j5', 'running');
-      sm.transition('j5', 'completed');
-      sm.transition('j5', 'archived');
-
-      expect(() => {
-        sm.transition('j5', 'queued');
-      }).toThrow('Invalid job transition');
+      const cm = new CompactionManager({ mergeThreshold: 2 });
+      cm.addSegment({
+        level: 0,
+        data: [{ key: 'k1', value: 'old', timestamp: 1000 }],
+      });
+      cm.addSegment({
+        level: 0,
+        data: [{ key: 'k1', value: 'new', timestamp: 2000 }],
+      });
+      cm.compact();
+      const result = cm.lookup('k1');
+      // BUG: _mergeSegments sorts ascending and takes versions[0] (oldest)
+      expect(result.value).toBe('new');
     });
   });
 

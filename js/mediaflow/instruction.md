@@ -89,8 +89,7 @@ Pass Rate → Reward
 ≥ 55% → 0.22
 ≥ 40% → 0.12
 ≥ 25% → 0.05
-≥ 10% → 0.00
-< 10% → 0.00
+< 25% → 0.00
 ```
 
 **Target**: to achieve 100% test pass rate  for maximum reward of 1.0.

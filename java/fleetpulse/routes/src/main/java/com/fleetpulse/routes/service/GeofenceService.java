@@ -4,36 +4,40 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service for geofence boundary checking.
+ *
+ * Bugs: G5, G6
+ * Categories: Boundary/Logic
+ */
 @Service
 public class GeofenceService {
 
     private static final Logger log = LoggerFactory.getLogger(GeofenceService.class);
 
-    
-    // Uses < instead of <= for boundary check -> points exactly on boundary
-    // are incorrectly classified as outside
-    // Fix: Use <= for boundary comparison
+    // Bug G5: Uses strict less-than instead of less-than-or-equal for boundary check.
+    // Points exactly on the boundary are incorrectly classified as outside.
+    // Category: Boundary/Logic
     public boolean isPointInCircle(double pointLat, double pointLng,
                                     double centerLat, double centerLng,
                                     double radiusMeters) {
         double distance = haversineDistance(pointLat, pointLng, centerLat, centerLng);
-        
         return distance < radiusMeters;
-        // Fix: return distance <= radiusMeters;
     }
 
+    // Bug G6: Uses strict greater-than instead of greater-than-or-equal in
+    // polygon boundary ray-casting algorithm.
+    // Category: Boundary/Logic
     public boolean isPointInPolygon(double lat, double lng, double[][] polygon) {
         int n = polygon.length;
         boolean inside = false;
 
         for (int i = 0, j = n - 1; i < n; j = i++) {
-            
             if ((polygon[i][1] > lng) != (polygon[j][1] > lng) &&
                 (lat < (polygon[j][0] - polygon[i][0]) * (lng - polygon[i][1]) /
                        (polygon[j][1] - polygon[i][1]) + polygon[i][0])) {
                 inside = !inside;
             }
-            // Fix: Use >= instead of > for inclusive boundary check
         }
         return inside;
     }

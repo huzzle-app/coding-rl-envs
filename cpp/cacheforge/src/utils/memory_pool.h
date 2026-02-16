@@ -15,21 +15,8 @@ public:
     explicit MemoryPool(size_t block_size, size_t initial_blocks = 1024);
     ~MemoryPool();
 
-    
-    // into the pool's internal vector. When the pool grows (vector reallocation),
-    // ALL previously returned pointers become dangling.
-    // FIX: Use a deque or list of blocks, or use a vector of unique_ptr to blocks
     void* allocate();
     void deallocate(void* ptr);
-
-    
-    // copied (default copy ctor), both the original and copy think they own the
-    // same blocks. When both destructors run, they double-free the memory.
-    // FIX: Delete copy constructor/assignment and implement move constructor/assignment
-    // MemoryPool(const MemoryPool&) = delete;
-    // MemoryPool& operator=(const MemoryPool&) = delete;
-    // MemoryPool(MemoryPool&&) noexcept;
-    // MemoryPool& operator=(MemoryPool&&) noexcept;
 
     size_t block_size() const { return block_size_; }
     size_t total_blocks() const { return total_blocks_; }
@@ -39,7 +26,6 @@ private:
     size_t block_size_;
     size_t total_blocks_;
 
-    
     std::vector<uint8_t> pool_storage_;
     std::vector<void*> free_list_;
 

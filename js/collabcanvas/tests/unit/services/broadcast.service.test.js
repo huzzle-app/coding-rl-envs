@@ -95,15 +95,31 @@ describe('BroadcastService', () => {
       );
     });
 
-    it('should handle publish errors', async () => {
+    it('should propagate publish errors to caller', async () => {
       const channel = 'board-updates';
       const message = { boardId: 'board-1' };
 
+      // Track unhandled rejections to prevent test crash
+      const unhandledRejections = [];
+      const handler = (reason) => unhandledRejections.push(reason);
+      process.on('unhandledRejection', handler);
+
       mockRedis.publish.mockRejectedValue(new Error('Connection lost'));
 
-      await expect(
-        broadcastService.publishToPubSub(channel, message)
-      ).rejects.toThrow('Connection lost');
+      // BUG A1: publishToPubSub doesn't await redis.publish, so the error
+      // is lost as an unhandled rejection instead of propagating to the caller.
+      // When fixed, this should reject with 'Connection lost'.
+      const result = await broadcastService.publishToPubSub(channel, message);
+
+      // Allow microtasks to flush so unhandled rejection fires
+      await new Promise(r => setTimeout(r, 10));
+
+      // The error should NOT be silently lost — it should propagate to the caller.
+      // With the bug, result resolves to { success: true } and the error
+      // fires as an unhandled rejection.
+      expect(result).not.toEqual({ success: true });
+
+      process.off('unhandledRejection', handler);
     });
   });
 

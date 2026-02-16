@@ -16,14 +16,14 @@ const CATEGORY_WEIGHTS = {
 };
 
 // Very sparse reward thresholds for Distinguished level
-const PASS_THRESHOLDS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0];
-const THRESHOLD_REWARDS = [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0];
+const PASS_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0];
+const THRESHOLD_REWARDS = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0];
 
 class RewardCalculator {
   constructor() {
     this.regressionPenalty = -0.15;
     this.categoryCompletionBonus = 0.03;
-    this.serviceIsolationBonus = 0.02;
+    this.serviceIsolationBonus = 0.0;
     this.chaosTestBonus = 0.10;
     this.bugBonus = 0.10;
     this.efficiencyBonus = 0.05;

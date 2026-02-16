@@ -1,322 +1,427 @@
 /**
  * Document Versioning Tests
  *
- * Tests version history, snapshots, diff generation, restore
+ * Tests EventSourcingEngine, SnapshotManager, BranchMerger from actual source code.
+ * Exercises bugs: rebuildState off-by-one from snapshot, compact removes delete events, branch merge conflicts.
  */
 
-describe('Version History', () => {
-  describe('version creation', () => {
-    it('should create version on save', () => {
-      const versions = [];
+// Mock express to prevent service index files from starting HTTP servers
+jest.mock('express', () => {
+  const router = { use: jest.fn(), get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), patch: jest.fn() };
+  const app = { use: jest.fn().mockReturnThis(), get: jest.fn().mockReturnThis(), post: jest.fn().mockReturnThis(), put: jest.fn().mockReturnThis(), delete: jest.fn().mockReturnThis(), patch: jest.fn().mockReturnThis(), listen: jest.fn((port, cb) => cb && cb()), set: jest.fn().mockReturnThis() };
+  const express = jest.fn(() => app);
+  express.json = jest.fn(() => jest.fn());
+  express.urlencoded = jest.fn(() => jest.fn());
+  express.static = jest.fn(() => jest.fn());
+  express.Router = jest.fn(() => router);
+  return express;
+});
 
-      const createVersion = (docId, content, userId) => {
-        const version = {
-          id: `v-${versions.length + 1}`,
-          docId,
-          version: versions.length + 1,
-          content: JSON.parse(JSON.stringify(content)),
-          userId,
-          createdAt: Date.now(),
-        };
-        versions.push(version);
-        return version;
-      };
+const { EventSourcingEngine, SnapshotManager, BranchMerger } = require('../../../services/versions/src/index');
 
-      createVersion('doc-1', { text: 'Hello' }, 'user-1');
-      createVersion('doc-1', { text: 'Hello World' }, 'user-1');
+describe('EventSourcingEngine', () => {
+  let engine;
 
-      expect(versions).toHaveLength(2);
-      expect(versions[1].version).toBe(2);
+  beforeEach(() => {
+    engine = new EventSourcingEngine({ snapshotInterval: 5, maxEvents: 100 });
+  });
+
+  describe('appendEvent', () => {
+    it('should append events to a stream', () => {
+      const evt = engine.appendEvent('stream-1', { type: 'set', key: 'title', value: 'Hello' });
+      expect(evt.sequenceNumber).toBe(0);
+      expect(evt.streamId).toBe('stream-1');
+      expect(evt.id).toBeDefined();
     });
 
-    it('should preserve content at each version', () => {
-      const versions = [];
-
-      const save = (content) => {
-        versions.push({ content: JSON.parse(JSON.stringify(content)), version: versions.length + 1 });
-      };
-
-      save({ text: 'Draft' });
-      save({ text: 'Final' });
-      save({ text: 'Published' });
-
-      expect(versions[0].content.text).toBe('Draft');
-      expect(versions[2].content.text).toBe('Published');
+    it('should auto-increment sequence numbers', () => {
+      engine.appendEvent('stream-1', { type: 'set', key: 'a', value: 1 });
+      const evt2 = engine.appendEvent('stream-1', { type: 'set', key: 'b', value: 2 });
+      expect(evt2.sequenceNumber).toBe(1);
     });
 
-    it('should track version author', () => {
-      const version = {
-        userId: 'user-1',
-        userName: 'Alice',
-        timestamp: Date.now(),
-      };
+    it('should maintain separate streams', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'x', value: 1 });
+      engine.appendEvent('s2', { type: 'set', key: 'y', value: 2 });
+      expect(engine.getStreamLength('s1')).toBe(1);
+      expect(engine.getStreamLength('s2')).toBe(1);
+    });
+  });
 
-      expect(version.userId).toBe('user-1');
+  describe('getEvents', () => {
+    it('should retrieve events from a stream', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      engine.appendEvent('s1', { type: 'set', key: 'b', value: 2 });
+      engine.appendEvent('s1', { type: 'set', key: 'c', value: 3 });
+
+      const events = engine.getEvents('s1', 1, 3);
+      expect(events).toHaveLength(2);
+      expect(events[0].key).toBe('b');
+    });
+
+    it('should return empty for nonexistent stream', () => {
+      expect(engine.getEvents('nonexistent')).toEqual([]);
+    });
+  });
+
+  describe('snapshots', () => {
+    it('should create snapshot at configured interval', () => {
+      for (let i = 0; i < 6; i++) {
+        engine.appendEvent('s1', { type: 'set', key: `k${i}`, value: i });
+      }
+
+      const snapshot = engine.getLatestSnapshot('s1');
+      // Snapshot created at sequenceNumber 5 (index 5 % 5 === 0)
+      expect(snapshot).not.toBeNull();
+      expect(snapshot.state).toBeDefined();
+    });
+
+    it('should return null when no snapshots exist', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      expect(engine.getLatestSnapshot('s1')).toBeNull();
+    });
+  });
+
+  describe('rebuildState', () => {
+    it('should rebuild state from events', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'title', value: 'Hello' });
+      engine.appendEvent('s1', { type: 'set', key: 'body', value: 'World' });
+
+      const state = engine.rebuildState('s1');
+      expect(state.title).toBe('Hello');
+      expect(state.body).toBe('World');
+    });
+
+    it('should handle delete events', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      engine.appendEvent('s1', { type: 'set', key: 'b', value: 2 });
+      engine.appendEvent('s1', { type: 'delete', key: 'a' });
+
+      const state = engine.rebuildState('s1');
+      expect(state.a).toBeUndefined();
+      expect(state.b).toBe(2);
+    });
+
+    it('should handle merge events', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      engine.appendEvent('s1', { type: 'merge', data: { b: 2, c: 3 } });
+
+      const state = engine.rebuildState('s1');
+      expect(state.a).toBe(1);
+      expect(state.b).toBe(2);
+      expect(state.c).toBe(3);
+    });
+
+    // BUG: rebuildState uses snapshot.sequenceNumber as fromSeq,
+    // but getEvents returns events WHERE sequenceNumber >= fromSeq,
+    // so it re-applies the event AT the snapshot's sequenceNumber.
+    // The snapshot already includes that event, causing duplicate application.
+    it('should not double-apply events at snapshot boundary', () => {
+      // Create 4 events + 1 at snapshot boundary
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      engine.appendEvent('s1', { type: 'set', key: 'b', value: 2 });
+      engine.appendEvent('s1', { type: 'set', key: 'c', value: 3 });
+      engine.appendEvent('s1', { type: 'set', key: 'd', value: 4 });
+      // 5th event triggers snapshot (snapshotInterval=5)
+      // snapshot.sequenceNumber = 4, snapshot.state includes all 5 keys
+      engine.appendEvent('s1', { type: 'set', key: 'e', value: 5 });
+
+      // Post-snapshot event
+      engine.appendEvent('s1', { type: 'set', key: 'f', value: 6 });
+
+      // Get events that rebuildState replays after snapshot
+      const snapshot = engine.getLatestSnapshot('s1');
+      const fromSeq = snapshot ? snapshot.sequenceNumber : 0;
+      const replayedEvents = engine.getEvents('s1', fromSeq);
+
+      // Should only replay events AFTER snapshot (seq > 4), i.e., 'f' at seq=5
+      // BUG: getEvents uses >= so it also includes seq=4 ('e'), replaying 2 instead of 1
+      expect(replayedEvents.length).toBe(1);
+    });
+  });
+
+  describe('compact', () => {
+    it('should compact events in a stream', () => {
+      for (let i = 0; i < 10; i++) {
+        engine.appendEvent('s1', { type: 'set', key: `k${i}`, value: i });
+      }
+
+      const result = engine.compact('s1');
+      expect(result.removed).toBeGreaterThan(0);
+    });
+
+    // BUG: compact filters out ALL delete events, which means
+    // deleted keys will reappear when rebuilding from the compacted stream
+    it('should preserve delete events during compaction', () => {
+      // Create enough events to trigger a natural snapshot first
+      for (let i = 0; i < 5; i++) {
+        engine.appendEvent('s1', { type: 'set', key: `k${i}`, value: i });
+      }
+      // Snapshot at seq=4, state = {k0:0, k1:1, k2:2, k3:3, k4:4}
+
+      // Now add a delete event AFTER the snapshot
+      engine.appendEvent('s1', { type: 'delete', key: 'k0' });
+
+      // Compact: creates new snapshot (seq=5, state={k1:1,k2:2,k3:3,k4:4})
+      // Then filters: delete event (seq=5) gets removed by the bug (type === 'delete')
+      // After compaction, only the new snapshot remains, delete event is gone
+      engine.compact('s1');
+
+      // Now add more events and rebuild
+      engine.appendEvent('s1', { type: 'set', key: 'new', value: 'val' });
+
+      const state = engine.rebuildState('s1');
+      // k0 should still be deleted after compaction
+      // BUG: compact removed the delete event, but the new snapshot captured
+      // the correct state. However, the old snapshot (from before delete) still
+      // shows k0=0. The compact creates a fresh snapshot at the end,
+      // so this specific scenario might still pass.
+      // Use a more targeted approach: verify delete events survive in the stream.
+      const events = engine.getEvents('s1');
+      const deleteEvents = events.filter(e => e.type === 'delete');
+      // After compaction, delete events should be preserved in the stream
+      // BUG: compact filters them out with `if (e.type === 'delete') return false`
+      expect(deleteEvents.length).toBeGreaterThan(0);
+    });
+
+    it('should return 0 removed for nonexistent stream', () => {
+      expect(engine.compact('nonexistent')).toEqual({ removed: 0 });
+    });
+  });
+
+  describe('stream length', () => {
+    it('should track stream length', () => {
+      engine.appendEvent('s1', { type: 'set', key: 'a', value: 1 });
+      engine.appendEvent('s1', { type: 'set', key: 'b', value: 2 });
+      expect(engine.getStreamLength('s1')).toBe(2);
+    });
+
+    it('should return 0 for empty stream', () => {
+      expect(engine.getStreamLength('nonexistent')).toBe(0);
+    });
+  });
+});
+
+describe('SnapshotManager', () => {
+  let manager;
+
+  beforeEach(() => {
+    manager = new SnapshotManager({ maxSnapshots: 5 });
+  });
+
+  describe('createSnapshot', () => {
+    it('should create a snapshot', () => {
+      const snap = manager.createSnapshot('doc-1', { title: 'Test', body: 'Content' });
+      expect(snap.documentId).toBe('doc-1');
+      expect(snap.version).toBe(1);
+      expect(snap.content.title).toBe('Test');
     });
 
     it('should auto-increment version numbers', () => {
-      let currentVersion = 0;
+      manager.createSnapshot('doc-1', { v: 1 });
+      const snap2 = manager.createSnapshot('doc-1', { v: 2 });
+      expect(snap2.version).toBe(2);
+    });
 
-      const nextVersion = () => ++currentVersion;
-
-      expect(nextVersion()).toBe(1);
-      expect(nextVersion()).toBe(2);
-      expect(nextVersion()).toBe(3);
+    it('should deep copy content to prevent mutation', () => {
+      const content = { nested: { value: 1 } };
+      const snap = manager.createSnapshot('doc-1', content);
+      content.nested.value = 999;
+      expect(snap.content.nested.value).toBe(1);
     });
   });
 
-  describe('version diff', () => {
-    it('should compute text diff', () => {
-      const computeDiff = (oldText, newText) => {
-        const changes = [];
-        if (oldText !== newText) {
-          changes.push({ type: 'modified', old: oldText, new: newText });
-        }
-        return changes;
-      };
-
-      const diff = computeDiff('Hello', 'Hello World');
-      expect(diff).toHaveLength(1);
-      expect(diff[0].type).toBe('modified');
+  describe('getSnapshot', () => {
+    it('should retrieve snapshot by version', () => {
+      manager.createSnapshot('doc-1', { a: 1 });
+      manager.createSnapshot('doc-1', { b: 2 });
+      const snap = manager.getSnapshot('doc-1', 1);
+      expect(snap.content.a).toBe(1);
     });
 
-    it('should detect additions', () => {
-      const oldFields = { title: 'Test' };
-      const newFields = { title: 'Test', description: 'Desc' };
-
-      const additions = Object.keys(newFields).filter(k => !(k in oldFields));
-      expect(additions).toContain('description');
-    });
-
-    it('should detect deletions', () => {
-      const oldFields = { title: 'Test', subtitle: 'Sub' };
-      const newFields = { title: 'Test' };
-
-      const deletions = Object.keys(oldFields).filter(k => !(k in newFields));
-      expect(deletions).toContain('subtitle');
-    });
-
-    it('should handle identical versions', () => {
-      const v1 = { text: 'Same' };
-      const v2 = { text: 'Same' };
-
-      const hasChanges = JSON.stringify(v1) !== JSON.stringify(v2);
-      expect(hasChanges).toBe(false);
+    it('should return null for missing version', () => {
+      expect(manager.getSnapshot('doc-1', 99)).toBeNull();
     });
   });
 
-  describe('version restore', () => {
-    it('should restore to specific version', () => {
-      const versionStore = [
-        { version: 1, content: { text: 'V1' } },
-        { version: 2, content: { text: 'V2' } },
-        { version: 3, content: { text: 'V3' } },
-      ];
-
-      const restore = (targetVersion) => {
-        const v = versionStore.find(v => v.version === targetVersion);
-        if (!v) throw new Error('Version not found');
-        return {
-          ...v.content,
-          restoredFrom: targetVersion,
-          version: versionStore.length + 1,
-        };
-      };
-
-      const restored = restore(1);
-      expect(restored.text).toBe('V1');
-      expect(restored.version).toBe(4);
+  describe('getLatest', () => {
+    it('should return latest snapshot', () => {
+      manager.createSnapshot('doc-1', { v: 1 });
+      manager.createSnapshot('doc-1', { v: 2 });
+      const latest = manager.getLatest('doc-1');
+      expect(latest.content.v).toBe(2);
     });
 
-    it('should create new version on restore', () => {
-      const versions = [
-        { version: 1, text: 'A' },
-        { version: 2, text: 'B' },
-      ];
-
-      const restored = {
-        version: versions.length + 1,
-        text: versions[0].text,
-        restoredFrom: 1,
-      };
-
-      versions.push(restored);
-
-      expect(versions).toHaveLength(3);
-      expect(versions[2].restoredFrom).toBe(1);
-    });
-
-    it('should reject invalid version number', () => {
-      const maxVersion = 5;
-
-      const isValidVersion = (v) => v >= 1 && v <= maxVersion && Number.isInteger(v);
-
-      expect(isValidVersion(3)).toBe(true);
-      expect(isValidVersion(0)).toBe(false);
-      expect(isValidVersion(6)).toBe(false);
-      expect(isValidVersion(1.5)).toBe(false);
+    it('should return null for unknown document', () => {
+      expect(manager.getLatest('nonexistent')).toBeNull();
     });
   });
 
-  describe('version pruning', () => {
-    it('should keep last N versions', () => {
-      const maxVersions = 50;
-      const versions = Array.from({ length: 100 }, (_, i) => ({
-        version: i + 1,
-        content: `Version ${i + 1}`,
-      }));
+  describe('diff', () => {
+    it('should compute diff between versions', () => {
+      manager.createSnapshot('doc-1', { title: 'Original', body: 'Content' });
+      manager.createSnapshot('doc-1', { title: 'Updated', body: 'Content', tags: ['new'] });
 
-      const pruned = versions.slice(-maxVersions);
-      expect(pruned).toHaveLength(50);
-      expect(pruned[0].version).toBe(51);
+      const diff = manager.diff('doc-1', 1, 2);
+      expect(diff).not.toBeNull();
+      expect(diff.changes.length).toBeGreaterThan(0);
+
+      const modified = diff.changes.find(c => c.key === 'title');
+      expect(modified.type).toBe('modified');
+
+      const added = diff.changes.find(c => c.key === 'tags');
+      expect(added.type).toBe('added');
     });
 
-    it('should preserve milestone versions', () => {
-      const versions = Array.from({ length: 100 }, (_, i) => ({
-        version: i + 1,
-        milestone: (i + 1) % 10 === 0,
-      }));
+    it('should return null for missing versions', () => {
+      expect(manager.diff('doc-1', 1, 2)).toBeNull();
+    });
+  });
 
-      const milestones = versions.filter(v => v.milestone);
-      expect(milestones).toHaveLength(10);
+  describe('snapshot count and versions', () => {
+    it('should track snapshot count', () => {
+      manager.createSnapshot('doc-1', { a: 1 });
+      manager.createSnapshot('doc-1', { b: 2 });
+      expect(manager.getSnapshotCount('doc-1')).toBe(2);
+    });
+
+    it('should list all versions', () => {
+      manager.createSnapshot('doc-1', { a: 1 });
+      manager.createSnapshot('doc-1', { b: 2 });
+      const versions = manager.getAllVersions('doc-1');
+      expect(versions).toHaveLength(2);
+      expect(versions[0].version).toBe(1);
     });
   });
 });
 
-describe('Snapshot Management', () => {
-  describe('snapshot creation', () => {
-    it('should create periodic snapshots', () => {
-      const snapshotInterval = 10;
-      const currentVersion = 35;
+describe('ChunkedUploader - initUpload', () => {
+  let ChunkedUploader;
 
-      const shouldSnapshot = (version) => version % snapshotInterval === 0;
-
-      expect(shouldSnapshot(10)).toBe(true);
-      expect(shouldSnapshot(20)).toBe(true);
-      expect(shouldSnapshot(35)).toBe(false);
-    });
-
-    it('should include full document state', () => {
-      const snapshot = {
-        docId: 'doc-1',
-        version: 20,
-        content: { ops: [{ insert: 'Full content here' }] },
-        metadata: { title: 'Test Doc', tags: ['test'] },
-        timestamp: Date.now(),
-      };
-
-      expect(snapshot.content).toBeDefined();
-      expect(snapshot.metadata).toBeDefined();
-    });
-
-    it('should compress large snapshots', () => {
-      const content = 'x'.repeat(100000);
-      const compressed = content.length;
-
-      expect(compressed).toBeGreaterThan(0);
-    });
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../services/storage/src/index');
+    ChunkedUploader = mod.ChunkedUploader;
   });
 
-  describe('snapshot retrieval', () => {
-    it('should find nearest snapshot', () => {
-      const snapshots = [
-        { version: 10 },
-        { version: 20 },
-        { version: 30 },
-      ];
+  it('initUpload should use Math.ceil for chunk count calculation', () => {
+    const uploader = new ChunkedUploader({ chunkSize: 5 * 1024 * 1024 });
+    // File size = 12MB, chunk size = 5MB -> should be 3 chunks (ceil(12/5))
+    const upload = uploader.initUpload('file-1', 12 * 1024 * 1024);
+    // BUG: uses Math.floor instead of Math.ceil, so 12/5 = 2.4 -> 2 chunks
+    expect(upload.totalChunks).toBe(3);
+  });
 
-      const findNearest = (targetVersion) => {
-        let nearest = null;
-        for (const s of snapshots) {
-          if (s.version <= targetVersion) nearest = s;
-        }
-        return nearest;
-      };
+  it('initUpload should not lose trailing bytes when file is not evenly divisible', () => {
+    const uploader = new ChunkedUploader({ chunkSize: 1000 });
+    const upload = uploader.initUpload('file-1', 2500);
+    // 2500/1000 = 2.5, need ceil(2.5) = 3 chunks
+    // BUG: floor(2.5) = 2 chunks, losing 500 bytes
+    expect(upload.totalChunks).toBe(3);
+  });
 
-      expect(findNearest(25).version).toBe(20);
-      expect(findNearest(30).version).toBe(30);
-      expect(findNearest(5)).toBeNull();
-    });
+  it('initUpload chunk count for 1-byte-over should round up', () => {
+    const uploader = new ChunkedUploader({ chunkSize: 100 });
+    const upload = uploader.initUpload('file-1', 101);
+    // 101/100 = 1.01, need 2 chunks
+    // BUG: floor(1.01) = 1 chunk, losing 1 byte
+    expect(upload.totalChunks).toBe(2);
+  });
 
-    it('should replay events from snapshot', () => {
-      const snapshot = { version: 10, state: { text: 'Base' } };
-      const events = [
-        { version: 11, type: 'append', data: ' More' },
-        { version: 12, type: 'append', data: ' Text' },
-      ];
+  it('initUpload should cover entire file size across all chunks', () => {
+    const uploader = new ChunkedUploader({ chunkSize: 1000 });
+    const totalSize = 3500;
+    const upload = uploader.initUpload('file-1', totalSize);
+    // Last chunk should end at totalSize
+    const lastChunk = upload.chunks[upload.chunks.length - 1];
+    expect(lastChunk.end).toBe(totalSize);
+  });
 
-      let state = { ...snapshot.state };
-      for (const event of events) {
-        if (event.type === 'append') {
-          state.text += event.data;
-        }
-      }
-
-      expect(state.text).toBe('Base More Text');
-    });
+  it('initUpload exact multiple should not create extra chunk', () => {
+    const uploader = new ChunkedUploader({ chunkSize: 1000 });
+    const upload = uploader.initUpload('file-1', 3000);
+    // 3000/1000 = 3.0, exactly 3 chunks
+    expect(upload.totalChunks).toBe(3);
   });
 });
 
-describe('Concurrent Versioning', () => {
-  describe('optimistic concurrency', () => {
-    it('should detect version conflicts', () => {
-      const currentVersion = 5;
+describe('BranchMerger', () => {
+  let merger;
 
-      const update = (expectedVersion, data) => {
-        if (expectedVersion !== currentVersion) {
-          return { success: false, error: 'Version conflict' };
-        }
-        return { success: true, newVersion: currentVersion + 1 };
-      };
+  beforeEach(() => {
+    merger = new BranchMerger();
+  });
 
-      expect(update(5, {}).success).toBe(true);
-      expect(update(3, {}).success).toBe(false);
-    });
-
-    it('should handle concurrent saves', async () => {
-      let version = 1;
-      const results = [];
-
-      const save = async (userId, expectedVersion) => {
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 10));
-
-        if (version === expectedVersion) {
-          version++;
-          results.push({ userId, success: true });
-        } else {
-          results.push({ userId, success: false });
-        }
-      };
-
-      await Promise.all([
-        save('user-1', 1),
-        save('user-2', 1),
-      ]);
-
-      const successes = results.filter(r => r.success);
-      expect(successes).toHaveLength(1);
+  describe('createBranch', () => {
+    it('should create a branch', () => {
+      const branch = merger.createBranch('feature-1', 5, 'stream-1');
+      expect(branch.name).toBe('feature-1');
+      expect(branch.baseVersion).toBe(5);
+      expect(branch.merged).toBe(false);
     });
   });
 
-  describe('merge strategies', () => {
-    it('should auto-merge non-conflicting changes', () => {
-      const base = { title: 'Title', content: 'Content', tags: ['a'] };
-      const change1 = { title: 'New Title' };
-      const change2 = { tags: ['a', 'b'] };
-
-      const merged = { ...base, ...change1, ...change2 };
-
-      expect(merged.title).toBe('New Title');
-      expect(merged.tags).toEqual(['a', 'b']);
-      expect(merged.content).toBe('Content');
+  describe('appendToBranch', () => {
+    it('should append events to a branch', () => {
+      merger.createBranch('f1', 0, 's1');
+      const len = merger.appendToBranch('f1', { type: 'set', key: 'a', value: 1 });
+      expect(len).toBe(1);
     });
 
-    it('should detect field-level conflicts', () => {
-      const change1 = { title: 'Title A' };
-      const change2 = { title: 'Title B' };
+    it('should reject append to nonexistent branch', () => {
+      expect(() => merger.appendToBranch('nope', {})).toThrow();
+    });
 
-      const conflicts = Object.keys(change1).filter(k => k in change2 && change1[k] !== change2[k]);
-      expect(conflicts).toContain('title');
+    it('should reject append to merged branch', () => {
+      merger.createBranch('f1', 0, 's1');
+      merger.merge('f1', []);
+      expect(() => merger.appendToBranch('f1', {})).toThrow();
+    });
+  });
+
+  describe('merge', () => {
+    it('should merge non-conflicting branch', () => {
+      merger.createBranch('f1', 0, 's1');
+      merger.appendToBranch('f1', { type: 'set', key: 'a', value: 1 });
+
+      // No conflicting events in main
+      const result = merger.merge('f1', []);
+      expect(result.merged).toBe(true);
+      expect(result.events).toHaveLength(1);
+    });
+
+    it('should detect conflicts', () => {
+      merger.createBranch('f1', 0, 's1');
+      merger.appendToBranch('f1', { type: 'set', key: 'title', value: 'branch' });
+
+      const mainEvents = [
+        { sequenceNumber: 1, type: 'set', key: 'title', value: 'main' },
+      ];
+
+      const result = merger.merge('f1', mainEvents);
+      expect(result.merged).toBe(false);
+      expect(result.conflicts.length).toBeGreaterThan(0);
+    });
+
+    it('should reject merge of nonexistent branch', () => {
+      expect(() => merger.merge('nope', [])).toThrow();
+    });
+  });
+
+  describe('listBranches', () => {
+    it('should list all branches', () => {
+      merger.createBranch('f1', 0, 's1');
+      merger.createBranch('f2', 5, 's1');
+      const branches = merger.listBranches();
+      expect(branches).toHaveLength(2);
+    });
+  });
+
+  describe('deleteBranch', () => {
+    it('should delete a branch', () => {
+      merger.createBranch('f1', 0, 's1');
+      expect(merger.deleteBranch('f1')).toBe(true);
+      expect(merger.getBranch('f1')).toBeNull();
     });
   });
 });

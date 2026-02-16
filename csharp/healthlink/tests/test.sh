@@ -11,8 +11,28 @@ if [ -n "$TRAINING_MODE" ]; then
   TRAINING_MODE_ARG="--training-mode $TRAINING_MODE"
 fi
 
+# Incremental reward support
+PREV_PASSED_ARG=""
+if [ -n "$PREV_PASSED" ]; then
+  PREV_PASSED_ARG="--prev-passed $PREV_PASSED"
+fi
+
+# Anti-reward-hacking: detect modifications to test files
+TEST_FILES_MODIFIED=0
+if command -v git &>/dev/null; then
+  MODIFIED_TESTS=$(git diff --name-only HEAD -- 'tests/' 2>/dev/null | wc -l)
+  if [ "$MODIFIED_TESTS" -gt 0 ]; then
+    TEST_FILES_MODIFIED=1
+    echo "WARNING: Test files have been modified. Restoring original tests."
+    git checkout HEAD -- tests/ 2>/dev/null || true
+  fi
+fi
+
 # Run dotnet test and capture output
-TEST_OUTPUT=$(dotnet test --no-restore --verbosity normal 2>&1 || true)
+set +e
+TEST_OUTPUT=$(dotnet test --verbosity normal 2>&1)
+TEST_EXIT=$?
+set -e
 echo "$TEST_OUTPUT" > /logs/verifier/test_output.txt
 
 # Parse dotnet test summary line: "Failed! - Failed: X, Passed: Y, Skipped: Z, Total: W"
@@ -35,8 +55,12 @@ fi
 
 if [ "$TOTAL" -eq 0 ]; then
     echo "0.0" > /logs/verifier/reward.txt
+    if [ "$TEST_EXIT" -ne 0 ]; then
+      echo "Verifier error: test runner failed before any result could be parsed."
+      exit 1
+    fi
     echo "No tests found or all tests skipped. Reward: 0.0"
-    exit 0
+    exit 1
 fi
 
 # Exclude skipped from denominator
@@ -47,12 +71,13 @@ fi
 
 RATIO=$(awk "BEGIN {printf \"%.6f\", $PASSED / $EFFECTIVE_TOTAL}")
 
-# Apply 5-threshold sparse reward function
-# Thresholds: [0.25, 0.50, 0.75, 0.90, 1.0]
-# Rewards:    [0.0,  0.15, 0.35, 0.65, 1.0]
+# Apply 5-threshold sparse reward function (Senior tier)
+# Thresholds: [0.50, 0.75, 0.90, 1.0]
+# Rewards:    [0.15, 0.35, 0.65, 1.0]
 # Use local scoring module with multi-solution bonus (with bash fallback)
+REWARD=""
 if command -v python3 &>/dev/null; then
-  REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "senior" --cwd /app $TRAINING_MODE_ARG 2>/dev/null)
+  REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "senior" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG 2>/dev/null)
 fi
 if [ -z "$REWARD" ]; then
   # Bash fallback for containers without Python
@@ -67,5 +92,21 @@ if [ -z "$REWARD" ]; then
 fi
 
 echo "$REWARD" > /logs/verifier/reward.txt
+
+# JSON results output
+if command -v python3 &>/dev/null; then
+  RESULTS_JSON=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "senior" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG --json 2>/dev/null || echo '{}')
+  echo "$RESULTS_JSON" > /logs/verifier/results.json
+fi
 echo "Tests: $PASSED passed, $FAILED failed, ${SKIPPED:-0} skipped (total: $TOTAL)"
 echo "Pass ratio: $RATIO | Reward: $REWARD"
+
+# Show incremental info if available
+if [ -n "$PREV_PASSED" ]; then
+  DELTA=$((PASSED - PREV_PASSED))
+  if [ "$DELTA" -gt 0 ]; then
+    echo "Progress: +$DELTA newly passing tests"
+  elif [ "$DELTA" -lt 0 ]; then
+    echo "Regression: $DELTA tests now failing"
+  fi
+fi

@@ -71,7 +71,7 @@ RSpec.describe ShopStream::EventSerializer do
       v3_event = { version: 3, type: 'future.event', data: {} }.to_json
 
       # Fixed version should handle unknown versions gracefully
-      expect { described_class.deserialize(v3_event) }.not_to raise_error rescue nil
+      expect { described_class.deserialize(v3_event) }.not_to raise_error
     end
 
     it 'preserves backward compatibility for consumers' do

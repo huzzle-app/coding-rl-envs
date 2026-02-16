@@ -1,132 +1,133 @@
 /**
  * SSRF Security Tests
+ *
+ * Tests bugs I4 (SSRF), I6 (path traversal)
  */
 
-describe('SSRF Prevention', () => {
-  describe('URL Validation', () => {
-    it('should block localhost', async () => {
-      const isBlocked = (url) => {
-        const blocked = ['localhost', '127.0.0.1', '0.0.0.0'];
-        return blocked.some(b => url.includes(b));
-      };
+const path = require('path');
 
-      expect(isBlocked('http://localhost/admin')).toBe(true);
-      expect(isBlocked('http://127.0.0.1/internal')).toBe(true);
-    });
+// Mock axios to prevent real HTTP requests in proxy tests
+jest.mock('axios', () => {
+  const fn = jest.fn().mockResolvedValue({ data: {}, headers: {} });
+  fn.get = jest.fn().mockResolvedValue({
+    data: Buffer.alloc(0),
+    headers: { 'content-type': 'image/jpeg' },
+  });
+  fn.post = jest.fn().mockResolvedValue({ data: {} });
+  return fn;
+});
 
-    it('should block private IPs', async () => {
-      const isPrivate = (ip) => {
-        const parts = ip.split('.');
-        if (parts.length !== 4) return false;
-        const first = parseInt(parts[0]);
-        const second = parseInt(parts[1]);
-        return first === 10 ||
-          (first === 172 && second >= 16 && second <= 31) ||
-          (first === 192 && second === 168);
-      };
+describe('Path Traversal Prevention', () => {
+  let StorageService;
+  let mockS3;
 
-      expect(isPrivate('10.0.0.1')).toBe(true);
-      expect(isPrivate('172.16.0.1')).toBe(true);
-      expect(isPrivate('192.168.1.1')).toBe(true);
-      expect(isPrivate('8.8.8.8')).toBe(false);
-    });
-
-    it('should block metadata endpoints', async () => {
-      const isMetadata = (url) => {
-        return url.includes('169.254.169.254') || url.includes('metadata');
-      };
-
-      expect(isMetadata('http://169.254.169.254/latest/meta-data/')).toBe(true);
-    });
-
-    it('should block file scheme', async () => {
-      const isSafeScheme = (url) => {
-        return url.startsWith('https://') || url.startsWith('http://');
-      };
-
-      expect(isSafeScheme('file:///etc/passwd')).toBe(false);
-      expect(isSafeScheme('https://example.com')).toBe(true);
-    });
-
-    it('should block internal service ports', async () => {
-      const isInternalPort = (url) => {
-        const match = url.match(/:(\d+)/);
-        if (!match) return false;
-        const port = parseInt(match[1]);
-        const internalPorts = [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009];
-        return internalPorts.includes(port);
-      };
-
-      expect(isInternalPort('http://service:3001/internal')).toBe(true);
-      expect(isInternalPort('https://cdn.example.com/image.jpg')).toBe(false);
-    });
-
-    it('should block DNS rebinding', async () => {
-      // DNS rebinding attack: domain resolves to public IP first, then private IP
-      const resolvedIPs = ['93.184.216.34', '127.0.0.1'];
-
-      const isPrivateIP = (ip) => {
-        const parts = ip.split('.').map(Number);
-        return parts[0] === 127 ||
-          parts[0] === 10 ||
-          (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-          (parts[0] === 192 && parts[1] === 168) ||
-          (parts[0] === 169 && parts[1] === 254);
-      };
-
-      // After DNS resolution, should verify the resolved IP is not private
-      const hasPrivateIP = resolvedIPs.some(ip => isPrivateIP(ip));
-      expect(hasPrivateIP).toBe(true);
-
-      // Request should be blocked if any resolved IP is private
-      const blocked = resolvedIPs.some(ip => isPrivateIP(ip));
-      expect(blocked).toBe(true);
-    });
+  beforeEach(() => {
+    jest.resetModules();
+    ({ StorageService } = require('../../../services/streaming/src/services/storage'));
+    mockS3 = {
+      getObject: jest.fn().mockResolvedValue({ Body: Buffer.from('data') }),
+      putObject: jest.fn().mockResolvedValue({}),
+      deleteObject: jest.fn().mockResolvedValue({}),
+      listObjectsV2: jest.fn().mockResolvedValue({ Contents: [] }),
+    };
   });
 
-  describe('Redirect Handling', () => {
-    it('should not follow redirects to internal', async () => {
-      // A redirect from external to internal URL should be blocked
-      const redirectChain = [
-        'https://external.example.com/image.jpg',
-        'http://127.0.0.1:3001/internal/secrets',
-      ];
-
-      const isPrivateUrl = (url) => {
-        const blocked = ['localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254', '192.168.', '10.', '172.16.'];
-        return blocked.some(b => url.includes(b));
-      };
-
-      // Final redirect target is internal - should be blocked
-      const finalUrl = redirectChain[redirectChain.length - 1];
-      expect(isPrivateUrl(finalUrl)).toBe(true);
-    });
-
-    it('should limit redirect count', async () => {
-      const maxRedirects = 5;
-      const redirectChain = Array(10).fill('https://example.com/redirect');
-
-      // Should stop following after maxRedirects
-      const followed = Math.min(redirectChain.length, maxRedirects);
-      expect(followed).toBeLessThanOrEqual(maxRedirects);
-      expect(followed).toBe(5);
-    });
+  it('should block getFile path traversal to /etc/passwd', async () => {
+    const storage = new StorageService(mockS3, { basePath: '/videos' });
+    // BUG I6: path.join('/videos', '../../../etc/passwd') resolves to '/etc/passwd'
+    await storage.getFile('../../../etc/passwd');
+    const key = mockS3.getObject.mock.calls[0][0].Key;
+    const resolved = path.resolve(key);
+    expect(resolved.startsWith(path.resolve('/videos'))).toBe(true);
   });
 
-  describe('Response Validation', () => {
-    it('should validate content type', async () => {
-      const isValidImage = (contentType) => {
-        return contentType.startsWith('image/');
-      };
+  it('should block putFile path traversal', async () => {
+    const storage = new StorageService(mockS3, { basePath: '/videos' });
+    await storage.putFile('../../tmp/malicious.sh', Buffer.from('evil'));
+    const key = mockS3.putObject.mock.calls[0][0].Key;
+    const resolved = path.resolve(key);
+    expect(resolved.startsWith(path.resolve('/videos'))).toBe(true);
+  });
 
-      expect(isValidImage('image/jpeg')).toBe(true);
-      expect(isValidImage('text/html')).toBe(false);
-    });
+  it('should block deleteFile path traversal', async () => {
+    const storage = new StorageService(mockS3, { basePath: '/videos' });
+    await storage.deleteFile('../../config/secrets.json');
+    const key = mockS3.deleteObject.mock.calls[0][0].Key;
+    const resolved = path.resolve(key);
+    expect(resolved.startsWith(path.resolve('/videos'))).toBe(true);
+  });
 
-    it('should limit response size', async () => {
-      const maxSize = 10 * 1024 * 1024; // 10MB
-      expect(maxSize).toBe(10485760);
-    });
+  it('should block nested path traversal', async () => {
+    const storage = new StorageService(mockS3, { basePath: '/videos' });
+    await storage.getFile('user-123/../../admin/private.key');
+    const key = mockS3.getObject.mock.calls[0][0].Key;
+    const resolved = path.resolve(key);
+    expect(resolved.startsWith(path.resolve('/videos'))).toBe(true);
+  });
+
+  it('should allow valid paths within basePath', async () => {
+    const storage = new StorageService(mockS3, { basePath: '/videos' });
+    await storage.getFile('user-123/segment-0.ts');
+    const key = mockS3.getObject.mock.calls[0][0].Key;
+    expect(key).toContain('user-123/segment-0.ts');
+    const resolved = path.resolve(key);
+    expect(resolved.startsWith(path.resolve('/videos'))).toBe(true);
+  });
+});
+
+describe('SSRF Protection in Proxy', () => {
+  let proxy;
+
+  beforeEach(() => {
+    jest.resetModules();
+    proxy = require('../../../services/gateway/src/middleware/proxy');
+  });
+
+  it('should reject webhook to cloud metadata endpoint', async () => {
+    // BUG I4: sendWebhook does not validate URL before requesting
+    const result = await proxy.sendWebhook('http://169.254.169.254/latest/meta-data/', {});
+    expect(result).toBe(false);
+  });
+
+  it('should reject webhook to localhost', async () => {
+    const result = await proxy.sendWebhook('http://localhost:3001/internal', {});
+    expect(result).toBe(false);
+  });
+
+  it('should reject webhook to private network', async () => {
+    const result = await proxy.sendWebhook('http://10.0.0.5/admin', {});
+    expect(result).toBe(false);
+  });
+
+  it('should reject thumbnail proxy to metadata endpoint', async () => {
+    const handler = proxy.createThumbnailProxy();
+    const mockReq = { query: { url: 'http://169.254.169.254/latest/meta-data/' } };
+    const mockRes = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      set: jest.fn(),
+      send: jest.fn(),
+    };
+    const mockNext = jest.fn();
+
+    await handler(mockReq, mockRes, mockNext);
+    // BUG I4: Should return 400 for internal URLs but fetches without validation
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should reject thumbnail proxy to private IP', async () => {
+    const handler = proxy.createThumbnailProxy();
+    const mockReq = { query: { url: 'http://192.168.1.1/internal' } };
+    const mockRes = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      set: jest.fn(),
+      send: jest.fn(),
+    };
+    const mockNext = jest.fn();
+
+    await handler(mockReq, mockRes, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(400);
   });
 });
 

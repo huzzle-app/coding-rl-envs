@@ -2,6 +2,7 @@ package stress
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"incidentmesh/internal/capacity"
@@ -28,24 +29,37 @@ func TestHyperMatrix(t *testing.T) {
 				i := models.Incident{Severity: sev, Criticality: crit}
 				score := triage.PriorityScore(i)
 				class := triage.ClassifyIncident(i)
-				
-				// High severity (>=4) should return "critical"
+
+				// Verify PriorityScore computation
+				bonus := 0
+				if sev >= 4 {
+					bonus = 10
+				}
+				expectedScore := sev*20 + crit*12 + bonus
+				if score != expectedScore {
+					t.Errorf("PriorityScore(sev=%d, crit=%d) = %d, want %d", sev, crit, score, expectedScore)
+				}
+
+				// Classification by severity
 				if sev >= 4 && class != "critical" {
 					t.Errorf("severity %d should classify as critical, got %s", sev, class)
+				} else if sev >= 2 && sev < 4 && class != "moderate" {
+					t.Errorf("severity %d should classify as moderate, got %s", sev, class)
+				} else if sev < 2 && class != "low" {
+					t.Errorf("severity %d should classify as low, got %s", sev, class)
 				}
-				
+
 				boost := triage.CriticalityBoost(crit)
 				expected := 10 + crit*3
 				if boost != expected {
 					t.Errorf("CriticalityBoost(%d) = %d, want %d", crit, boost, expected)
 				}
-				_ = score
 			})
 		}
 	}
 
 	// Section 2: routing_eta (12 x 8 = 96)
-	// Tests ETAEstimate BUG(R05): returns floor instead of ceil
+	// Tests ETAEstimate BUG(R05): returns hours instead of minutes
 	for dist := 0; dist < 12; dist++ {
 		for speed := 1; speed <= 8; speed++ {
 			dist, speed := dist, speed
@@ -53,17 +67,19 @@ func TestHyperMatrix(t *testing.T) {
 				distKm := float64(dist) * 10
 				speedKmH := float64(speed) * 10
 				eta := routing.ETAEstimate(distKm, speedKmH)
-				// ETA in minutes = ceil(distance / speed * 60)
+				// ETA in minutes = distance / speed * 60
 				if speedKmH > 0 {
-					expectedMin := int((distKm / speedKmH) * 60)
-					if eta < expectedMin-5 || eta > expectedMin+5 {
+					expectedMin := int(distKm / speedKmH * 60)
+					if eta < expectedMin-1 || eta > expectedMin+1 {
 						t.Errorf("ETAEstimate(%.0f, %.0f) = %d, expected ~%d minutes", distKm, speedKmH, eta, expectedMin)
 					}
 				}
-				
+
 				score := routing.RouteScore(distKm, eta)
-				if dist > 0 && score > 100 {
-					t.Errorf("RouteScore should decrease with distance, got %.1f for dist=%.0f", score, distKm)
+				// RouteScore should be 100 - distance*0.5 - eta*2.0
+				expectedRScore := 100.0 - distKm*0.5 - float64(eta)*2.0
+				if score < expectedRScore-0.1 || score > expectedRScore+0.1 {
+					t.Errorf("RouteScore(%.0f, %d) = %.1f, want %.1f", distKm, eta, score, expectedRScore)
 				}
 			})
 		}
@@ -77,7 +93,16 @@ func TestHyperMatrix(t *testing.T) {
 			t.Run(fmt.Sprintf("capacity_rank/b%d_i%d", beds, icu), func(t *testing.T) {
 				f := capacity.Facility{BedsFree: beds * 5, ICUFree: icu * 2, DistanceK: 5}
 				score := capacity.RankScore(f)
-				
+
+				// Verify RankScore = BedsFree*1.3 + ICUFree*2.0 - DistanceK*0.4
+				expectedRank := float64(beds*5)*1.3 + float64(icu*2)*2.0 - 5.0*0.4
+				if expectedRank < 0 {
+					expectedRank = 0
+				}
+				if math.Abs(score-expectedRank) > 0.01 {
+					t.Errorf("RankScore(beds=%d, icu=%d) = %.2f, want %.2f", beds*5, icu*2, score, expectedRank)
+				}
+
 				if beds > 0 {
 					norm := capacity.NormalizeBeds(beds*5, 100)
 					expected := float64(beds*5) / 100.0
@@ -85,7 +110,6 @@ func TestHyperMatrix(t *testing.T) {
 						t.Errorf("NormalizeBeds(%d, 100) = %.2f, want %.2f", beds*5, norm, expected)
 					}
 				}
-				_ = score
 			})
 		}
 	}
@@ -100,13 +124,20 @@ func TestHyperMatrix(t *testing.T) {
 					{Version: ver, IdempotencyKey: fmt.Sprintf("k%d", base), PriorityDelta: base},
 				}
 				s := resilience.ReplayIncidentState(base*10, base, ver, evs)
-				
+
+				// Event at current version should be skipped (already applied)
+				if s.Priority != base*10 {
+					t.Errorf("ReplayIncidentState(base=%d, ver=%d): priority = %d, want %d (event at current version should be skipped)", base, ver, s.Priority, base*10)
+				}
+				if s.Applied != 0 {
+					t.Errorf("ReplayIncidentState(base=%d, ver=%d): applied = %d, want 0", base, ver, s.Applied)
+				}
+
 				depth := resilience.QueueDepth(base, int(ver))
 				expected := base + int(ver)
 				if depth != expected {
 					t.Errorf("QueueDepth(%d, %d) = %d, want %d", base, ver, depth, expected)
 				}
-				_ = s
 			})
 		}
 	}
@@ -120,16 +151,28 @@ func TestHyperMatrix(t *testing.T) {
 			ri, pi := ri, pi
 			t.Run(fmt.Sprintf("security_auth/r%d_p%d", ri, pi), func(t *testing.T) {
 				auth := security.Authorize(roles[ri], perms[pi])
-				
+
+				// Admin should always be authorized
+				if roles[ri] == "admin" && !auth {
+					t.Errorf("Authorize(%s, %s) = false, admin should have all permissions", roles[ri], perms[pi])
+				}
+				// Unknown role should never be authorized
+				if roles[ri] == "unknown" && auth {
+					t.Errorf("Authorize(%s, %s) = true, unknown should have no permissions", roles[ri], perms[pi])
+				}
+				// Observer should only have incident.read
+				if roles[ri] == "observer" && perms[pi] != "incident.read" && auth {
+					t.Errorf("Authorize(%s, %s) = true, observer should only read incidents", roles[ri], perms[pi])
+				}
+
 				shortValid := security.ValidateToken("x")
 				if shortValid {
 					t.Errorf("ValidateToken should reject single-char token")
 				}
-				
+
 				if security.IPAllowed("10.0.0.1", []string{"192.168.1.1"}) {
 					t.Errorf("IPAllowed should reject IP not in allowlist")
 				}
-				_ = auth
 			})
 		}
 	}
@@ -167,6 +210,14 @@ func TestHyperMatrix(t *testing.T) {
 				if len(deduped) != 2 {
 					t.Errorf("Deduplicate should return 2 unique events, got %d", len(deduped))
 				}
+				// Verify deduped events have unique IDs
+				seen := map[string]bool{}
+				for _, e := range deduped {
+					if seen[e.ID] {
+						t.Errorf("Deduplicate returned duplicate ID: %s", e.ID)
+					}
+					seen[e.ID] = true
+				}
 			})
 		}
 	}
@@ -179,14 +230,34 @@ func TestHyperMatrix(t *testing.T) {
 			t.Run(fmt.Sprintf("escalation_level/p%d_t%d", pri, thresh), func(t *testing.T) {
 				level := escalation.EscalationLevel(pri * 20)
 				shouldEsc := escalation.ShouldEscalate(pri*20, thresh, thresh+1)
-				
+
+				// Expected levels: >=150 -> 3, >=100 -> 2, >=50 -> 1, else -> 0
+				var expectedLevel int
+				switch {
+				case pri*20 >= 150:
+					expectedLevel = 3
+				case pri*20 >= 100:
+					expectedLevel = 2
+				case pri*20 >= 50:
+					expectedLevel = 1
+				default:
+					expectedLevel = 0
+				}
+				if level != expectedLevel {
+					t.Errorf("EscalationLevel(%d) = %d, want %d", pri*20, level, expectedLevel)
+				}
+
+				// responders < required always true, so should always escalate
+				if !shouldEsc {
+					t.Errorf("ShouldEscalate(%d, %d, %d) should be true when responders < required", pri*20, thresh, thresh+1)
+				}
+
 				if pri >= 5 {
 					timeEsc := escalation.TimeBasedEscalation(120, pri)
 					if !timeEsc {
 						t.Errorf("TimeBasedEscalation(120, %d) should be true for high severity", pri)
 					}
 				}
-				_, _ = level, shouldEsc
 			})
 		}
 	}
@@ -198,16 +269,32 @@ func TestHyperMatrix(t *testing.T) {
 			tier, age := tier, age
 			t.Run(fmt.Sprintf("compliance_retention/t%d_a%d", tier, age), func(t *testing.T) {
 				days := compliance.RetentionDays(tier)
-				
-				if tier == 2 && days != 180 {
-					t.Errorf("RetentionDays(2) = %d, want 180", days)
+
+				// Verify retention days for known tiers
+				switch tier {
+				case 1:
+					if days != 365 {
+						t.Errorf("RetentionDays(1) = %d, want 365", days)
+					}
+				case 2:
+					if days != 180 {
+						t.Errorf("RetentionDays(2) = %d, want 180", days)
+					}
+				case 3:
+					if days != 30 {
+						t.Errorf("RetentionDays(3) = %d, want 30", days)
+					}
+				default:
+					if days <= 0 {
+						t.Errorf("RetentionDays(%d) = %d, should be positive", tier, days)
+					}
 				}
-				
+
 				if age > 0 {
 					score := compliance.ComplianceScore(age, age*2)
 					expected := 0.5
-					if score < expected-0.1 || score > expected+0.1 {
-						t.Errorf("ComplianceScore(%d, %d) = %.2f, want ~%.2f", age, age*2, score, expected)
+					if score < expected-0.01 || score > expected+0.01 {
+						t.Errorf("ComplianceScore(%d, %d) = %.4f, want ~%.2f", age, age*2, score, expected)
 					}
 				}
 			})
@@ -221,11 +308,14 @@ func TestHyperMatrix(t *testing.T) {
 			attempt, base := attempt, base
 			t.Run(fmt.Sprintf("comms_retry/a%d_b%d", attempt, base), func(t *testing.T) {
 				delay := communications.RetryDelay(attempt, base*100)
-				
-				if attempt > 0 && delay < base*100 {
-					t.Errorf("RetryDelay(%d, %d) = %d, should increase with attempts", attempt, base*100, delay)
+
+				if attempt == 0 && delay != base*100 {
+					t.Errorf("RetryDelay(0, %d) = %d, want %d (base delay)", base*100, delay, base*100)
 				}
-				
+				if attempt > 0 && delay <= base*100 {
+					t.Errorf("RetryDelay(%d, %d) = %d, should increase with backoff beyond base", attempt, base*100, delay)
+				}
+
 				retries := communications.MaxRetries(attempt)
 				if attempt >= 4 && retries == 0 {
 					t.Errorf("MaxRetries(%d) = 0, high severity should get more retries", attempt)
@@ -240,7 +330,7 @@ func TestHyperMatrix(t *testing.T) {
 		for timeout := 1; timeout <= 8; timeout++ {
 			port, timeout := port, timeout
 			t.Run(fmt.Sprintf("config_parse/p%d_t%d", port, timeout), func(t *testing.T) {
-				
+
 				defaultPort := config.LoadPort("NONEXISTENT_VAR", 8080+port)
 				if defaultPort != 8080+port {
 					t.Errorf("LoadPort default = %d, want %d", defaultPort, 8080+port)
@@ -265,15 +355,22 @@ func TestHyperMatrix(t *testing.T) {
 					{ID: "u1", Region: regions[ri], Capacity: cap * 5, ETAmins: 10},
 					{ID: "u2", Region: regions[ri], Capacity: cap*5 + 10, ETAmins: 5},
 				}
-				
+
 				filtered := routing.CapacityFilter(units, cap*5)
-				if cap*5 > 0 && len(filtered) < 2 {
-					t.Errorf("CapacityFilter should include exact match capacity=%d", cap*5)
+				// Both units should be included (u1 has exact match, u2 exceeds)
+				if len(filtered) < 2 {
+					t.Errorf("CapacityFilter(min=%d): got %d units, want 2 (should include exact match)", cap*5, len(filtered))
 				}
-				
-				negScore := routing.DistanceScore(-10.0)
-				if negScore > 0 {
-					t.Errorf("DistanceScore(-10) = %.1f, should be 0 or negative for negative distance", negScore)
+
+				// DistanceScore should be max(0, 100 - distance)
+				testDist := float64(cap * 30) // 0, 30, 60, 90, 120, 150
+				dscore := routing.DistanceScore(testDist)
+				expectedDS := 100.0 - testDist
+				if expectedDS < 0 {
+					expectedDS = 0
+				}
+				if math.Abs(dscore-expectedDS) > 0.01 {
+					t.Errorf("DistanceScore(%.0f) = %.1f, want %.1f", testDist, dscore, expectedDS)
 				}
 			})
 		}

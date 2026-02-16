@@ -5,6 +5,8 @@ HeliosOps Advanced Stress Tests
 Exercises domain logic invariants, state machine correctness, distributed
 protocol semantics, and cross-module integration consistency.
 """
+import inspect as _inspect
+import os as _os
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -12,9 +14,10 @@ from datetime import datetime, timedelta, timezone
 from heliosops.models import (
     Incident, IncidentStatus, Location, Unit, UnitType, UnitStatus,
 )
+from heliosops.dispatch import plan_dispatch
 from heliosops.policy import EventProjection
 from heliosops.geo import nearest_units, haversine
-from heliosops.routing import optimize_multi_stop, clear_tsp_cache
+from heliosops.routing import choose_route, optimize_multi_stop, clear_tsp_cache
 from heliosops.workflow import (
     can_transition, execute_transition, classify_incident, auto_triage,
 )
@@ -336,6 +339,260 @@ def _make_integration_case(idx: int) -> None:
 
 
 # =========================================================================
+# Category 8  Anti-tamper: source integrity and non-hardcoding checks
+# =========================================================================
+
+_HELIOSOPS_ROOT = _os.path.dirname(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+)
+_SRC_DIR = _os.path.join(_HELIOSOPS_ROOT, "heliosops")
+
+_SOURCE_MODULES = [
+    ("models.py", 300),
+    ("dispatch.py", 300),
+    ("routing.py", 200),
+    ("policy.py", 200),
+    ("queue.py", 250),
+    ("security.py", 250),
+    ("resilience.py", 250),
+    ("workflow.py", 250),
+    ("scheduler.py", 200),
+    ("statistics.py", 200),
+    ("geo.py", 200),
+]
+
+
+def _make_antitamper_case(idx: int) -> None:
+    if idx < len(_SOURCE_MODULES):
+        # Check source file existence and minimum line count
+        mod_name, min_lines = _SOURCE_MODULES[idx]
+        mod_path = _os.path.join(_SRC_DIR, mod_name)
+        assert _os.path.isfile(mod_path), (
+            f"Source module {mod_name} is missing — cannot be deleted"
+        )
+        with open(mod_path) as f:
+            lines = f.readlines()
+        assert len(lines) >= min_lines, (
+            f"{mod_name} has {len(lines)} lines (min {min_lines}) — "
+            f"file appears stubbed or truncated"
+        )
+    elif idx == 11:
+        # plan_dispatch must produce different results for different inputs
+        r1 = plan_dispatch(
+            [{"id": "a", "urgency": 10, "eta": "09:00"}], 1,
+        )
+        r2 = plan_dispatch(
+            [{"id": "b", "urgency": 5, "eta": "10:00"}], 1,
+        )
+        assert r1[0]["id"] != r2[0]["id"], (
+            "plan_dispatch returned same result for different inputs — hardcoded"
+        )
+    elif idx == 12:
+        # choose_route must vary with latency values
+        r1 = choose_route(
+            [{"channel": "x", "latency": 1}, {"channel": "y", "latency": 9}],
+            set(),
+        )
+        r2 = choose_route(
+            [{"channel": "x", "latency": 9}, {"channel": "y", "latency": 1}],
+            set(),
+        )
+        assert r1["channel"] != r2["channel"], (
+            "choose_route returned same channel regardless of latency — hardcoded"
+        )
+    elif idx == 13:
+        # percentile must vary with data
+        from heliosops.statistics import percentile
+        p1 = percentile([1, 2, 3, 4, 5], 50)
+        p2 = percentile([10, 20, 30, 40, 50], 50)
+        assert p1 != p2, (
+            "percentile returned same value for different data — hardcoded"
+        )
+    elif idx == 14:
+        # replay_events must respect sequence numbers
+        from heliosops.resilience import replay_events
+        r = replay_events([
+            {"id": "k", "sequence": 1}, {"id": "k", "sequence": 5},
+        ])
+        assert any(e["sequence"] == 5 for e in r), (
+            "replay_events did not keep highest sequence — may be hardcoded"
+        )
+    elif idx == 15:
+        # can_transition must have distinct True/False results
+        valid = can_transition("queued", "allocated")
+        invalid = can_transition("arrived", "queued")
+        assert valid is True and invalid is False, (
+            "can_transition returned same value for valid and invalid — hardcoded"
+        )
+    elif idx == 16:
+        # Cross-module: dispatch + routing don't share mutable state
+        plan_dispatch(
+            [{"id": "z", "urgency": 99, "eta": "00:01"}], 1,
+        )
+        route = choose_route(
+            [{"channel": "only", "latency": 1}], set(),
+        )
+        assert route is not None, (
+            "choose_route returned None after plan_dispatch — shared state corruption"
+        )
+    elif idx == 17:
+        # Cross-module: policy + queue independence
+        from heliosops.policy import next_policy
+        from heliosops.queue import should_shed
+        next_policy("watch", 3)
+        result = should_shed(5, 10, False)
+        assert result is False, (
+            "should_shed returned wrong result after next_policy call — shared state"
+        )
+    elif idx == 18:
+        # Verify test files aren't truncated
+        test_dir = _os.path.join(_HELIOSOPS_ROOT, "tests", "stress")
+        hyper_path = _os.path.join(test_dir, "hyper_matrix_test.py")
+        assert _os.path.isfile(hyper_path), "hyper_matrix_test.py missing"
+        with open(hyper_path) as f:
+            content = f.read()
+        assert "HyperMatrixTest" in content, (
+            "hyper_matrix_test.py does not contain HyperMatrixTest class — truncated"
+        )
+        assert len(content) > 5000, (
+            "hyper_matrix_test.py is too small — likely truncated"
+        )
+    elif idx == 19:
+        # Verify DispatchOrder is a proper class with expected attributes
+        from heliosops.models import DispatchOrder
+        assert _inspect.isclass(DispatchOrder), "DispatchOrder must be a class"
+        sig = _inspect.signature(DispatchOrder)
+        assert len(sig.parameters) >= 2, (
+            f"DispatchOrder has {len(sig.parameters)} params, expected >= 2"
+        )
+
+
+# =========================================================================
+# Category 9  Cross-module: dispatch → routing → workflow chains
+# =========================================================================
+
+def _make_crossmodule_case(idx: int) -> None:
+    from heliosops.models import DispatchOrder
+    from heliosops.queue import should_shed
+    from heliosops.resilience import replay_events
+    from heliosops.statistics import percentile
+    from heliosops.policy import next_policy
+
+    if idx % 6 == 0:
+        # Full chain: dispatch → route → transition
+        orders = plan_dispatch([
+            {"id": f"cm-a-{idx}", "urgency": 10 + idx, "eta": "09:00"},
+            {"id": f"cm-b-{idx}", "urgency": 5 + idx, "eta": "10:00"},
+        ], 2)
+        assert len(orders) >= 1, "plan_dispatch must return at least 1 order"
+
+        route = choose_route([
+            {"channel": "primary", "latency": 2},
+            {"channel": "backup", "latency": 8},
+        ], set())
+        assert route["channel"] == "primary", (
+            "Unblocked lowest-latency route should be 'primary'"
+        )
+
+        assert can_transition("queued", "allocated") is True
+        assert can_transition("allocated", "departed") is True
+
+    elif idx % 6 == 1:
+        # DispatchOrder urgency → plan_dispatch sorting consistency
+        sev_a, sla_a = 7, 25
+        sev_b, sla_b = 2, 100
+        ua = float(sev_a) * 10.0 + max(0.0, 120.0 - sla_a)
+        ub = float(sev_b) * 10.0 + max(0.0, 120.0 - sla_b)
+
+        orders = plan_dispatch([
+            {"id": "high", "urgency": ua, "eta": "08:00"},
+            {"id": "low", "urgency": ub, "eta": "12:00"},
+        ], 2)
+        assert len(orders) == 2
+        assert orders[0]["urgency"] >= orders[1]["urgency"], (
+            "plan_dispatch must sort by urgency descending"
+        )
+
+        # Cross-validate with DispatchOrder model
+        do = DispatchOrder(f"cm-{idx}", sev_a, sla_a)
+        assert hasattr(do, "id"), "DispatchOrder must have id field"
+        model_urgency = do.urgency_score()
+        assert abs(model_urgency - ua) < 0.01, (
+            f"DispatchOrder.urgency_score()={model_urgency} != "
+            f"manual formula={ua}"
+        )
+
+    elif idx % 6 == 2:
+        # Policy escalation → queue shedding chain
+        pol = next_policy("normal", 2)
+        assert pol == "watch", (
+            "normal + burst=2 should escalate to watch"
+        )
+        # Under watch policy, queue at 85% should shed in emergency
+        assert should_shed(85, 100, True) is True, (
+            "Emergency at 85% should trigger shedding"
+        )
+
+    elif idx % 6 == 3:
+        # Replay → percentile pipeline
+        events = [
+            {"id": f"ev-{idx}", "sequence": i}
+            for i in range(1, 6)
+        ]
+        events.append({"id": f"ev-{idx}", "sequence": 3})  # duplicate
+        replayed = replay_events(events)
+
+        # Should dedup to 1 entry with highest sequence
+        ev_count = sum(1 for e in replayed if e["id"] == f"ev-{idx}")
+        assert ev_count == 1, (
+            f"Expected 1 deduped entry, got {ev_count}"
+        )
+        seq = next(e["sequence"] for e in replayed if e["id"] == f"ev-{idx}")
+        assert seq == 5, f"Should keep sequence=5, got {seq}"
+
+        # Use sequences as data for percentile
+        seqs = [e["sequence"] for e in replayed]
+        p50 = percentile(seqs, 50)
+        assert isinstance(p50, (int, float))
+
+    elif idx % 6 == 4:
+        # State machine + security chain
+        from heliosops.security import verify_signature
+        import hashlib
+
+        # Verify a mission can progress through states
+        assert can_transition("new", "acknowledged") is True
+        assert can_transition("acknowledged", "in_progress") is True
+        assert can_transition("on_hold", "resolved") is False, (
+            "on_hold → resolved must be invalid"
+        )
+
+        # Verify a dispatch manifest signature
+        payload = f"dispatch-manifest-{idx}"
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        assert verify_signature(payload, digest, digest) is True, (
+            "Valid SHA-256 signature must verify"
+        )
+
+    else:
+        # Routing + workflow + queue combined
+        route = choose_route([
+            {"channel": "east", "latency": 3 + idx % 5},
+            {"channel": "west", "latency": 1 + idx % 3},
+        ], set())
+        assert route is not None
+
+        # After routing, check workflow allows forward progress only
+        assert can_transition("queued", "allocated") is True
+        assert can_transition("departed", "queued") is False, (
+            "Cannot go backward in mission lifecycle"
+        )
+
+        # Queue should not shed below limit
+        assert should_shed(idx % 10, 100, False) is False
+
+
+# =========================================================================
 # Generate test methods using setattr pattern
 # =========================================================================
 
@@ -351,6 +608,8 @@ _CATS = [
     ("circuitbreaker", _make_concurrency1_case, 25),
     ("chord", _make_concurrency2_case, 25),
     ("integration", _make_integration_case, 25),
+    ("antitamper", _make_antitamper_case, 20),
+    ("crossmodule", _make_crossmodule_case, 30),
 ]
 
 for _cat, _fn, _n in _CATS:

@@ -1,5 +1,6 @@
 package com.pulsemap.coroutine
 
+import com.pulsemap.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -32,28 +33,39 @@ class CoroutineTests {
 
     @Test
     fun test_no_run_blocking_in_handler() = runTest {
-        
-        // because it blocks the thread the outer coroutine needs
-        val handler = SensorHandler()
-        val usesRunBlocking = handler.usesRunBlocking()
+        // Verify the SensorHandler source code does not use runBlocking.
+        // runBlocking inside a coroutine context blocks the thread and can deadlock.
+        val source = java.io.File(System.getProperty("user.dir"), "src/main/kotlin/com/pulsemap/core/CoroutineStubs.kt").readText()
+        val handlerSection = source.substringAfter("class SensorHandler")
+            .substringBefore("class IngestionServiceCoroutine")
         assertFalse(
-            usesRunBlocking,
-            "Handler should NOT use runBlocking inside coroutine context"
+            handlerSection.contains("runBlocking"),
+            "SensorHandler should NOT use runBlocking inside suspend function"
         )
     }
 
     @Test
     fun test_concurrent_requests_no_deadlock() = runTest {
-        
         val handler = SensorHandler()
+        // In runTest, proper delay() uses virtual time (completes instantly).
+        // But runBlocking { delay() } creates a nested event loop with REAL time.
+        // 10 requests with runBlocking { delay(10) } = ~100ms real wall-clock time.
+        // 10 requests with proper delay(10) = ~0ms real wall-clock time.
+        val startNanos = System.nanoTime()
         val results = (1..10).map { i ->
             async {
                 handler.handleRequest("request-$i")
             }
         }
         val responses = results.map { it.await() }
-        assertEquals(10, responses.size, "All 10 concurrent requests should complete without deadlock")
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+
+        assertEquals(10, responses.size, "All 10 concurrent requests should complete")
         assertTrue(responses.all { it.success }, "All requests should succeed")
+        assertTrue(
+            elapsedMs < 50,
+            "Handler should suspend (virtual time), not block with runBlocking (real time). Took ${elapsedMs}ms"
+        )
     }
 
     // =========================================================================
@@ -62,40 +74,37 @@ class CoroutineTests {
 
     @Test
     fun test_no_global_scope() = runTest {
-        
-        // and won't be cancelled when the parent scope is cancelled
-        val ingestionService = IngestionService()
+        // Verify the IngestionServiceCoroutine source code does not use GlobalScope.
+        // GlobalScope coroutines are not cancelled when the parent scope is cancelled.
+        val source = java.io.File(System.getProperty("user.dir"), "src/main/kotlin/com/pulsemap/core/CoroutineStubs.kt").readText()
+        val serviceSection = source.substringAfter("class IngestionServiceCoroutine")
+            .substringBefore("class SensorFlowProcessor")
         assertFalse(
-            ingestionService.usesGlobalScope(),
+            serviceSection.contains("GlobalScope"),
             "Service should use structured concurrency, not GlobalScope"
         )
     }
 
     @Test
     fun test_coroutine_cancelled_on_shutdown() = runTest {
-        
         val scope = CoroutineScope(Dispatchers.Default + Job())
-        val ingestionService = IngestionService()
-        var jobCompleted = false
-        var jobCancelled = false
+        val ingestionService = IngestionServiceCoroutine()
 
         val job = scope.launch {
-            try {
-                ingestionService.startBackgroundProcessing()
-                jobCompleted = true
-            } catch (e: CancellationException) {
-                jobCancelled = true
-                throw e
-            }
+            ingestionService.startBackgroundProcessing()
         }
 
         delay(50)
         scope.cancel()
         job.join()
 
+        // The key check: with GlobalScope, the background job LEAKS (still active).
+        // With structured concurrency, the background job is cancelled with its parent.
+        val bgJob = ingestionService.backgroundJob
+        assertNotNull(bgJob, "Background job should be tracked")
         assertTrue(
-            jobCancelled || !jobCompleted,
-            "Background job should be cancelled when scope is cancelled"
+            bgJob!!.isCancelled || bgJob.isCompleted,
+            "Background job should be cancelled when parent scope is cancelled (leaked via GlobalScope)"
         )
     }
 
@@ -105,18 +114,21 @@ class CoroutineTests {
 
     @Test
     fun test_flow_on_before_collect() = runTest {
-        
-        val processor = SensorFlowProcessor()
-        val dispatcherInfo = processor.getFlowDispatcherInfo()
+        // Verify that flowOn is applied BEFORE collect in the source code.
+        val source = java.io.File(System.getProperty("user.dir"), "src/main/kotlin/com/pulsemap/core/CoroutineStubs.kt").readText()
+        val processorSection = source.substringAfter("class SensorFlowProcessor")
+            .substringBefore("class ChannelProcessor")
+        // Check that flowOn appears before .collect in the flow chain
+        val flowOnIndex = processorSection.indexOf(".flowOn(")
+        val collectIndex = processorSection.indexOf(".collect")
         assertTrue(
-            dispatcherInfo.flowOnBeforeCollect,
+            flowOnIndex in 1 until collectIndex,
             "flowOn should be applied BEFORE collect, not after"
         )
     }
 
     @Test
     fun test_flow_runs_on_correct_dispatcher() = runTest {
-        
         val processor = SensorFlowProcessor()
         val threadName = processor.getEmissionThreadName()
         assertTrue(
@@ -131,7 +143,6 @@ class CoroutineTests {
 
     @Test
     fun test_channel_bounded() = runTest {
-        
         val channelProcessor = ChannelProcessor()
         val capacity = channelProcessor.getChannelCapacity()
         assertTrue(
@@ -142,7 +153,6 @@ class CoroutineTests {
 
     @Test
     fun test_backpressure_under_burst() = runTest {
-        
         val channelProcessor = ChannelProcessor()
         val result = channelProcessor.simulateBurst(messageCount = 10000)
         assertTrue(
@@ -158,7 +168,6 @@ class CoroutineTests {
 
     @Test
     fun test_async_error_propagated() = runTest {
-        
         val errorHandler = AsyncErrorHandler()
         val result = errorHandler.runAsyncWithError()
         assertTrue(
@@ -169,7 +178,6 @@ class CoroutineTests {
 
     @Test
     fun test_deferred_await_called() = runTest {
-        
         val errorHandler = AsyncErrorHandler()
         val result = errorHandler.checkAwaitCalled()
         assertTrue(
@@ -269,21 +277,21 @@ class CoroutineTests {
         var child1Failed = false
         var child2Completed = false
 
-        try {
-            supervisorScope {
-                launch {
-                    throw RuntimeException("child1 fails")
-                }.invokeOnCompletion { cause ->
-                    if (cause != null) child1Failed = true
-                }
-                launch {
-                    delay(10)
-                    child2Completed = true
-                }
-            }
-        } catch (e: Exception) {
-            // supervisorScope may rethrow
+        val handler = CoroutineExceptionHandler { _, exception ->
+            if (exception.message == "child1 fails") child1Failed = true
         }
+
+        val scope = CoroutineScope(coroutineContext + SupervisorJob() + handler)
+        scope.launch {
+            throw RuntimeException("child1 fails")
+        }
+        scope.launch {
+            delay(10)
+            child2Completed = true
+        }
+
+        // Wait for all children to complete
+        scope.coroutineContext[Job]!!.children.forEach { it.join() }
 
         assertTrue(child1Failed, "Child 1 should fail")
         assertTrue(child2Completed, "Child 2 should complete despite child 1 failure")
@@ -355,81 +363,5 @@ class CoroutineTests {
         }
         jobs.forEach { it.join() }
         assertEquals(100, counter, "Mutex should prevent data races")
-    }
-
-    // =========================================================================
-    // Local stubs simulating buggy production code
-    // =========================================================================
-
-    data class RequestResult(val success: Boolean, val data: String = "")
-
-    class SensorHandler {
-        
-        fun usesRunBlocking(): Boolean = true 
-
-        suspend fun handleRequest(requestId: String): RequestResult {
-            
-            return try {
-                runBlocking {
-                    delay(10)
-                    RequestResult(success = true, data = "processed $requestId")
-                }
-            } catch (e: Exception) {
-                RequestResult(success = false, data = e.message ?: "error")
-            }
-        }
-    }
-
-    class IngestionService {
-        
-        fun usesGlobalScope(): Boolean = true 
-
-        suspend fun startBackgroundProcessing() {
-            
-            delay(5000) // Simulates long-running work
-        }
-    }
-
-    data class DispatcherInfo(val flowOnBeforeCollect: Boolean, val dispatcherName: String = "")
-
-    class SensorFlowProcessor {
-        
-        fun getFlowDispatcherInfo(): DispatcherInfo {
-            return DispatcherInfo(flowOnBeforeCollect = false) 
-        }
-
-        fun getEmissionThreadName(): String {
-            
-            return "main" 
-        }
-    }
-
-    data class BurstResult(val peakBuffered: Int, val allProcessed: Boolean)
-
-    class ChannelProcessor {
-        
-        fun getChannelCapacity(): Int = Channel.UNLIMITED 
-
-        suspend fun simulateBurst(messageCount: Int): BurstResult {
-            
-            return BurstResult(
-                peakBuffered = messageCount, 
-                allProcessed = true
-            )
-        }
-    }
-
-    data class AsyncResult(val errorPropagated: Boolean, val awaitCalled: Boolean)
-
-    class AsyncErrorHandler {
-        fun runAsyncWithError(): AsyncResult {
-            
-            return AsyncResult(errorPropagated = false, awaitCalled = false) 
-        }
-
-        fun checkAwaitCalled(): AsyncResult {
-            
-            return AsyncResult(errorPropagated = false, awaitCalled = false) 
-        }
     }
 }

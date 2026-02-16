@@ -4,6 +4,7 @@ version = "1.0"
 name = "cloudvault"
 description = "Debug a Go cloud storage and file sync service"
 difficulty = "medium"
+tier = "senior"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "go"

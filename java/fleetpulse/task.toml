@@ -2,14 +2,15 @@ version = "1.0"
 
 [metadata]
 name = "fleetpulse"
-description = "Debug a Java Spring Boot fleet management platform with microservices"
+description = "Fix ~66 bugs in a Java Spring Boot fleet management platform with 10 microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "java", "spring-boot", "microservices", "concurrency"]
 language = "java"
 
 [agent]
-timeout_sec = 28800.0
+timeout_sec = 7200.0
 
 [verifier]
 timeout_sec = 1800.0

@@ -1,20 +1,19 @@
 Fix production defects in IronFleet by editing source code only.
 
-IronFleet is an Apex-Principal Go environment and **tests** covering allocation/routing correctness, replay recovery, policy-security invariants, and cross-service integration.
+IronFleet is an Apex-Principal Go environment with **9,491 tests** covering allocation/routing correctness, replay recovery, policy-security invariants, and cross-service integration.
 
 ## Architecture
 
 | Layer | Path | Description |
-
-## Known Issues
-
-Tests are failing in several areas. Previous maintainer noted problems with async operations and data handling.
-
 |-------|------|-------------|
 | Core modules | `internal/*/` | 8 modules: allocator, routing, resilience, policy, queue, security, statistics, workflow |
 | Models | `pkg/models/` | DispatchOrder, VesselManifest, severity constants |
 | Services | `services/*/` | 8 service modules: gateway, audit, analytics, notifications, policy, resilience, routing, security |
 | Contracts | `shared/contracts/` | Service definitions, topological ordering, URL resolution |
+
+## Known Issues
+
+Tests are failing in several areas. Previous maintainer noted problems with async operations and data handling.
 
 ## Getting Started
 
@@ -35,7 +34,8 @@ No Docker or external services required.
 | Service tests (8 files x 4) | 32 |
 | Hyper matrix (subtests) | 7,001 |
 | Service mesh matrix (subtests) | 2,168 |
-| **Total** | **9,213** |
+| Advanced bugs (subtests + standalone) | 278 |
+| **Total** | **9,491** |
 
 ## Reward Tiers (10-threshold, Apex)
 
@@ -50,7 +50,8 @@ No Docker or external services required.
 | >= 0.52 | 0.11 |
 | >= 0.36 | 0.05 |
 | >= 0.22 | 0.015 |
-| < 0.22 | 0.0 |
+| >= 0.10 | 0.0 |
+| < 0.10 | 0.0 |
 
 ## Constraints
 

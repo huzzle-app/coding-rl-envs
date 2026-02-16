@@ -13,6 +13,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -101,6 +103,20 @@ public class VersionServiceTest {
 
         assertEquals(0, nullInstances.get(),
             "No thread should see a null or partially constructed instance");
+    }
+
+    @Test
+    void test_dcl_instance_is_volatile() throws Exception {
+        // A2: VersionService.instance must be volatile for safe double-checked locking.
+        // Without volatile, JMM allows reordering: another thread may see non-null
+        // reference to a partially constructed object.
+        String source = new String(Files.readAllBytes(
+            Paths.get("src/main/java/com/docuvault/service/VersionService.java")));
+        String code = source.replaceAll("/\\*[\\s\\S]*?\\*/", "").replaceAll("//[^\n]*", "");
+
+        assertTrue(code.contains("volatile") && code.contains("VersionService instance"),
+            "VersionService.instance field must be declared volatile for safe " +
+            "double-checked locking. Without volatile, partial construction is visible to other threads.");
     }
 
     // Tests for BUG B1: Mutable HashMap key

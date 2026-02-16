@@ -7,6 +7,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Vehicle entity representing a fleet vehicle.
+ *
+ * Bugs: E2, B6, K2
+ * Categories: JPA/Persistence, Memory/Data Structures, Templates
+ */
 @Entity
 @Table(name = "vehicles")
 public class Vehicle extends BaseEntity {
@@ -47,20 +53,17 @@ public class Vehicle extends BaseEntity {
     @Column(name = "last_maintenance")
     private LocalDateTime lastMaintenance;
 
-    
-    // Accessing maintenanceRecords triggers separate query per vehicle
-    // Fix: Add @EntityGraph or JPQL with JOIN FETCH in repository
+    // Bug E2: Accessing maintenanceRecords triggers N+1 query problem.
+    // Category: JPA/Persistence
     @OneToMany(mappedBy = "vehicle", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
     private List<MaintenanceRecord> maintenanceRecords = new ArrayList<>();
 
-    
     @OneToMany(fetch = FetchType.LAZY)
     @JoinColumn(name = "vehicle_id")
     private List<TrackingEvent> recentEvents = new ArrayList<>();
 
-    
-    // After mutation, HashMap lookups fail
-    // Fix: Use only id (immutable after persist) for equals/hashCode
+    // Bug B6: equals/hashCode based on mutable field (licensePlate).
+    // Category: Memory/Data Structures
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

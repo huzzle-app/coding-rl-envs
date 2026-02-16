@@ -44,27 +44,26 @@ public class ReportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task test_dbcontext_disposed_after_request()
+    public void test_dbcontext_disposed_after_request()
     {
-        
-        var patient = new Patient { Name = "Report", Email = "r@t.com" };
-        _context.Patients.Add(patient);
-        await _context.SaveChangesAsync();
-
-        var report = await _service.GeneratePatientReportAsync(patient.Id);
-        report.PatientName.Should().Be("Report");
+        // ReportService should not cache the DbContext in a field — it leaks across scopes
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "ReportService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().NotContain("_cachedContext",
+            "caching DbContext in a field leaks a scoped resource; use the injected _context directly");
     }
 
     [Fact]
-    public async Task test_no_connection_leak()
+    public void test_no_connection_leak()
     {
-        
-        var patient = new Patient { Name = "Leak", Email = "l@t.com" };
-        _context.Patients.Add(patient);
-        await _context.SaveChangesAsync();
-
-        var report = await _service.GeneratePatientReportAsync(patient.Id);
-        report.TotalAppointments.Should().Be(0);
+        // ReportService should not store extra references to DbContext
+        var fields = typeof(ReportService).GetFields(
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var contextFields = fields.Where(f =>
+            f.FieldType == typeof(HealthLinkDbContext) || f.FieldType == typeof(HealthLinkDbContext?));
+        contextFields.Should().HaveCount(1,
+            "ReportService should have exactly one DbContext field; extra cached references leak scoped resources");
     }
 
     [Fact]

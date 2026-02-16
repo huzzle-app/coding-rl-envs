@@ -152,7 +152,7 @@ TaskForge is a Rails 7 API-only application with the following components:
 
 ## Success Criteria
 
-- All 125+ tests pass
+- All 128 tests pass
 - No N+1 queries (use Bullet gem)
 - No SQL injection vulnerabilities
 - No timing attacks

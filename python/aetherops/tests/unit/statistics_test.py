@@ -1,6 +1,14 @@
 import unittest
 
-from aetherops.statistics import percentile, rolling_sla, trimmed_mean
+from aetherops.statistics import (
+    exponential_decay_mean,
+    generate_heatmap,
+    median,
+    percentile,
+    rolling_sla,
+    trimmed_mean,
+    variance,
+)
 
 
 class StatisticsTest(unittest.TestCase):
@@ -16,6 +24,26 @@ class StatisticsTest(unittest.TestCase):
 
     def test_rolling_sla(self) -> None:
         self.assertEqual(rolling_sla([90, 100, 150], 120), 0.6667)
+
+
+class StatisticsBugDetectionTest(unittest.TestCase):
+    """Tests that detect specific bugs in statistics.py."""
+
+    def test_variance_uses_bessel_correction(self) -> None:
+        result = variance([2.0, 4.0])
+        self.assertAlmostEqual(result, 2.0, places=3)
+
+    def test_median_even_length_averages_middle(self) -> None:
+        result = median([1.0, 2.0, 3.0, 4.0])
+        self.assertAlmostEqual(result, 2.5, places=3)
+
+    def test_generate_heatmap_fills_zero(self) -> None:
+        grid = generate_heatmap(2, 2, [1.0, 2.0, 3.0])
+        self.assertEqual(grid[1][1], 0.0)
+
+    def test_exponential_decay_weights_recent(self) -> None:
+        result = exponential_decay_mean([1.0, 1.0, 1.0, 1.0, 100.0], half_life=1)
+        self.assertGreater(result, 50.0)
 
 
 if __name__ == "__main__":

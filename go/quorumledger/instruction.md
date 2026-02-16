@@ -16,7 +16,7 @@ Review failing tests, trace failures to source modules in `internal/`, `pkg/mode
 
 ## Success Criteria
 
-- All 7,tests pass (`go test -race -v ./...`).
+- All 7,638 tests pass (`go test -race -v ./...`).
 - Deterministic consensus, settlement, replay, and policy behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
 

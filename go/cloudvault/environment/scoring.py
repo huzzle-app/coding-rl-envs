@@ -348,6 +348,12 @@ Examples:
         metavar="MODE",
         help="Enable training mode with dense rewards. Modes: linear, sublinear, smooth",
     )
+    parser.add_argument(
+        "--prev-passed",
+        type=int,
+        default=None,
+        help="Previously passing test count for incremental reward calculation",
+    )
     args = parser.parse_args()
 
     result = calculate_reward(
@@ -358,6 +364,10 @@ Examples:
         enable_solution_bonus=not args.no_bonus,
         training_mode=args.training_mode,
     )
+
+    if args.prev_passed is not None:
+        result["prev_passed"] = args.prev_passed
+        result["delta"] = args.passed - args.prev_passed
 
     if args.json:
         print(json.dumps(result, indent=2))

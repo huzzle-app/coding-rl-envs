@@ -4,6 +4,7 @@ version = "1.0"
 name = "atlasdispatch"
 description = "Debug a Go hyper-principal dispatch platform"
 difficulty = "hard"
+tier = "hyper-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "go"

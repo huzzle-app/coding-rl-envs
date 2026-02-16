@@ -26,16 +26,8 @@ public:
     Replicator(const std::string& host, uint16_t port);
     ~Replicator();
 
-    
-    // then accesses event.key for logging. After std::move, the string is
-    // in a valid-but-unspecified state (likely empty).
-    // FIX: Log before the move, or use a const reference to the queued copy
     void enqueue(ReplicationEvent event);
 
-    
-    // sequence_counter_ is int64_t and wraps around at INT64_MAX.
-    // Signed integer overflow is undefined behavior in C++.
-    // FIX: Use uint64_t for the counter, or check for overflow before increment
     uint64_t next_sequence();
 
     void start();
@@ -55,7 +47,6 @@ private:
     mutable std::mutex queue_mutex_;
     std::queue<ReplicationEvent> event_queue_;
 
-    
     int64_t sequence_counter_ = 0;
 
     void run_loop();

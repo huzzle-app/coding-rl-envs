@@ -4,6 +4,7 @@ version = "1.0"
 name = "pulsemap"
 description = "Debug a Kotlin Ktor geospatial analytics platform"
 difficulty = "medium"
+tier = "senior"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "kotlin"

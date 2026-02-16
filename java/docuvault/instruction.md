@@ -1,11 +1,13 @@
 # DocuVault - Enterprise Document Management System
 
- in a Java Spring Boot application for document management and collaboration.
+Fix 25 bugs across 7 categories in a Java Spring Boot application for document management and collaboration.
 
 ## Overview
 
-**Framework**: Spring Boot 3.2, Spring Data JPA
+**Language**: Java 21
+**Framework**: Spring Boot 3.2, Spring Data JPA, Spring Security
 **Infrastructure**: PostgreSQL 16, Redis 7
+**Tests**: 163 tests (JUnit 5, Spring Boot Test)
 
 ## Bug Categories
 
@@ -22,7 +24,6 @@
 ## Getting Started
 
 ```bash
-cd /Users/amit/projects/terminal-bench-envs/java/docuvault
 docker compose up -d
 mvn test
 ```
@@ -44,8 +45,8 @@ Other setup bugs (L2-L4) affect configuration loading, profile activation, and d
 
 ## Success Criteria
 
-- across 7 categories
-- All tests passing
+- Fix all 25 bugs across 7 categories
+- All 163 tests passing
 - No regressions introduced
 - Spring application context starts successfully
 - All security vulnerabilities patched

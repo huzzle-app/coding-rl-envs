@@ -80,7 +80,7 @@ public class OrderTests
         catch { }
 
         Assert.True(attemptCount <= 3, "Should retry up to 3 times");
-        Assert.Equal(1, paymentClient.SuccessfulCharges, "Should only charge once even with retries");
+        Assert.Equal(1, paymentClient.SuccessfulCharges);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public class OrderTests
         await orderService.ProcessPayment("ORDER1", "IDEMPOTENCY-KEY-1");
         await orderService.ProcessPayment("ORDER1", "IDEMPOTENCY-KEY-1"); // Retry with same key
 
-        Assert.Equal(1, orderService.TotalCharges, "Should not double-charge with same idempotency key");
+        Assert.Equal(1, orderService.TotalCharges);
     }
 
     
@@ -120,7 +120,7 @@ public class OrderTests
         await saga.Handle(new PaymentProcessed { OrderId = "O1" });
         await saga.Handle(new OrderShipped { OrderId = "O1" });
 
-        Assert.Equal("Completed", saga.CurrentState, "Saga should reach Completed state");
+        Assert.Equal("Completed", saga.CurrentState);
     }
 
     

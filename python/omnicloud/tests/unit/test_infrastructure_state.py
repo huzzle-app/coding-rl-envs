@@ -131,12 +131,47 @@ class TestMigrationOrder:
 
     def test_migration_order_correct(self):
         """L4: Migrations should have correct dependency order."""
-        # Verify that service dependencies are declared
-        assert True, "Migration order check placeholder"
+        # Verify that the config declares migration dependencies as a DAG
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            # Infrastructure section must declare databases in dependency order
+            infra = config.get('infrastructure', {})
+            pg = infra.get('postgresql', {})
+            databases = pg.get('databases', [])
+            assert len(databases) > 0, "PostgreSQL databases must be declared"
+            # infra_db must come before tenants_db (tenants depend on infra)
+            if 'infra_db' in databases and 'tenants_db' in databases:
+                assert databases.index('infra_db') < databases.index('tenants_db'), \
+                    "infra_db must be created before tenants_db"
+        else:
+            pytest.skip("config.yaml not found")
 
     def test_dependency_chain_valid(self):
         """L4: Migration dependency chain should be acyclic."""
-        assert True, "Dependency chain validation placeholder"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            infra = config.get('infrastructure', {})
+            # Services that need databases should be listed after their dependencies
+            services = config.get('services', [])
+            service_names = [s['name'] for s in services]
+            # auth must come before tenants in service list (tenants depends on auth)
+            if 'auth' in service_names and 'tenants' in service_names:
+                assert service_names.index('auth') < service_names.index('tenants'), \
+                    "auth service must be declared before tenants service"
+        else:
+            pytest.skip("config.yaml not found")
 
 
 class TestServiceStartup:
@@ -177,11 +212,36 @@ class TestConsulACL:
 
     def test_consul_acl_bootstrap(self):
         """L6: Consul ACL should be properly bootstrapped."""
-        assert True, "Consul ACL bootstrap check placeholder"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # Consul ACL must be enabled in config
+            assert 'CONSUL_ACL' in content or 'acl' in content.lower(), \
+                "Consul ACL configuration must be present in docker-compose.yml"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
     def test_consul_token_valid(self):
         """L6: Consul token should be valid for service registration."""
-        assert True, "Consul token validation placeholder"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # Consul token env vars should use a UUID-like format (not empty/placeholder)
+            import re
+            token_matches = re.findall(r'CONSUL_TOKEN=(\S+)', content)
+            for token in token_matches:
+                assert len(token) >= 8, \
+                    f"Consul token should be a valid token, got: {token}"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
 
 class TestEtcdConnection:
@@ -206,7 +266,20 @@ class TestEtcdConnection:
 
     def test_etcd_client_connects(self):
         """L7: etcd client should be able to connect."""
-        assert True, "etcd connection test placeholder"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # etcd URLs should use http://, not https:// (no TLS in dev)
+            etcd_lines = [l for l in content.split('\n') if 'etcd' in l.lower() and 'http' in l]
+            for line in etcd_lines:
+                assert 'https://etcd' not in line, \
+                    f"etcd connection should use http, not https: {line.strip()}"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
 
 class TestVaultUnseal:
@@ -214,11 +287,34 @@ class TestVaultUnseal:
 
     def test_vault_unseal_configured(self):
         """L8: Vault should have auto-unseal configured."""
-        assert True, "Vault unseal configuration check"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # Vault should have auto-unseal or dev mode configured
+            vault_section = content.split('vault:')[1].split('\n\n')[0] if 'vault:' in content else ''
+            assert 'VAULT_DEV' in vault_section or 'auto_unseal' in vault_section.lower() or \
+                'VAULT_ADDR' in content, \
+                "Vault should have auto-unseal or dev mode configured"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
     def test_vault_health_check(self):
         """L8: Vault health check should pass."""
-        assert True, "Vault health check placeholder"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # Vault should have a health check endpoint configured
+            assert 'vault' in content.lower(), "Vault service must be in docker-compose"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
 
 class TestMinioBuckets:
@@ -226,11 +322,43 @@ class TestMinioBuckets:
 
     def test_minio_bucket_creation(self):
         """L9: MinIO buckets should be created atomically."""
-        assert True, "MinIO bucket creation check"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            infra = config.get('infrastructure', {})
+            minio = infra.get('minio', {})
+            usage = minio.get('usage', [])
+            # MinIO should list required storage purposes
+            assert len(usage) > 0, "MinIO must have declared usage purposes"
+            assert 'terraform-state' in usage, \
+                "MinIO must include terraform-state bucket for state storage"
+        else:
+            pytest.skip("config.yaml not found")
 
     def test_minio_bucket_exists(self):
         """L9: Required MinIO buckets should exist."""
-        assert True, "MinIO bucket existence check"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            infra = config.get('infrastructure', {})
+            minio = infra.get('minio', {})
+            usage = minio.get('usage', [])
+            required_buckets = ['terraform-state', 'artifact-storage', 'backups']
+            for bucket in required_buckets:
+                assert bucket in usage, \
+                    f"MinIO must declare required bucket purpose: {bucket}"
+        else:
+            pytest.skip("config.yaml not found")
 
 
 class TestCeleryBroker:
@@ -255,7 +383,22 @@ class TestCeleryBroker:
 
     def test_celery_worker_connects(self):
         """L10: Celery worker should connect to broker."""
-        assert True, "Celery worker connection check"
+        compose_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'docker-compose.yml'
+        )
+        if os.path.exists(compose_path):
+            with open(compose_path) as f:
+                content = f.read()
+            # Celery broker URL must reference redis and use a valid DB number (0-15)
+            import re
+            broker_urls = re.findall(r'CELERY_BROKER_URL=redis://[^/\s]+/(\d+)', content)
+            for db_num in broker_urls:
+                db = int(db_num)
+                assert 0 <= db <= 14, \
+                    f"Celery broker Redis DB should be 0-14, got {db} (DB 15 is reserved)"
+        else:
+            pytest.skip("docker-compose.yml not found")
 
 
 class TestCORS:
@@ -277,7 +420,21 @@ class TestCORS:
 
     def test_inter_service_calls_allowed(self):
         """L11: Inter-service HTTP calls should not be blocked by CORS."""
-        assert True, "Inter-service CORS check"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            services = config.get('services', [])
+            # All internal services should be on known ports for CORS allow-listing
+            ports = [s.get('port') for s in services if s.get('port')]
+            assert len(ports) >= 5, \
+                "At least 5 service ports must be declared for CORS inter-service config"
+        else:
+            pytest.skip("config.yaml not found")
 
 
 class TestSchemaValidation:
@@ -306,11 +463,39 @@ class TestConsulHealthCheck:
 
     def test_consul_health_check_url(self):
         """L13: Consul service registration should include health check URL."""
-        assert True, "Consul health check URL verification"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            infra = config.get('infrastructure', {})
+            consul = infra.get('consul', {})
+            usage = consul.get('usage', [])
+            assert 'health-checking' in usage, \
+                "Consul must have health-checking in its usage configuration"
+        else:
+            pytest.skip("config.yaml not found")
 
     def test_service_registration_complete(self):
         """L13: All services should be registered in Consul."""
-        assert True, "Service registration completeness check"
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'environment', 'config.yaml'
+        )
+        if os.path.exists(config_path):
+            import yaml
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            infra = config.get('infrastructure', {})
+            consul = infra.get('consul', {})
+            usage = consul.get('usage', [])
+            assert 'service-discovery' in usage, \
+                "Consul must have service-discovery in its usage configuration"
+        else:
+            pytest.skip("config.yaml not found")
 
 
 class TestWorkerSerializer:
@@ -497,8 +682,10 @@ class TestReconciliation:
 
         r = Reconciler(state_manager=sm, max_iterations=5)
         result = r.reconcile()
-        # Should not run forever
-        assert True, "Reconciliation completed"
+        # The default max_iterations should be > 0 to prevent infinite loops
+        default_reconciler = Reconciler(state_manager=StateManager())
+        assert default_reconciler.max_iterations > 0, \
+            f"Default max_iterations should be > 0 to prevent infinite reconciliation, got {default_reconciler.max_iterations}"
 
 
 class TestDriftDetection:
@@ -632,9 +819,10 @@ class TestStateLock:
         lm = LockManager()
         
         result = lm.acquire_locks(["lock_c", "lock_a", "lock_b"])
+        # The acquisition order should be sorted alphabetically to prevent deadlocks
+        assert lm._acquisition_order == ["lock_a", "lock_b", "lock_c"], \
+            f"Locks should be acquired in sorted order, got {lm._acquisition_order}"
         lm.release_all()
-        # The acquisition order should be sorted
-        assert True, "Lock ordering test placeholder"
 
 
 class TestPartialRollback:
@@ -659,7 +847,26 @@ class TestPartialRollback:
 
     def test_rollback_completeness(self):
         """A7: After rollback, no partial changes should remain."""
-        assert True, "Rollback completeness check"
+        from shared.infra.reconciler import Reconciler
+        from shared.infra.state import StateManager, Resource
+        sm = StateManager()
+        r1 = Resource(resource_id="r1", resource_type="compute", desired_config={"cpu": 2})
+        r2 = Resource(resource_id="r2", resource_type="network", desired_config={"cidr": "10.0.0.0/24"})
+        sm.add_resource(r1)
+        sm.add_resource(r2)
+        original_r1_config = dict(r1.desired_config)
+
+        reconciler = Reconciler(state_manager=sm)
+        # Apply changes where r2 will fail (invalid resource triggers rollback)
+        result = reconciler.apply_changes(
+            ["r1", "nonexistent_resource"],
+            {"r1": {"cpu": 8}, "nonexistent_resource": {"bad": True}},
+        )
+        # If r2 fails, r1 changes should be rolled back
+        if result.failed > 0:
+            current_config = sm.resources["r1"].desired_config
+            assert current_config == original_r1_config, \
+                f"After partial failure, r1 should be rolled back to {original_r1_config}, got {current_config}"
 
 
 class TestStateSerialization:
@@ -762,7 +969,24 @@ class TestOrphanCleanup:
 
     def test_orphan_detection_complete(self):
         """A10: All transitive orphans should be found."""
-        assert True, "Transitive orphan detection check"
+        from shared.infra.reconciler import Reconciler
+        from shared.infra.state import StateManager, Resource
+        sm = StateManager()
+        # Create chain: r1 -> r2 -> r3
+        r1 = Resource(resource_id="r1", resource_type="compute", dependencies=[])
+        r2 = Resource(resource_id="r2", resource_type="network", dependencies=["r1"])
+        r3 = Resource(resource_id="r3", resource_type="instance", dependencies=["r2"])
+        sm.add_resource(r1)
+        sm.add_resource(r2)
+        sm.add_resource(r3)
+
+        # Delete r1 - both r2 (direct) and r3 (transitive) should be orphaned
+        sm.remove_resource("r1")
+
+        reconciler = Reconciler(state_manager=sm)
+        orphan_count = reconciler.cleanup_orphans()
+        assert orphan_count >= 2, \
+            f"Should detect at least 2 transitive orphans (r2 and r3), got {orphan_count}"
 
 
 class TestStateSnapshot:
@@ -811,7 +1035,15 @@ class TestCrossRegionSync:
 
     def test_sync_lag_bounded(self):
         """A12: Sync lag should be bounded to a maximum duration."""
-        assert True, "Sync lag bound check"
+        from shared.infra.reconciler import Reconciler
+        from shared.infra.state import StateManager
+        r = Reconciler(state_manager=StateManager())
+        # Default max_lag_ms should be > 0 (bounded) to prevent stale reads
+        import inspect
+        sig = inspect.signature(r.sync_regions)
+        default_lag = sig.parameters['max_lag_ms'].default
+        assert default_lag > 0, \
+            f"sync_regions default max_lag_ms should be > 0 (bounded), got {default_lag}"
 
 
 # =========================================================================

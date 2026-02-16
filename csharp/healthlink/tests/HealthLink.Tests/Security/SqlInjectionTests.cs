@@ -22,25 +22,30 @@ public class SqlInjectionTests : IDisposable
     }
 
     [Fact]
-    public async Task test_sql_injection_prevented()
+    public void test_sql_injection_prevented()
     {
-        
-        var maliciousValue = "'; DROP TABLE \"Patients\"; --";
-        var act = () => _repository.ExecuteCustomQueryAsync("Name", maliciousValue);
-        // Should use parameterized queries, not string concatenation
-        await act.Should().NotThrowAsync<Microsoft.EntityFrameworkCore.DbUpdateException>();
+        // Verify that ExecuteCustomQueryAsync uses parameterized queries
+        // by checking source code doesn't use ExecuteSqlRawAsync with interpolation
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "PatientRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().NotContain("ExecuteSqlRawAsync($",
+            "should use ExecuteSqlInterpolatedAsync instead of ExecuteSqlRawAsync with interpolation");
     }
 
     [Fact]
-    public async Task test_parameterized_query_used()
+    public void test_parameterized_query_used()
     {
-        
-        _context.Patients.Add(new Patient { Name = "Safe", Email = "safe@test.com" });
-        await _context.SaveChangesAsync();
-
-        var act = () => _repository.ExecuteCustomQueryAsync("Name", "Updated");
-        // ExecuteSqlInterpolated would parameterize automatically
-        await act.Should().NotThrowAsync();
+        // Verify the repository uses ExecuteSqlInterpolated or parameterized queries
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "PatientRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Should use ExecuteSqlInterpolatedAsync or FormattableString-based methods
+        var usesInterpolated = source.Contains("ExecuteSqlInterpolatedAsync") ||
+                              source.Contains("ExecuteSqlAsync") ||
+                              (source.Contains("ExecuteSqlRawAsync") && source.Contains("{0}"));
+        usesInterpolated.Should().BeTrue(
+            "should use parameterized queries to prevent SQL injection");
     }
 
     [Fact]
@@ -54,10 +59,16 @@ public class SqlInjectionTests : IDisposable
     }
 
     [Fact]
-    public async Task test_field_name_validated()
+    public void test_field_name_validated()
     {
-        var act = () => _repository.ExecuteCustomQueryAsync("Name\" = ''; DROP TABLE", "value");
-        // Field name should be validated/parameterized
+        // Verify that ExecuteCustomQueryAsync does not use raw string interpolation
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "PatientRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Field names should not be directly interpolated into SQL strings
+        var hasRawInterpolation = source.Contains("$\"") && source.Contains("ExecuteSqlRaw");
+        hasRawInterpolation.Should().BeFalse(
+            "field names and values should be parameterized, not interpolated into raw SQL");
     }
 
     [Fact]

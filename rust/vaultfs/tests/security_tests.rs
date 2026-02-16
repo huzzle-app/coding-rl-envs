@@ -29,18 +29,38 @@ fn test_api_key_verification_correct() {
 }
 
 /
-/// After fix, timing difference between wrong-first-char and wrong-last-char
-/// must be within a small ratio (not more than 3x).
+/// After fix, the source must use constant-time comparison (ct_eq or similar).
+/// We also do a timing measurement with wide tolerance as a secondary check.
 #[test]
 fn test_api_key_constant_time_comparison() {
-    let expected = "abcdefghijklmnopqrstuvwxyz123456789abcdefghijklmnopqrstuvwxyz";
+    // Primary check: verify the source code uses constant-time comparison
+    let auth_src = include_str!("../src/middleware/auth.rs");
 
-    // Wrong in first character
+    // After fix: verify_api_key must use ct_eq, constant_time_eq, or subtle crate
+    let verify_section = auth_src.split("fn verify_api_key")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = verify_section.find("\npub fn").or(verify_section.find("\nfn"))
+        .unwrap_or(verify_section.len());
+    let verify_body = &verify_section[..next_fn];
+
+    let uses_constant_time = verify_body.contains("ct_eq")
+        || verify_body.contains("constant_time")
+        || verify_body.contains("ConstantTimeEq")
+        || verify_body.contains("subtle::");
+
+    assert!(
+        uses_constant_time,
+        "verify_api_key must use constant-time comparison (ct_eq from subtle crate) (F3). \
+         Found non-constant-time comparison (==) which leaks timing information."
+    );
+
+    // Secondary: timing measurement (wider tolerance to reduce flakiness)
+    let expected = "abcdefghijklmnopqrstuvwxyz123456789abcdefghijklmnopqrstuvwxyz";
     let wrong_first = "Xbcdefghijklmnopqrstuvwxyz123456789abcdefghijklmnopqrstuvwxyz";
-    // Wrong in last character
     let wrong_last = "abcdefghijklmnopqrstuvwxyz123456789abcdefghijklmnopqrstuvwxyX";
 
-    let iterations = 50_000;
+    let iterations = 100_000;
 
     let start = Instant::now();
     for _ in 0..iterations {
@@ -54,12 +74,9 @@ fn test_api_key_constant_time_comparison() {
     }
     let wrong_last_time = start.elapsed();
 
-    // In a constant-time implementation, the ratio should be close to 1.0
-    // We allow up to 3x difference to account for noise.
-    // A buggy early-exit implementation would show >10x for long keys.
     let ratio = wrong_first_time.as_nanos() as f64 / wrong_last_time.as_nanos().max(1) as f64;
     assert!(
-        ratio > 0.3 && ratio < 3.0,
+        ratio > 0.2 && ratio < 5.0,
         "Timing ratio {:.2} suggests non-constant-time comparison (F3). \
          wrong_first={:?}, wrong_last={:?}",
         ratio, wrong_first_time, wrong_last_time
@@ -69,17 +86,44 @@ fn test_api_key_constant_time_comparison() {
 /
 #[test]
 fn test_signature_constant_time_comparison() {
+    // Primary check: verify source uses constant-time comparison
+    let auth_src = include_str!("../src/middleware/auth.rs");
+
+    let verify_section = auth_src.split("fn verify_signature")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = verify_section.find("\npub fn").or(verify_section.find("\nfn"))
+        .unwrap_or(verify_section.len());
+    let verify_body = &verify_section[..next_fn];
+
+    // Must not have early return inside the byte-comparison loop
+    let has_early_return_in_loop = verify_body.contains("if a != b")
+        || verify_body.contains("if *a != *b");
+    assert!(
+        !has_early_return_in_loop,
+        "verify_signature must not early-exit on first mismatch (F3). \
+         Use ct_eq or accumulate XOR differences."
+    );
+
+    let uses_constant_time = verify_body.contains("ct_eq")
+        || verify_body.contains("constant_time")
+        || verify_body.contains("xor")
+        || verify_body.contains("^=");
+    assert!(
+        uses_constant_time,
+        "verify_signature must use constant-time comparison (F3)"
+    );
+
     let expected: Vec<u8> = (0..64).collect();
     let mut wrong_first = expected.clone();
     wrong_first[0] = 255;
     let mut wrong_last = expected.clone();
     wrong_last[63] = 255;
 
-    // Both should return false
     assert!(!auth::verify_signature(&wrong_first, &expected));
     assert!(!auth::verify_signature(&wrong_last, &expected));
 
-    let iterations = 50_000;
+    let iterations = 100_000;
 
     let start = Instant::now();
     for _ in 0..iterations {
@@ -95,7 +139,7 @@ fn test_signature_constant_time_comparison() {
 
     let ratio = t1.as_nanos() as f64 / t2.as_nanos().max(1) as f64;
     assert!(
-        ratio > 0.3 && ratio < 3.0,
+        ratio > 0.2 && ratio < 5.0,
         "Signature comparison timing ratio {:.2} indicates early exit (F3). t1={:?}, t2={:?}",
         ratio, t1, t2
     );
@@ -104,6 +148,25 @@ fn test_signature_constant_time_comparison() {
 /
 #[test]
 fn test_hash_constant_time_comparison() {
+    // Primary check: verify source uses constant-time comparison
+    let auth_src = include_str!("../src/middleware/auth.rs");
+
+    let verify_section = auth_src.split("fn verify_hash")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = verify_section.find("\npub fn").or(verify_section.find("\nfn"))
+        .unwrap_or(verify_section.len());
+    let verify_body = &verify_section[..next_fn];
+
+    // After fix: must not use simple == comparison on hash strings
+    let uses_plain_eq = verify_body.contains("provided_hash == stored_hash")
+        || verify_body.contains("provided == expected");
+    assert!(
+        !uses_plain_eq,
+        "verify_hash must not use plain == comparison (F3). \
+         Use ct_eq from subtle crate for constant-time comparison."
+    );
+
     let stored = "a]cdefghijklmnopqrstuvwxyz0123456789abcdef0123456789abcdef01234567";
     let wrong_first = "Xbcdefghijklmnopqrstuvwxyz0123456789abcdef0123456789abcdef01234567";
     let wrong_last = "a]cdefghijklmnopqrstuvwxyz0123456789abcdef0123456789abcdef0123456X";
@@ -111,7 +174,7 @@ fn test_hash_constant_time_comparison() {
     assert!(!auth::verify_hash(wrong_first, stored));
     assert!(!auth::verify_hash(wrong_last, stored));
 
-    let iterations = 50_000;
+    let iterations = 100_000;
 
     let start = Instant::now();
     for _ in 0..iterations {
@@ -127,7 +190,7 @@ fn test_hash_constant_time_comparison() {
 
     let ratio = t1.as_nanos() as f64 / t2.as_nanos().max(1) as f64;
     assert!(
-        ratio > 0.3 && ratio < 3.0,
+        ratio > 0.2 && ratio < 5.0,
         "Hash comparison timing ratio {:.2} indicates early exit (F3). t1={:?}, t2={:?}",
         ratio, t1, t2
     );
@@ -139,8 +202,30 @@ fn test_hash_constant_time_comparison() {
 /// After fix, dangerous characters must be absent from the generated SQL.
 #[test]
 fn test_search_uses_parameterized_query() {
+    // Primary: verify source uses parameterized queries
+    let search_src = include_str!("../src/repository/search.rs");
+    let build_fn = search_src.split("fn build_search_query")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = build_fn.find("\npub fn").or(build_fn.find("\nfn"))
+        .unwrap_or(build_fn.len());
+    let fn_body = &build_fn[..next_fn];
+
+    // After fix: must use $1/$2 placeholders or .bind(), not format!() with raw user input
+    let uses_format_interpolation = fn_body.contains("format!(")
+        && fn_body.contains("{}");
+    let uses_parameterized = fn_body.contains("$1")
+        || fn_body.contains("$2")
+        || fn_body.contains(".bind(");
+
+    assert!(
+        uses_parameterized || !uses_format_interpolation,
+        "build_search_query must use parameterized placeholders ($1, $2), \
+         not format!() string interpolation (F2)"
+    );
+
+    // Secondary: functional check
     let sql = search::build_search_query("normal_search", "user123");
-    // A parameterized query should use $1, $2 placeholders
     assert!(
         sql.contains("$1") || sql.contains("$2") || sql.contains("?"),
         "Fixed search must use parameterized placeholders, got: {}",
@@ -192,6 +277,19 @@ fn test_sql_injection_sort_column_validated() {
 /
 #[test]
 fn test_path_traversal_rejected() {
+    // Verify the source handles more than just literal ".."
+    let utils_src = include_str!("../src/utils.rs");
+    let validate_fn = utils_src.split("fn validate_path")
+        .nth(1)
+        .unwrap_or("");
+
+    // After fix: must check for absolute paths and encoded traversals
+    assert!(
+        validate_fn.contains("starts_with('/')") || validate_fn.contains("starts_with(\"/\")")
+            || validate_fn.contains("starts_with('\\\\')") || validate_fn.contains("absolute"),
+        "validate_path must reject absolute paths like /etc/passwd (F1)"
+    );
+
     let malicious_paths = vec![
         "../../../etc/passwd",
         "..\\..\\..\\windows\\system32\\config\\sam",
@@ -212,6 +310,20 @@ fn test_path_traversal_rejected() {
 /
 #[test]
 fn test_path_traversal_encoded_rejected() {
+    // Verify the source decodes URL-encoded characters before checking
+    let utils_src = include_str!("../src/utils.rs");
+    let validate_fn = utils_src.split("fn validate_path")
+        .nth(1)
+        .unwrap_or("");
+
+    // After fix: must decode %2e%2e before traversal check
+    assert!(
+        validate_fn.contains("percent") || validate_fn.contains("decode")
+            || validate_fn.contains("%2e") || validate_fn.contains("url")
+            || validate_fn.contains("file://"),
+        "validate_path must handle URL-encoded traversal (%2e%2e) and file:// scheme (F1)"
+    );
+
     let encoded_paths = vec![
         "%2e%2e/%2e%2e/etc/passwd",
         "..%2f..%2f..%2fetc%2fpasswd",

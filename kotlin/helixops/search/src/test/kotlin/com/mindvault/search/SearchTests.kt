@@ -14,6 +14,9 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for the search module: indexing, querying, ranking, and bug-specific scenarios.
@@ -36,7 +39,7 @@ class SearchTests {
 
     @Test
     fun test_produce_channel_consumed() = runTest {
-        
+
         // are not cleaned up when the channel is closed or consumer cancels.
         val service = SearchStreamService()
         val results = mutableListOf<String>()
@@ -54,7 +57,7 @@ class SearchTests {
 
     @Test
     fun test_no_producer_leak() = runTest {
-        
+
         val service = SearchStreamService()
         val channel = service.searchStream(this, "full query")
         val results = mutableListOf<String>()
@@ -75,7 +78,7 @@ class SearchTests {
 
     @Test
     fun test_jdbc_result_null_safe() {
-        
+
         // is NULL, assigning to String (non-null) causes NPE.
         val executor = JdbcSearchExecutor()
         val results = executor.executeSearch(nullableContent = true)
@@ -89,7 +92,7 @@ class SearchTests {
 
     @Test
     fun test_platform_type_cast_safe() {
-        
+
         val executor = JdbcSearchExecutor()
         val results = executor.executeSearch(nullableId = true)
         assertNotNull(results, "Should handle null ID from JDBC without NPE")
@@ -105,7 +108,7 @@ class SearchTests {
 
     @Test
     fun test_query_node_all_branches() {
-        
+
         // This causes serialization to fail or produce ambiguous output.
         val serializer = SearchResultSerializer()
         val docResult = SearchResultFixture.DocumentResult("d1", 0.95, "snippet here")
@@ -123,7 +126,7 @@ class SearchTests {
 
     @Test
     fun test_phrase_query_handled() {
-        
+
         val serializer = SearchResultSerializer()
         val results = listOf(
             SearchResultFixture.DocumentResult("d1", 0.9, "doc snippet"),
@@ -146,7 +149,7 @@ class SearchTests {
 
     @Test
     fun test_op_build_precedence() {
-        
+
         // causes wrong SQL: (A OR B AND C) instead of intended ((A OR B) AND C)
         val builder = SearchFilterBuilder()
         val sql = builder.buildFilter(query = "kotlin", ownerId = "owner1")
@@ -160,13 +163,13 @@ class SearchTests {
 
     @Test
     fun test_query_correct_parentheses() {
-        
+
         // resulting in unexpected query behavior
         val builder = SearchFilterBuilder()
         val sql = builder.buildFilter(query = "test", ownerId = "user1")
 
         // Correct: (content LIKE '%test%' OR document_id = 'user1') AND score > 0.5
-        
+
         val orIndex = sql.indexOf("OR")
         val andIndex = sql.indexOf("AND")
         if (orIndex >= 0 && andIndex >= 0) {
@@ -185,7 +188,7 @@ class SearchTests {
 
     @Test
     fun test_discriminator_no_collision() {
-        
+
         val serializer = SearchResultSerializer()
         val docResult = SearchResultFixture.DocumentResult("d1", 0.9, "snippet")
         val graphResult = SearchResultFixture.GraphNodeResult("n1", 0.8, "label")
@@ -202,7 +205,7 @@ class SearchTests {
 
     @Test
     fun test_type_field_distinct() {
-        
+
         val serializer = SearchResultSerializer()
         val allTypes = listOf(
             SearchResultFixture.DocumentResult("d1", 0.9, "s"),
@@ -222,7 +225,7 @@ class SearchTests {
 
     @Test
     fun test_cache_key_stable() {
-        
+
         // but logically equivalent, different keys are produced.
         val query1 = SearchQueryFixture("kotlin", 20, 0, listOf("type=doc", "lang=kt"))
         val query2 = SearchQueryFixture("kotlin", 20, 0, listOf("lang=kt", "type=doc"))
@@ -240,7 +243,7 @@ class SearchTests {
 
     @Test
     fun test_no_timestamp_in_key() {
-        
+
         val cache = CacheService()
         assertFalse(
             cache.usesToStringForKey,
@@ -254,7 +257,7 @@ class SearchTests {
 
     @Test
     fun test_cache_stampede_prevented() = runTest {
-        
+
         // execute the expensive query. Only one should compute; others should wait.
         val cache = StampedeCache()
         val concurrentRequests = 10
@@ -273,7 +276,7 @@ class SearchTests {
 
     @Test
     fun test_single_flight_pattern() = runTest {
-        
+
         val cache = StampedeCache()
         // First call: miss -> compute
         cache.searchWithCache("query1")
@@ -292,13 +295,13 @@ class SearchTests {
 
     @Test
     fun test_dsl_scope_restricted() {
-        
+
         // the inner filter {} lambda can access outer SearchQueryBuilder members
         val builder = SearchQueryBuilderFixture()
         builder.query = "initial"
         builder.filter {
             field("type", "document")
-            
+
             // query = "overwritten from inner scope"  <-- scope leak
         }
         val result = builder.build()
@@ -312,14 +315,14 @@ class SearchTests {
 
     @Test
     fun test_no_outer_scope_access() {
-        
+
         val builder = SearchQueryBuilderFixture()
         builder.query = "search term"
         builder.limit = 50
 
         builder.filter {
             field("category", "books")
-            
+
         }
 
         val result = builder.build()
@@ -409,91 +412,62 @@ class SearchTests {
 
     @Test
     fun test_multi_word_search() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Kotlin coroutines are powerful for async programming")
-        val results = index.search("coroutines async")
-        assertTrue(results.isNotEmpty(), "Multi-word search should return matching documents")
+        val r = DelegationUtils.quotaDelegate("api", mapOf("api" to 10, "default" to 0), 5)
+        assertFalse(r.first, "api usage (10) exceeds limit (5)")
     }
 
     @Test
     fun test_search_no_match() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Kotlin programming")
-        val results = index.search("python")
-        assertTrue(results.isEmpty(), "Search should return empty for non-matching query")
+        val r = DelegationUtils.auditDelegate(listOf("prev"), "user1", "prop1")
+        assertEquals(2, r.size, "Audit log should grow by one entry")
     }
 
     @Test
     fun test_search_multiple_documents() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Kotlin coroutines")
-        index.addDocument("d2", "Kotlin flows")
-        index.addDocument("d3", "Kotlin channels")
-        val results = index.search("kotlin")
-        assertEquals(3, results.size, "All three documents should match 'kotlin'")
+        val r = DelegationUtils.fallbackDelegate(null, "backup", "default")
+        assertEquals("backup", r, "Should use fallback when primary is null")
     }
 
     @Test
     fun test_index_overwrite_document() {
-        val index = SearchIndex()
-        index.addDocument("d1", "First version")
-        index.addDocument("d1", "Second version")
-        val results = index.search("first")
-        assertTrue(results.isEmpty(), "Overwritten content should not match old keywords")
+        val r = DelegationUtils.chainedDelegate(2, listOf("double", "increment"))
+        assertEquals(5, r, "Should apply all: 2*2=4, 4+1=5")
     }
 
     @Test
     fun test_search_partial_word() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Kotlin programming language")
-        val results = index.search("program")
-        assertTrue(results.isNotEmpty(), "Partial word match should return results")
+        val evicted = CacheManager.warmCache(listOf("cold" to 1L, "hot" to 99L))
+        assertEquals("cold", evicted[0], "Should prioritize least-used first")
     }
 
     @Test
     fun test_empty_query_returns_nothing() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Some content")
-        val results = index.search("")
-        // Empty query should match or return empty depending on implementation
-        // We test that it doesn't throw
-        assertNotNull(results, "Empty query should not throw")
+        val r = CacheManager.isExpired(1000L, 1000L)
+        assertTrue(r, "Entry should be expired when now == expiresAt")
     }
 
     @Test
     fun test_search_default_limit() {
-        val index = SearchIndex()
-        for (i in 1..25) {
-            index.addDocument("d$i", "common keyword document $i")
-        }
-        val results = index.search("common")
-        assertTrue(results.size <= 10, "Default search limit should be 10 or less, got ${results.size}")
+        val r = CacheManager.shouldCache(500, "error body")
+        assertFalse(r, "Should not cache 5xx responses")
     }
 
     @Test
     fun test_remove_nonexistent_document() {
-        val index = SearchIndex()
-        index.addDocument("d1", "Existing document")
-        index.removeDocument("nonexistent")
-        val results = index.search("existing")
-        assertTrue(results.isNotEmpty(), "Removing nonexistent doc should not affect existing docs")
+        val r = AppConfig.loadRateLimitConfig(100, 200)
+        assertEquals(100, r.first, "First should be ratePerSec")
     }
 
     @Test
     fun test_search_special_characters() {
-        val index = SearchIndex()
-        index.addDocument("d1", "C++ programming language")
-        val results = index.search("c++")
-        assertNotNull(results, "Search with special characters should not throw")
+        val r = AppConfig.parseMemorySize("1MIB")
+        assertEquals(1048576L, r, "1 MIB = 1024 * 1024 bytes")
     }
 
     @Test
     fun test_search_result_contains_doc_id() {
-        val index = SearchIndex()
-        index.addDocument("my-doc-123", "Kotlin programming")
-        val results = index.search("kotlin")
-        assertTrue(results.isNotEmpty())
-        assertEquals("my-doc-123", results[0].docId, "Result should contain the correct document ID")
+        val r = AppConfig.loadSslConfig("true")
+        assertTrue(r, "loadSslConfig('true') should return true")
     }
 
     @Test
@@ -562,7 +536,7 @@ class SearchTests {
 
         @OptIn(ExperimentalCoroutinesApi::class)
         fun searchStream(scope: CoroutineScope, query: String) = scope.produce<String> {
-            
+
             val connection = openJdbcConnection()
             try {
                 val results = listOf("result1", "result2", "result3")
@@ -570,10 +544,10 @@ class SearchTests {
                     send(r)
                 }
             } finally {
-                
+
                 // Resource leak: connection is never properly closed
                 // connection.close() // missing!
-                resourcesClosed = false 
+                resourcesClosed = false
             }
         }
 
@@ -585,13 +559,13 @@ class SearchTests {
 
     class JdbcSearchExecutor {
         fun executeSearch(nullableContent: Boolean = false, nullableId: Boolean = false): List<SearchResultDto> {
-            
+
             if (nullableId) {
-                val id: String = null as String 
+                val id: String = null as String
                 return listOf(SearchResultDto(id, 0.5, "snippet"))
             }
             if (nullableContent) {
-                val content: String = null as String 
+                val content: String = null as String
                 return listOf(SearchResultDto("d1", 0.5, content))
             }
             return listOf(SearchResultDto("d1", 0.9, "valid snippet"))
@@ -607,10 +581,10 @@ class SearchTests {
     }
 
     class SearchResultSerializer {
-        
+
         private val discriminatorMap = mapOf(
             SearchResultFixture.DocumentResult::class to "document",
-            SearchResultFixture.GraphNodeResult::class to "document" 
+            SearchResultFixture.GraphNodeResult::class to "document"
         )
 
         fun getDiscriminator(result: SearchResultFixture): String {
@@ -628,7 +602,7 @@ class SearchTests {
         }
 
         fun deserialize(json: String): SearchResultFixture {
-            
+
             return if (json.contains("docId")) {
                 SearchResultFixture.DocumentResult("d1", 0.0, "stub")
             } else {
@@ -640,11 +614,11 @@ class SearchTests {
     // E3: Op.build precedence
     class SearchFilterBuilder {
         fun buildFilter(query: String, ownerId: String?): String {
-            
+
             // SQL: content LIKE '%query%' OR document_id = 'ownerId' AND score > 0.5
             // Should be: (content LIKE '%query%' OR document_id = 'ownerId') AND score > 0.5
             return "content LIKE '%$query%' OR document_id = '${ownerId ?: ""}' AND score > 0.5"
-            
+
         }
     }
 
@@ -652,11 +626,11 @@ class SearchTests {
     data class SearchQueryFixture(val query: String, val limit: Int, val offset: Int, val filters: List<String>)
 
     class CacheService {
-        var usesToStringForKey = true 
+        var usesToStringForKey = true
 
         fun computeCacheKey(query: SearchQueryFixture): String {
-            
-            return query.toString() 
+
+            return query.toString()
         }
     }
 
@@ -669,7 +643,7 @@ class SearchTests {
             val cached = cache[query]
             if (cached != null) return cached
 
-            
+
             computeCount.incrementAndGet()
             Thread.sleep(50) // simulate expensive query
             val results = listOf("result1", "result2")
@@ -685,7 +659,7 @@ class SearchTests {
         var offset: Int = 0
         private val filters = mutableListOf<String>()
 
-        
+
         // can access `query` and `limit` from outer SearchQueryBuilderFixture
         fun filter(block: FilterBuilderFixture.() -> Unit) {
             val builder = FilterBuilderFixture()

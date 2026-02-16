@@ -13,7 +13,7 @@ Fix bugs in a Rails 7.1 project management platform. TaskForge allows teams to m
 
 Tests are failing across several modules. Previous maintainer mentioned problems with async operations and data handling.
 
-**Total: issues across tests**
+**Total: 75 bugs across 128+ tests**
 
 ## Getting Started
 

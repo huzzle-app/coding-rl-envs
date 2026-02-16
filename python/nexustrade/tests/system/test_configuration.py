@@ -569,3 +569,81 @@ class TestConfigWatching:
         assert watcher.applied_values[0]["timeout"] == 60, (
             "Should apply the last value in the debounce window"
         )
+
+
+# ===================================================================
+# Source-code-verifying tests for configuration & time bugs
+# ===================================================================
+
+
+class TestMarketOpenBoundary:
+    """Tests that is_market_open handles close boundary correctly (BUG F5)."""
+
+    def test_market_close_uses_strict_less_than(self):
+        """is_market_open must use < (not <=) for market close boundary."""
+        import inspect
+        from shared.utils.time import is_market_open
+        src = inspect.getsource(is_market_open)
+        # Should NOT have <= market_close (accepting orders at exactly close time)
+        assert "<= market_close" not in src, \
+            "is_market_open should use strict < for market close, not <="
+
+    def test_market_close_timezone_handling(self):
+        """is_market_open must use proper timezone (not hardcoded offset) (BUG F5)."""
+        import inspect
+        from shared.utils.time import is_market_open
+        src = inspect.getsource(is_market_open)
+        # Should use pytz or zoneinfo for proper DST handling
+        uses_proper_tz = ("zoneinfo" in src or "pytz" in src or
+                          "ZoneInfo" in src or "Eastern" in src.split("zoneinfo")[-1:]
+                          if "zoneinfo" in src else False)
+        has_hardcoded_offset = "hours=-5" in src
+        assert not has_hardcoded_offset or uses_proper_tz, \
+            "is_market_open should use zoneinfo/pytz for timezone, not hardcoded offset"
+
+
+class TestSettlementDateWeekendSkip:
+    """Tests that get_settlement_date skips weekends (BUG F8)."""
+
+    def test_settlement_date_skips_weekends(self):
+        """get_settlement_date must skip weekends when counting settlement days."""
+        import inspect
+        from shared.utils.time import get_settlement_date
+        src = inspect.getsource(get_settlement_date)
+        # Must check for weekdays to skip weekends
+        assert "weekday" in src or "weekend" in src.lower() or "business" in src.lower(), \
+            "get_settlement_date must skip weekends when calculating settlement date"
+
+    def test_friday_trade_settles_after_weekend(self):
+        """A trade on Friday with T+2 should settle on Tuesday, not Sunday."""
+        from datetime import datetime, timezone
+        from shared.utils.time import get_settlement_date
+        # Friday trade
+        friday = datetime(2024, 1, 5, 14, 0, tzinfo=timezone.utc)  # A Friday
+        settlement = get_settlement_date(friday, settlement_days=2)
+        # Should be Tuesday (Jan 9), not Sunday (Jan 7)
+        assert settlement.weekday() < 5, \
+            f"Settlement date {settlement} falls on weekend (day {settlement.weekday()})"
+
+
+class TestRateLimiterBypass:
+    """Tests that RateLimiter cannot be bypassed with headers (BUG I4)."""
+
+    def test_rate_limiter_no_header_bypass(self):
+        """RateLimiter must not bypass rate limiting based on X-Internal-Request header."""
+        import inspect
+        from shared.utils.time import RateLimiter
+        src = inspect.getsource(RateLimiter.acquire)
+        assert "X-Internal-Request" not in src, \
+            "RateLimiter should not bypass rate limiting based on X-Internal-Request header"
+
+    def test_rate_limiter_enforced_with_internal_header(self):
+        """Rate limiting must be enforced even when X-Internal-Request is set."""
+        from shared.utils.time import RateLimiter
+        limiter = RateLimiter(rate=1.0, capacity=1.0)
+        # Exhaust tokens
+        limiter.acquire(1)
+        # With X-Internal-Request header, should still be rate-limited
+        result = limiter.acquire(1, headers={"X-Internal-Request": "true"})
+        assert not result, \
+            "Rate limiter must not bypass for X-Internal-Request header"

@@ -5,7 +5,7 @@ VertexGrid operates continental balancing and dispatch optimization with failure
 The environment contains issues across deep dependency chains:
 - **82 handcrafted core bugs** across Spring, concurrency, persistence, and security.
 - **1168 expanded apex bugs** mapped onto production-style test names.
-- **12,000+ stress scenarios** in hyper-matrix execution.
+- **15,000+ test scenarios** across 11 modules including hyper-matrix stress tests.
 
 ## Difficulty
 
@@ -37,7 +37,7 @@ Use these scenarios to understand how bugs manifest in production and to guide y
 
 ## Completion Criteria
 
-- Full suite passes (`mvn -q test`) including 12,000+ stress cases.
+- Full suite passes (`mvn -q test`) including 15,000+ stress cases.
 - Deterministic replay, scheduling, routing, and policy behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
 - Do not edit files under `tests/`.

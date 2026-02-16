@@ -4,7 +4,7 @@
 PASS_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
 THRESHOLD_REWARDS = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
 
-TOTAL_TESTS = 1094
+TOTAL_TESTS = 1648
 
 def sparse_reward(pass_rate: float) -> float:
     for i in range(len(PASS_THRESHOLDS) - 1, -1, -1):

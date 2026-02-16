@@ -6,9 +6,12 @@ mkdir -p /logs/verifier
 # Training mode support: set TRAINING_MODE env var to enable dense rewards
 # Options: linear, sublinear, smooth (default: unset = sparse evaluation rewards)
 TRAINING_MODE_ARG=""
-if [ -n "$TRAINING_MODE" ]; then
+if [ -n "${TRAINING_MODE:-}" ]; then
   TRAINING_MODE_ARG="--training-mode $TRAINING_MODE"
 fi
+
+# Incremental reward support (informational only; scoring.py does not use this directly)
+PREV_PASSED="${PREV_PASSED:-}"
 
 set +e
 TEST_OUTPUT=$(ruby -Ilib -Itests tests/run_all.rb 2>&1)
@@ -42,7 +45,19 @@ fi
 
 
 # Use local scoring module with multi-solution bonus
-REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app $TRAINING_MODE_ARG 2>/dev/null || echo "0.0")
+REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app --no-bonus $TRAINING_MODE_ARG 2>/dev/null || echo "0.0")
+RESULTS_JSON=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app --no-bonus $TRAINING_MODE_ARG --json 2>/dev/null || echo '{}')
 
 echo "$REWARD" > /logs/verifier/reward.txt
+echo "$RESULTS_JSON" > /logs/verifier/results.json
 echo "Tests: $PASSED passed, $((FAILURES + ERRORS)) failed (total: $TOTAL)"
+
+# Show incremental info if available
+if [ -n "${PREV_PASSED:-}" ]; then
+  DELTA=$((PASSED - PREV_PASSED))
+  if [ "$DELTA" -gt 0 ]; then
+    echo "Progress: +$DELTA newly passing tests"
+  elif [ "$DELTA" -lt 0 ]; then
+    echo "Regression: $DELTA tests now failing"
+  fi
+fi

@@ -235,9 +235,9 @@ class SolutionMetrics:
         return self.diff_size_score + self.surgical_precision_score + self.quality_score
 
 
-def sparse_reward(pass_rate: float, tier: str = "apex-principal") -> float:
+def sparse_reward(pass_rate: float, tier: str = "principal") -> float:
     """Calculate base reward from pass rate using tier thresholds."""
-    table = REWARD_TABLES.get(tier, REWARD_TABLES["apex-principal"])
+    table = REWARD_TABLES.get(tier, REWARD_TABLES["principal"])
     thresholds = table["thresholds"]
     rewards = table["rewards"]
     for threshold, reward in reversed(list(zip(thresholds, rewards))):
@@ -439,7 +439,7 @@ def calculate_solution_bonus(
 def calculate_reward(
     passed: int,
     total: int,
-    tier: str = "apex-principal",
+    tier: str = "principal",
     cwd: Optional[str] = None,
     enable_solution_bonus: bool = True,
     training_mode: Optional[str] = None,
@@ -544,7 +544,7 @@ Examples:
     )
     parser.add_argument("--passed", type=int, default=0)
     parser.add_argument("--total", type=int, default=0)
-    parser.add_argument("--tier", type=str, default="apex-principal", choices=list(REWARD_TABLES.keys()))
+    parser.add_argument("--tier", type=str, default="principal", choices=list(REWARD_TABLES.keys()))
     parser.add_argument("--cwd", type=str, default=None)
     parser.add_argument("--no-bonus", action="store_true", help="Disable solution quality bonus")
     parser.add_argument("--json", action="store_true", help="Output full JSON results")

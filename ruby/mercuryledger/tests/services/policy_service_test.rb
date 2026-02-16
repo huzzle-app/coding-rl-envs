@@ -20,9 +20,9 @@ class PolicyServiceTest < Minitest::Test
     assert_equal :minimal, MercuryLedger::Services::Policy.risk_band(0.1)
   end
 
-  def test_compute_compliance_score_within_range
-    score = MercuryLedger::Services::Policy.compute_compliance_score(80, 100, 0.9)
-    assert_operator score, :>, 0
-    assert_operator score, :<=, 2.0
+  def test_degraded_system_mid_risk_should_deny
+    result = MercuryLedger::Services::Policy.evaluate_policy_gate(0.5, true, true, 3)
+    assert_equal :deny, result,
+      'Degraded system with mid-risk should deny, not allow'
   end
 end

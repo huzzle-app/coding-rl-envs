@@ -44,7 +44,7 @@ services:
         python manage.py migrate --noinput 2>&1 || echo 'Migration failed (expected with bugs)' &&
         echo '' &&
         echo '=== Running pytest ===' &&
-        pytest -v --tb=short -x --timeout=60 2>&1;
+        pytest -v --tb=short --timeout=60 2>&1;
         TEST_EXIT=$$?;
         echo '';
         echo '=== Test run complete ===';

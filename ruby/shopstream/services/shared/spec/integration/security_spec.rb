@@ -31,7 +31,7 @@ RSpec.describe 'Security Integration' do
 
       token = service.generate_token(user_id: 1, exp: 1.second.ago.to_i) rescue nil
       if token
-        expect { service.decode_token(token) }.to raise_error(/expired|invalid/i) rescue nil
+        expect { service.decode_token(token) }.to raise_error(/expired|invalid/i)
       end
     end
   end
@@ -51,8 +51,8 @@ RSpec.describe 'Security Integration' do
     it 'User model rejects admin flag in mass assignment' do
       user = User.new(admin: true, role: 'admin') rescue nil
       if user
-        expect(user.admin).not_to be true rescue nil
-        expect(user.role).not_to eq('admin') rescue nil
+        expect(user.admin).not_to be true
+        expect(user.role).not_to eq('admin')
       end
     end
   end
@@ -75,7 +75,7 @@ RSpec.describe 'Security Integration' do
         limiter = RateLimiter.new(limit: 3, window: 60)
 
         3.times { limiter.allow?('attacker') rescue nil }
-        expect(limiter.allow?('attacker')).to be false rescue nil
+        expect(limiter.allow?('attacker')).to be false
       end
     end
 
@@ -84,7 +84,7 @@ RSpec.describe 'Security Integration' do
         limiter = RateLimiter.new(limit: 2, window: 60)
 
         2.times { limiter.allow?('ip-1') rescue nil }
-        expect(limiter.allow?('ip-2')).to be true rescue nil
+        expect(limiter.allow?('ip-2')).to be true
       end
     end
   end
@@ -95,7 +95,7 @@ RSpec.describe 'Security Integration' do
         SearchService.new.search("'; DELETE FROM products; --") rescue nil
       }.not_to raise_error
 
-      expect(Product.count).to be >= 0 rescue nil
+      expect(Product.count).to be >= 0
     end
 
     it 'UNION-based injection is prevented' do

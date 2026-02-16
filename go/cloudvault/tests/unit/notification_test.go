@@ -200,8 +200,9 @@ func TestNotificationServiceWaitForNotification(t *testing.T) {
 
 		n, err := svc.WaitForNotification(context.Background(), userID, 2*time.Second)
 		assert.NoError(t, err)
-		assert.NotNil(t, n)
-		assert.Equal(t, "test", n.Type)
+		if assert.NotNil(t, n, "notification should not be nil (BUG A3: channel deadlock prevents delivery)") {
+			assert.Equal(t, "test", n.Type)
+		}
 	})
 
 	t.Run("should timeout when no notification", func(t *testing.T) {

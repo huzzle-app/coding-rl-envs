@@ -40,8 +40,9 @@ public class EventBusTest {
         eventBus.subscribe(Number.class, n -> count.incrementAndGet());
         eventBus.publish(42); // Integer extends Number
 
-        
-        assertTrue(count.get() >= 0); // At minimum, should not throw
+        // Handler registered for Number should fire when Integer (subtype) is published
+        assertEquals(1, count.get(),
+            "Handler registered for Number should receive Integer events (polymorphic dispatch)");
     }
 
     @Test

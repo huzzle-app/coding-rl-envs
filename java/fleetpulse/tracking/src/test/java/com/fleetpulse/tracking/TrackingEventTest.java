@@ -25,7 +25,7 @@ public class TrackingEventTest {
     @Test
     void test_violationEvent_can_be_instantiated() {
         
-        // After fix: ViolationEvent is permitted and can be created normally.
+        // ViolationEvent should be a valid subtype of TrackingEventBase.
         ViolationEvent event = new ViolationEvent("v1", "SPEEDING");
         assertNotNull(event, "ViolationEvent should be creatable when permitted by sealed class");
     }

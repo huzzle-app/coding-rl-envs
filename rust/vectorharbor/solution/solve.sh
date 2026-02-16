@@ -1,3 +1,3 @@
 #!/bin/bash
-set -euo pipefail
-cargo test
+echo "Reference solution not yet implemented for VectorHarbor."
+exit 1

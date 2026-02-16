@@ -4,7 +4,7 @@
 
 You are debugging a knowledge management platform built with Kotlin 1.9 and organized as 10 Ktor microservices with the Exposed ORM. The platform handles document management, semantic search, knowledge graphs, embeddings, real-time collaboration, billing, and analytics.
 
-The codebase contains issues across 10 microservices and a shared library that need to be identified and fixed. All 510+ tests must pass before the task is complete.
+The codebase contains 80 bugs across 10 microservices and a shared library that need to be identified and fixed. All 536 tests must pass before the task is complete.
 
 **Difficulty Level**: Principal/Staff Engineer (8-16 hours expected)
 
@@ -124,7 +124,7 @@ Test results are written to JUnit XML reports in each module's `build/test-resul
 
 ## Success Criteria
 
-- All 510+ tests pass across all 11 modules
+- All 536 tests pass across all 11 modules
 - Services start without configuration errors
 - No `SerializationException` or `ClassCastException` at runtime
 - No SQL injection, XXE, or deserialization vulnerabilities

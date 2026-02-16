@@ -61,7 +61,7 @@ public class NotificationServiceTest {
 
         latch.await(10, TimeUnit.SECONDS);
 
-        // Fixed version (AtomicReferenceArray) would guarantee zero stale reads
+        // All channel updates should be visible to other threads
         assertEquals(0, staleReads.get(),
             "All threads should see updated channel value - volatile array elements are not thread-safe");
     }
@@ -286,7 +286,7 @@ public class NotificationServiceTest {
         startGate.countDown();
         assertTrue(doneLatch.await(30, TimeUnit.SECONDS), "All threads should complete");
 
-        // Fixed version (computeIfAbsent) invokes loader exactly once
+        // Loader should be invoked exactly once for concurrent requests
         assertEquals(1, loaderInvocations.get(),
             "Loader should be invoked only once, not " + loaderInvocations.get() +
             " times (thundering herd)");

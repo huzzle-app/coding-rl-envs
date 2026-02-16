@@ -5,6 +5,8 @@
 # Assuming you have not yet run the Devise install generator,
 # here is a minimal configuration for an API-only application.
 
+require 'devise/orm/active_record'
+
 Devise.setup do |config|
   # The secret key used by Devise. Use `rails secret` to generate a new key.
   config.secret_key = ENV.fetch('DEVISE_SECRET_KEY') { Rails.application.secret_key_base }

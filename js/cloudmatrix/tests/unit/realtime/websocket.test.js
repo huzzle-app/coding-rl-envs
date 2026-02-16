@@ -82,6 +82,40 @@ describe('WebSocketManager', () => {
       expect(delay5).toBeGreaterThan(delay1 * 4);
     });
 
+    it('reconnect delay should increase exponentially with attempt number', () => {
+      const delays = [];
+      for (let i = 1; i <= 5; i++) {
+        delays.push(WebSocketManager.getReconnectDelay(i));
+      }
+      // Each delay should be strictly greater than the previous
+      for (let i = 1; i < delays.length; i++) {
+        expect(delays[i]).toBeGreaterThan(delays[i - 1]);
+      }
+    });
+
+    it('getReconnectDelay should not return constant value', () => {
+      const d1 = WebSocketManager.getReconnectDelay(1);
+      const d10 = WebSocketManager.getReconnectDelay(10);
+      // BUG: always returns 1000 regardless of attempt
+      expect(d10).not.toBe(d1);
+    });
+
+    it('getReconnectDelay for high attempt should be significantly longer', () => {
+      const d1 = WebSocketManager.getReconnectDelay(1);
+      const d5 = WebSocketManager.getReconnectDelay(5);
+      // With exponential backoff, attempt 5 should be at least 8x attempt 1
+      expect(d5).toBeGreaterThanOrEqual(d1 * 8);
+    });
+
+    it('getReconnectDelay should implement exponential backoff pattern', () => {
+      // Exponential backoff: delay = base * 2^(attempt-1) or similar
+      const d1 = WebSocketManager.getReconnectDelay(1);
+      const d2 = WebSocketManager.getReconnectDelay(2);
+      const ratio = d2 / d1;
+      // The ratio between consecutive delays should be approximately 2
+      expect(ratio).toBeGreaterThanOrEqual(1.5);
+    });
+
     it('presence stale test', () => {
       const manager = new WebSocketManager();
 

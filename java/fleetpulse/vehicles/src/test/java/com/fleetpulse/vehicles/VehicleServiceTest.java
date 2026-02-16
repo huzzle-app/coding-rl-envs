@@ -61,8 +61,8 @@ public class VehicleServiceTest {
     @Tag("integration")
     void test_getVehicle_shouldNotThrowLazyInitException() {
         
-        // outside a persistence context throws LazyInitializationException.
-        // Fixed version adds @Transactional(readOnly = true).
+        // Accessing lazy collections outside a persistence context
+        // should not throw LazyInitializationException.
         Vehicle vehicle = new Vehicle();
         vehicle.setVin("1HGBH41JXMN109186");
         vehicle.setLicensePlate("ABC-1234");
@@ -128,7 +128,7 @@ public class VehicleServiceTest {
         vehicleService.searchVehicles("Toyota");
 
         
-        // Fixed code must close the EntityManager
+        // EntityManager must be properly closed after use
         verify(mockEm).close();
     }
 
@@ -196,7 +196,6 @@ public class VehicleServiceTest {
     void test_addToFleet_rawTypeCastCausesHeapPollution() {
         
         // which can cause ClassCastException at runtime in generic context.
-        // Fixed version should accept List<Vehicle> not List<? extends Vehicle>
         List<Vehicle> fleet = new ArrayList<>();
         Vehicle v1 = new Vehicle();
         v1.setVin("AAA");
@@ -234,8 +233,7 @@ public class VehicleServiceTest {
     @Tag("integration")
     void test_findVehiclesByStatus_loadsMaintenanceRecordsEfficiently() {
         
-        // Accessing maintenanceRecords triggers N+1 separate queries.
-        // Fixed version uses JOIN FETCH in the @Query annotation.
+        // Accessing maintenanceRecords should not trigger N+1 separate queries.
         Vehicle v = new Vehicle();
         v.setVin("N1QUERY");
         v.setLicensePlate("N1-001");

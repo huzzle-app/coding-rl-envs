@@ -30,6 +30,147 @@ class HyperMatrixTest < Minitest::Test
       assert_operator planned.length, :<=, 2
       assert_operator planned[0][:urgency], :>=, planned[1][:urgency] if planned.length == 2
 
+      # === Bug-detecting assertions (bucketed by idx % 14) ===
+      # Placed FIRST so all 14 buckets fire regardless of idx parity
+      bug_bucket = idx % 14
+      case bug_bucket
+      when 0
+        # Bug: Resilience.replay keeps LOWER sequence (uses < instead of >)
+        replay_result = OpalCommand::Core::Resilience.replay([
+          { id: "dup-#{idx}", sequence: 1 },
+          { id: "dup-#{idx}", sequence: 2 + (idx % 10) }
+        ])
+        latest_for_dup = replay_result.find { |e| e[:id] == "dup-#{idx}" }
+        assert_equal 2 + (idx % 10), latest_for_dup[:sequence],
+          "replay should keep HIGHEST sequence for dup-#{idx}, not lowest"
+
+      when 1
+        # Bug: choose_corridor uses max_by latency (picks slowest route)
+        corridors = [
+          { channel: "fast-#{idx}", latency: 1 },
+          { channel: "slow-#{idx}", latency: 100 }
+        ]
+        chosen = OpalCommand::Core::Routing.choose_corridor(corridors, [])
+        assert_equal "fast-#{idx}", chosen[:channel],
+          "choose_corridor should pick LOWEST latency route"
+
+      when 2
+        # Bug: urgency_score uses severity * 8 instead of * 10
+        order_check = OpalCommand::Core::Order.new(severity: 5, sla_minutes: 120)
+        expected_urgency = (5 * 10) + [120 - 120, 0].max
+        assert_equal expected_urgency, order_check.urgency_score,
+          "urgency_score should use severity * 10, not * 8"
+
+      when 3
+        # Bug: should_shed uses > instead of >= (boundary error)
+        result_at_limit = OpalCommand::Core::Queue.should_shed?(40, 40, false)
+        assert result_at_limit,
+          "should_shed?(40, 40) should be true: depth >= hard_limit"
+
+      when 4
+        # Bug: check_sla_compliance uses > instead of >= at 80% boundary
+        elapsed_at_80 = (60 * 0.8).to_i  # 48
+        sla_result = OpalCommand::Core::Policy.check_sla_compliance(elapsed_at_80, 60)
+        assert_equal :at_risk, sla_result,
+          "elapsed == sla * 0.8 should be :at_risk, not :compliant"
+
+      when 5
+        # Bug: EWMA formula inverted (weights current instead of new value)
+        ewma = OpalCommand::Core::EWMATracker.new(alpha: 0.3)
+        ewma.update(100.0)  # initial
+        ewma.update(0.0)    # if correct: 0.3*0 + 0.7*100 = 70; if buggy: 0.3*100 + 0.7*0 = 30
+        val = ewma.value
+        assert_operator val, :>, 50.0,
+          "EWMA after update(100) then update(0) with alpha=0.3 should be 70, not 30 (formula inverted)"
+
+      when 6
+        # Bug: validate_token_chain breaks on first invalid instead of checking all
+        store = OpalCommand::Core::TokenStore.new
+        store.store("vc-#{idx}-1", 'h', 3600)
+        store.store("vc-#{idx}-3", 'h', 3600)
+        chain_result = store.validate_token_chain(["vc-#{idx}-1", "vc-#{idx}-2", "vc-#{idx}-3"])
+        assert_equal 1, chain_result[:valid].length,
+          "validate_token_chain: only token 1 should be valid (token 3 expired after break)"
+        assert_equal 2, chain_result[:invalid].length,
+          "validate_token_chain should check ALL tokens, not stop at first invalid"
+
+      when 7
+        # Bug: PriorityQueue batch_dequeue returns in wrong order (reversed)
+        pq = OpalCommand::Core::PriorityQueue.new
+        pq.enqueue("low-#{idx}", 1)
+        pq.enqueue("high-#{idx}", 100)
+        pq.enqueue("mid-#{idx}", 50)
+        batch = pq.batch_dequeue(3)
+        assert_equal "high-#{idx}", batch.first,
+          "batch_dequeue should return highest priority first"
+
+      when 8
+        # Bug: PriorityQueue merge clears source queue
+        pq_src = OpalCommand::Core::PriorityQueue.new
+        pq_dest = OpalCommand::Core::PriorityQueue.new
+        pq_src.enqueue("src-#{idx}", 10)
+        pq_src.enqueue("src2-#{idx}", 20)
+        src_size_before = pq_src.size
+        pq_dest.merge(pq_src)
+        assert_equal src_size_before, pq_src.size,
+          "merge should NOT clear the source queue"
+
+      when 9
+        # Bug: WorkflowEngine batch_transition reads from snapshot (no cascading)
+        engine = OpalCommand::Core::WorkflowEngine.new
+        engine.register("bt-#{idx}")
+        result = engine.batch_transition([
+          ["bt-#{idx}", :allocated],
+          ["bt-#{idx}", :departed]
+        ])
+        assert_equal 2, result[:success_count],
+          "batch_transition should cascade: queued->allocated->departed in same batch"
+        assert_equal :departed, engine.get_state("bt-#{idx}")
+
+      when 10
+        # Bug: reconstruct_state returns from_state instead of to_state
+        engine = OpalCommand::Core::WorkflowEngine.new
+        engine.register("rs-#{idx}")
+        engine.transition("rs-#{idx}", :allocated)
+        engine.transition("rs-#{idx}", :departed)
+        state = engine.reconstruct_state("rs-#{idx}")
+        assert_equal :departed, state,
+          "reconstruct_state should return to_state (:departed), not from_state"
+
+      when 11
+        # Bug: reopen records wrong from_state (records to_state instead of current)
+        engine = OpalCommand::Core::WorkflowEngine.new
+        engine.register("ro-#{idx}")
+        engine.transition("ro-#{idx}", :allocated)
+        engine.transition("ro-#{idx}", :departed)
+        engine.transition("ro-#{idx}", :arrived)
+        engine.reopen("ro-#{idx}", :queued)
+        history = engine.history("ro-#{idx}")
+        reopen_entry = history.last
+        assert_equal :arrived, reopen_entry.from_state,
+          "reopen from_state should be :arrived (old terminal), not :queued"
+
+      when 12
+        # Bug: CheckpointManager.record uses ||= (never updates)
+        mgr = OpalCommand::Core::CheckpointManager.new
+        mgr.record("cp-#{idx}", 10, 1000)
+        mgr.record("cp-#{idx}", 50 + idx, 2000)
+        cp = mgr.get("cp-#{idx}")
+        assert_equal 50 + idx, cp.sequence,
+          "record should UPDATE checkpoint to newer sequence, not keep first"
+
+      when 13
+        # Bug: reconstruct_event_stream uses <= (returns AT checkpoint, not AFTER)
+        mgr = OpalCommand::Core::CheckpointManager.new
+        checkpoint_seq = 5 + (idx % 20)
+        events = (1..30).map { |i| { id: "ev#{i}", sequence: i } }
+        result = mgr.reconstruct_event_stream(events, checkpoint_seq)
+        result.each do |e|
+          assert_operator e[:sequence], :>, checkpoint_seq,
+            "reconstruct_event_stream should return events AFTER checkpoint (seq #{checkpoint_seq}), not at/before"
+        end
+      end
+
       # Exercise dispatch_batch
       batch = OpalCommand::Core::Dispatch.dispatch_batch(
         [{ id: "d-#{idx}", urgency: idx % 20 + 1, eta: "05:00" }, { id: "e-#{idx}", urgency: idx % 10 + 1, eta: "06:00" }], 1
@@ -89,7 +230,6 @@ class HyperMatrixTest < Minitest::Test
         { id: "z-#{idx % 13}", sequence: 1 }
       ])
       assert_operator replayed.length, :>=, 2
-      assert_operator replayed.last[:sequence], :>=, 1
 
       # Exercise deduplicate and converges
       deduped = OpalCommand::Core::Resilience.deduplicate([

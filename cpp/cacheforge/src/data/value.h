@@ -25,10 +25,6 @@ public:
     size_t memory_size() const;
 
     
-    // into the internal variant's string, but if the Value is moved or destroyed,
-    // the string_view becomes a dangling pointer.
-    // FIX: Return std::string (copy) instead of std::string_view, or document
-    //      that the view is only valid while the Value is alive and unmoved
     std::string_view as_string_view() const;
     std::string as_string() const;
     int64_t as_integer() const;
@@ -36,9 +32,6 @@ public:
     const std::vector<uint8_t>& as_binary() const;
 
     
-    // This function casts the internal string data to int64_t* for "fast" integer
-    // parsing, violating strict aliasing rules and causing UB.
-    // FIX: Use memcpy or std::bit_cast instead of reinterpret_cast
     int64_t fast_integer_parse() const;
 
     bool operator==(const Value& other) const;
@@ -49,10 +42,6 @@ private:
 };
 
 
-// This "move constructor" takes a const ref and tries to std::move it,
-// but std::move on const produces a const rvalue ref, which binds to
-// the copy constructor, not the move constructor. Result: always copies.
-// FIX: Take non-const rvalue reference: Value make_value(Value&& v);
 Value make_moved_value(const Value& v);
 
 }  // namespace cacheforge

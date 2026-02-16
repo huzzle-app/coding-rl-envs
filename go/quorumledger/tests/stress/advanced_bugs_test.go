@@ -632,3 +632,154 @@ func TestReconciliationStatusForBalancedReport(t *testing.T) {
 		t.Fatalf("fully matched report with zero drift should be 'balanced', got %q", status)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Category 8: Anti-Reward-Hacking Guards
+// These tests use varied inputs to prevent hardcoded return values from passing.
+// ---------------------------------------------------------------------------
+
+func TestApprovalRatioMultipleInputs(t *testing.T) {
+	all := []models.QuorumVote{{NodeID: "a", Approved: true}, {NodeID: "b", Approved: true}}
+	r1 := consensus.ApprovalRatio(all)
+	if math.Abs(r1-1.0) > 0.001 {
+		t.Fatalf("all approved should give ratio 1.0, got %.4f", r1)
+	}
+	none := []models.QuorumVote{{NodeID: "a", Approved: false}, {NodeID: "b", Approved: false}}
+	r2 := consensus.ApprovalRatio(none)
+	if math.Abs(r2-0.0) > 0.001 {
+		t.Fatalf("none approved should give ratio 0.0, got %.4f", r2)
+	}
+	half := []models.QuorumVote{{NodeID: "a", Approved: true}, {NodeID: "b", Approved: false}}
+	r3 := consensus.ApprovalRatio(half)
+	if math.Abs(r3-0.5) > 0.001 {
+		t.Fatalf("half approved should give ratio 0.5, got %.4f", r3)
+	}
+}
+
+func TestMergeBalancesSumsSharedKeys(t *testing.T) {
+	a := map[string]int64{"shared": 100, "only-a": 50}
+	b := map[string]int64{"shared": 200, "only-b": 75}
+	merged := ledger.MergeBalances(a, b)
+	if merged["shared"] != 300 {
+		t.Fatalf("shared key should be summed: 100+200=300, got %d", merged["shared"])
+	}
+	if merged["only-a"] != 50 {
+		t.Fatalf("only-a should be 50, got %d", merged["only-a"])
+	}
+	if merged["only-b"] != 75 {
+		t.Fatalf("only-b should be 75, got %d", merged["only-b"])
+	}
+}
+
+func TestNextEscalationSingleStep(t *testing.T) {
+	next := policy.NextEscalation(models.PolicyNormal)
+	if next != models.PolicyWatch {
+		t.Fatalf("NextEscalation(Normal) should be Watch (1), got %d", next)
+	}
+	next2 := policy.NextEscalation(models.PolicyWatch)
+	if next2 != models.PolicyRestricted {
+		t.Fatalf("NextEscalation(Watch) should be Restricted (2), got %d", next2)
+	}
+}
+
+func TestEscalationLevelComputation(t *testing.T) {
+	low := policy.EscalationLevel(0, 0)
+	if low != models.PolicyNormal {
+		t.Fatalf("zero incidents/severity should be Normal (0), got %d", low)
+	}
+	high := policy.EscalationLevel(10, 10)
+	if high != models.PolicyHalted {
+		t.Fatalf("very high incidents/severity should be Halted (3), got %d", high)
+	}
+}
+
+func TestSelectReplicaPicksLowestLoad(t *testing.T) {
+	candidates := map[string]int{"heavy": 90, "light": 10, "medium": 50}
+	replica, ok := routing.SelectReplica(candidates, map[string]bool{})
+	if !ok || replica != "light" {
+		t.Fatalf("should pick lowest load replica 'light', got %q ok=%v", replica, ok)
+	}
+	replica2, ok2 := routing.SelectReplica(candidates, map[string]bool{"light": true})
+	if !ok2 || replica2 != "medium" {
+		t.Fatalf("with 'light' blocked, should pick 'medium', got %q ok=%v", replica2, ok2)
+	}
+}
+
+func TestSettlementFeeMultipleAmounts(t *testing.T) {
+	fee1 := settlement.SettlementFee(100000, 25)
+	if fee1 != 250 {
+		t.Fatalf("25bp on 100K should be 250, got %d", fee1)
+	}
+	fee2 := settlement.SettlementFee(500000, 10)
+	if fee2 != 500 {
+		t.Fatalf("10bp on 500K should be 500, got %d", fee2)
+	}
+	fee3 := settlement.SettlementFee(2000000, 50)
+	if fee3 != 10000 {
+		t.Fatalf("50bp on 2M should be 10000, got %d", fee3)
+	}
+}
+
+func TestStatisticsMeanMultipleInputs(t *testing.T) {
+	m1 := statistics.Mean([]float64{100.0})
+	if math.Abs(m1-100.0) > 0.001 {
+		t.Fatalf("mean of [100] should be 100, got %.4f", m1)
+	}
+	m2 := statistics.Mean([]float64{0.0, 100.0})
+	if math.Abs(m2-50.0) > 0.001 {
+		t.Fatalf("mean of [0,100] should be 50, got %.4f", m2)
+	}
+}
+
+func TestVarianceSampleCorrection(t *testing.T) {
+	vals := []float64{2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0}
+	v := statistics.Variance(vals)
+	expected := 32.0 / 7.0
+	if math.Abs(v-expected) > 0.1 {
+		t.Fatalf("sample variance should use n-1 denominator, expected ~%.3f, got %.4f", expected, v)
+	}
+}
+
+func TestAccountBalanceNoOffset(t *testing.T) {
+	entries := []models.LedgerEntry{
+		{Account: "test", AmountCents: 500},
+		{Account: "test", AmountCents: -200},
+		{Account: "other", AmountCents: 999},
+	}
+	bal := ledger.AccountBalance(entries, "test")
+	if bal != 300 {
+		t.Fatalf("balance of 500 + (-200) should be 300, got %d", bal)
+	}
+}
+
+func TestReplayBudgetPositiveForValidInputs(t *testing.T) {
+	b1 := replay.ReplayBudget(100, 10)
+	b2 := replay.ReplayBudget(500, 5)
+	if b1 <= 0 || b2 <= 0 {
+		t.Fatalf("replay budgets must be positive: b1=%d, b2=%d", b1, b2)
+	}
+	if b1 == b2 {
+		t.Fatalf("different inputs should produce different budgets: both=%d", b1)
+	}
+}
+
+func TestAggregateRiskPositiveResult(t *testing.T) {
+	agg1 := risk.AggregateRisk([]float64{10.0, 20.0})
+	agg2 := risk.AggregateRisk([]float64{50.0, 60.0, 70.0})
+	if agg1 <= 0 || agg2 <= 0 {
+		t.Fatalf("aggregate risk must be positive: agg1=%.4f, agg2=%.4f", agg1, agg2)
+	}
+	if agg1 >= agg2 {
+		t.Fatalf("higher scores should produce higher aggregate: agg1=%.4f >= agg2=%.4f", agg1, agg2)
+	}
+}
+
+func TestIsBalancedWithinTolerance(t *testing.T) {
+	entry := models.ReconciliationEntry{Account: "a", Expected: 100, Actual: 105}
+	if !entry.IsBalanced(10) {
+		t.Fatal("drift of 5 within tolerance 10 should be balanced")
+	}
+	if entry.IsBalanced(3) {
+		t.Fatal("drift of 5 outside tolerance 3 should not be balanced")
+	}
+}

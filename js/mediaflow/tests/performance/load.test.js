@@ -135,50 +135,51 @@ describe('Latency Tests', () => {
 
 describe('Scalability Tests', () => {
   describe('Horizontal Scaling', () => {
-    it('load distribution test', async () => {
-      const servers = ['server-1', 'server-2', 'server-3'];
-      const requests = 100;
-      const distribution = new Map(servers.map(s => [s, 0]));
+    it('HLS segment count for partial duration test', async () => {
+      const { HLSService } = require('../../../services/streaming/src/services/hls');
+      const hls = new HLSService(null);
 
-      // Simulate load balancer
-      const loadBalance = () => {
-        const idx = Math.floor(Math.random() * servers.length);
-        return servers[idx];
-      };
+      const result = await hls.generateManifest('video-1', {
+        profiles: ['720p'],
+        totalDuration: 125,
+        segmentDuration: 6,
+      });
 
-      for (let i = 0; i < requests; i++) {
-        const server = loadBalance();
-        distribution.set(server, distribution.get(server) + 1);
-      }
-
-      // Each server should get roughly 1/3 of requests
-      for (const [server, count] of distribution) {
-        expect(count).toBeGreaterThan(requests / 6);
-        expect(count).toBeLessThan(requests / 2);
-      }
+      const playlist = result.variants['720p'];
+      const segmentCount = (playlist.match(/#EXTINF/g) || []).length;
+      // BUG F5: Math.floor(125/6) = 20, should be Math.ceil(125/6) = 21
+      // Last 5 seconds of video content are lost
+      expect(segmentCount).toBe(Math.ceil(125 / 6));
     });
   });
 
   describe('Connection Pooling', () => {
-    it('pool utilization test', async () => {
-      const poolSize = 10;
-      const requests = 50;
-      let maxConcurrent = 0;
-      let currentConcurrent = 0;
+    it('write-through cache atomicity test', async () => {
+      const { WriteThroughCache } = require('../../../services/streaming/src/services/cache');
 
-      const simulateRequest = async () => {
-        currentConcurrent++;
-        maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
-        await global.testUtils.delay(10);
-        currentConcurrent--;
+      let cacheValue = null;
+      const mockCache = {
+        set: jest.fn().mockImplementation(async (key, value) => {
+          cacheValue = value;
+        }),
+      };
+      const mockDb = {
+        set: jest.fn().mockImplementation(async () => {
+          throw new Error('DB connection lost');
+        }),
       };
 
-      await Promise.all(
-        Array(requests).fill(null).map(() => simulateRequest())
-      );
+      const cache = new WriteThroughCache(mockCache, mockDb);
 
-      // Should not exceed pool size
-      expect(maxConcurrent).toBeLessThanOrEqual(poolSize);
+      try {
+        await cache.set('key-1', 'value');
+      } catch (e) {
+        // Expected - DB write failed
+      }
+
+      // BUG H5: Cache was written but DB failed - inconsistent state
+      // Cache should have been rolled back or write should be transactional
+      expect(cacheValue).toBeNull();
     });
   });
 });
@@ -222,47 +223,47 @@ describe('Memory Tests', () => {
 
 describe('Concurrency Tests', () => {
   describe('Race Conditions', () => {
-    it('concurrent update test', async () => {
-      const resource = { value: 0 };
-      const updates = 100;
+    it('cache stampede prevention test', async () => {
+      const mockRedis = global.testUtils.mockRedis();
+      const { CacheManager } = require('../../../services/streaming/src/services/cache');
+      const cache = new CacheManager(mockRedis);
 
-      const update = async () => {
-        const current = resource.value;
-        await global.testUtils.delay(1);
-        resource.value = current + 1;
+      let computeCount = 0;
+      const expensiveCompute = async () => {
+        computeCount++;
+        await global.testUtils.delay(10);
+        return { data: 'result' };
       };
 
-      await Promise.all(
-        Array(updates).fill(null).map(() => update())
-      );
-
-      // Without proper locking, value will be less than updates
-      // This test documents the race condition
-    });
-
-    it('optimistic locking test', async () => {
-      let version = 1;
-      let successfulUpdates = 0;
-
-      const updateWithVersion = async (expectedVersion) => {
-        await global.testUtils.delay(Math.random() * 10);
-
-        if (version === expectedVersion) {
-          version++;
-          successfulUpdates++;
-          return true;
-        }
-        return false;
-      };
-
+      // 10 concurrent requests for the same missing cache key
       const promises = Array(10).fill(null).map(() =>
-        updateWithVersion(1)
+        cache.getOrCompute('popular-key', expensiveCompute, 300)
       );
 
       await Promise.all(promises);
 
-      // Only one should succeed with optimistic locking
-      expect(successfulUpdates).toBe(1);
+      // BUG H1: Without stampede protection, all 10 compute the value
+      // Only 1 should compute, rest should wait and use cached result
+      expect(computeCount).toBe(1);
+    });
+
+    it('cache TTL jitter variance test', async () => {
+      const mockRedis = global.testUtils.mockRedis();
+      const { CacheManager } = require('../../../services/streaming/src/services/cache');
+      const cache = new CacheManager(mockRedis);
+
+      const ttl = 300;
+      for (let i = 0; i < 20; i++) {
+        await cache.set(`key-${i}`, { data: i }, ttl);
+      }
+
+      // Extract the actual TTLs passed to redis.setex
+      const ttls = mockRedis.setex.mock.calls.map(call => call[1]);
+
+      // BUG H4: jitterPercent is 0, so all TTLs are identical
+      // Should have variance to prevent thundering herd expiration
+      const uniqueTTLs = new Set(ttls);
+      expect(uniqueTTLs.size).toBeGreaterThan(1);
     });
   });
 });

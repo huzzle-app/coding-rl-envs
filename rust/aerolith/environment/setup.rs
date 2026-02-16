@@ -141,8 +141,8 @@ impl Environment {
         let mut info = HashMap::new();
         info.insert("step".to_string(), "0".to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
-        info.insert("total_bugs".to_string(), "128".to_string());
-        info.insert("target_tests".to_string(), "1220".to_string());
+        info.insert("total_bugs".to_string(), "153".to_string());
+        info.insert("target_tests".to_string(), "1362".to_string());
         info.insert("files_changed".to_string(), String::new());
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -206,8 +206,8 @@ impl Environment {
 
         info.insert("step".to_string(), self.step_count.to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
-        info.insert("total_bugs".to_string(), "128".to_string());
-        info.insert("target_tests".to_string(), "1220".to_string());
+        info.insert("total_bugs".to_string(), "153".to_string());
+        info.insert("target_tests".to_string(), "1362".to_string());
         info.insert("files_changed".to_string(), self.files_changed.join(","));
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());

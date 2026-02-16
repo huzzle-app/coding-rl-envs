@@ -36,10 +36,10 @@ public class PatientService : IPatientService
         IEnumerable<Patient> activePatients = _context.Patients
             .Where(p => p.IsActive);
 
-        var count = activePatients.Count(); // First DB query
+        var count = activePatients.Count();
         Console.WriteLine($"Found {count} active patients");
 
-        var result = activePatients.ToList(); // Second DB query - hits DB again!
+        var result = activePatients.ToList();
         return result;
     }
 

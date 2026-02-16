@@ -18,7 +18,7 @@ func TestPasswordHashing(t *testing.T) {
 
 		isBcrypt := strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$")
 		assert.True(t, isBcrypt,
-			"BUG I5: Password hashing should use bcrypt (prefix $2a$ or $2b$), not SHA256")
+			"Password hashing should use bcrypt (prefix $2a$ or $2b$), not SHA256")
 	})
 
 	t.Run("should use unique salt per password", func(t *testing.T) {
@@ -28,7 +28,7 @@ func TestPasswordHashing(t *testing.T) {
 		hash2 := hashForTest("password123")
 
 		assert.NotEqual(t, hash1, hash2,
-			"BUG I5: Same password should produce different hashes (bcrypt uses random salt)")
+			"Same password should produce different hashes (bcrypt uses random salt)")
 	})
 }
 
@@ -62,7 +62,7 @@ func TestJWTGeneration(t *testing.T) {
 			}
 		}
 		assert.False(t, isWeak,
-			"BUG I1: JWT secret should not be a weak default; use a strong random secret")
+			"JWT secret should not be a weak default; use a strong random secret")
 	})
 }
 
@@ -71,7 +71,7 @@ func TestJWTWeakSecret(t *testing.T) {
 		
 		secret := "default-secret-key"
 		assert.GreaterOrEqual(t, len(secret), 32,
-			"BUG I1: JWT secret should be at least 32 characters for adequate security")
+			"JWT secret should be at least 32 characters for adequate security")
 	})
 }
 
@@ -90,7 +90,7 @@ func TestAPIKeyGeneration(t *testing.T) {
 		}
 
 		assert.Equal(t, 10, len(unique),
-			"BUG I4: All API keys should be unique (use crypto/rand, not math/rand)")
+			"All API keys should be unique (use crypto/rand, not math/rand)")
 	})
 }
 
@@ -98,7 +98,7 @@ func TestAPIKeyEntropy(t *testing.T) {
 	t.Run("should generate keys with sufficient length", func(t *testing.T) {
 		key := generateWeakKey()
 		assert.GreaterOrEqual(t, len(key), 32,
-			"BUG I4: API key should be at least 32 characters for adequate entropy")
+			"API key should be at least 32 characters for adequate entropy")
 	})
 }
 
@@ -115,7 +115,7 @@ func TestEmailValidation(t *testing.T) {
 		for _, email := range invalidEmails {
 			valid := len(email) > 0 && strings.Contains(email, "@") && strings.Contains(email, ".")
 			assert.False(t, valid,
-				"BUG I2: Email '%s' should be rejected by proper validation", email)
+				"Email '%s' should be rejected by proper validation", email)
 		}
 	})
 }
@@ -136,7 +136,7 @@ func TestEmailFormatValidation(t *testing.T) {
 		
 		xssEmail := "<script>alert('xss')</script>@test.com"
 		assert.False(t, !strings.ContainsAny(xssEmail, "<>"),
-			"BUG I2: Email with HTML should be rejected")
+			"Email with HTML should be rejected")
 	})
 }
 
@@ -164,7 +164,7 @@ func TestTimingAttack(t *testing.T) {
 		// When fixed, both paths should take similar time (constant-time comparison)
 		diff := validEmailWrongPwdTime - invalidEmailTime
 		assert.Less(t, diff, 5*time.Millisecond,
-			"BUG I3: Timing difference between valid/invalid email reveals user existence; should use constant-time comparison")
+			"Timing difference between valid/invalid email reveals user existence; should use constant-time comparison")
 	})
 }
 
@@ -246,7 +246,7 @@ func TestPermissionParsing(t *testing.T) {
 		allowedPerms := map[string]bool{"read": true, "write": true, "delete": true}
 		for _, p := range perms {
 			assert.True(t, allowedPerms[p],
-				"BUG I6: Permission '%s' should be rejected if not in the allowed set", p)
+				"Permission '%s' should be rejected if not in the allowed set", p)
 		}
 	})
 }
@@ -260,7 +260,7 @@ func TestPermissionEscalation(t *testing.T) {
 		for _, p := range requestedPerms {
 			if p == "admin" || p == "superuser" {
 				assert.False(t, allowedPerms[p],
-					"BUG I6: Permission '%s' should not be in the allowed set", p)
+					"Permission '%s' should not be in the allowed set", p)
 			}
 		}
 	})
@@ -272,7 +272,7 @@ func TestBcryptUsage(t *testing.T) {
 		hash := hashForTest("secure-password")
 		// bcrypt hashes are 60 characters and start with $2
 		assert.GreaterOrEqual(t, len(hash), 50,
-			"BUG I5: bcrypt hash should be at least 50 characters, not a short SHA256 hex string")
+			"bcrypt hash should be at least 50 characters, not a short SHA256 hex string")
 	})
 }
 
@@ -283,26 +283,26 @@ func TestPasswordSecurity(t *testing.T) {
 
 		isBcrypt := strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$")
 		assert.True(t, isBcrypt,
-			"BUG I5: Password should be hashed with bcrypt, not SHA256")
+			"Password should be hashed with bcrypt, not SHA256")
 	})
 
 	t.Run("should produce different hashes for same password", func(t *testing.T) {
 		hash1 := hashForTest("password123")
 		hash2 := hashForTest("password123")
 		assert.NotEqual(t, hash1, hash2,
-			"BUG I5: bcrypt with random salt should produce different hashes each time")
+			"bcrypt with random salt should produce different hashes each time")
 	})
 }
 
 // Helper functions
 
 func hashForTest(s string) string {
-	// Simplified hash for testing - BUG I5: uses sha256 instead of bcrypt
+	// Simplified hash for testing - uses sha256 instead of bcrypt
 	return "hash_" + s
 }
 
 func generateWeakKey() string {
-	// Simulated weak key generation - BUG I4: uses math/rand
+	// Simulated weak key generation - uses math/rand
 	return "weak_key"
 }
 

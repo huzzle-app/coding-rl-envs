@@ -22,7 +22,6 @@ use std::time::Duration;
 // =============================================================================
 
 /// Test that concurrent order submission and risk update do not deadlock.
-/
 ///         update_risk_and_cancel acquires risk then order_book lock.
 ///         With consistent lock ordering, this must complete within timeout.
 #[test]
@@ -90,7 +89,6 @@ fn test_concurrent_order_and_risk_no_deadlock() {
 // =============================================================================
 
 /// Test that best bid and ask are always from the same point in time.
-/
 ///         so they could be from different time points (crossed market).
 #[test]
 fn test_best_prices_consistent() {
@@ -166,7 +164,6 @@ fn test_order_book_race_condition() {
 // =============================================================================
 
 /// Test that price conversion does not use unsafe transmute on arbitrary bits.
-/
 ///         NaN, infinity, or denormalized values.
 #[test]
 fn test_price_conversion_safe() {
@@ -219,7 +216,6 @@ fn test_no_ub_transmute() {
 // =============================================================================
 
 /// Test that atomic operations use strong enough ordering for visibility.
-/
 #[test]
 fn test_atomic_ordering_no_data_race() {
     let counter = Arc::new(AtomicU64::new(0));
@@ -283,7 +279,6 @@ fn test_lockfree_ordering_correct() {
 // =============================================================================
 
 /// Test that quantity overflow is handled gracefully with checked arithmetic.
-/
 #[test]
 fn test_quantity_overflow_handled() {
     let qty: u64 = 100;
@@ -329,13 +324,12 @@ fn test_checked_arithmetic() {
 // =============================================================================
 
 /// Test that orders at invalid price ticks are rejected.
-/
 #[test]
 fn test_price_tick_validation() {
     let tick_size = 0.01_f64;
 
     // Valid prices (on tick)
-    let valid_prices = vec![100.00, 100.01, 100.99, 50000.50];
+    let valid_prices: Vec<f64> = vec![100.00, 100.01, 100.99, 50000.50];
     for price in valid_prices {
         let remainder = (price * 100.0).round() % (tick_size * 100.0).round();
         assert!(
@@ -345,7 +339,7 @@ fn test_price_tick_validation() {
     }
 
     // Invalid prices (off tick) - these should be REJECTED
-    let invalid_prices = vec![100.123, 100.005, 50000.999];
+    let invalid_prices: Vec<f64> = vec![100.123, 100.005, 50000.999];
     for price in invalid_prices {
         let cents = (price * 100.0).round() as i64;
         let tick_cents = (tick_size * 100.0).round() as i64;
@@ -383,7 +377,6 @@ fn test_invalid_tick_rejected() {
 // =============================================================================
 
 /// Test that the order book add_order function doesn't have borrow issues
-/
 #[test]
 fn test_closure_borrow_safety() {
     // Simulate the fix: copy price before closure

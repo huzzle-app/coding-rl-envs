@@ -3,8 +3,8 @@
 module ShopStream
   # Reward calculator for the ShopStream RL environment
   class Reward
-    PASS_THRESHOLDS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0].freeze
-    THRESHOLD_REWARDS = [0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0].freeze
+    PASS_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0].freeze
+    THRESHOLD_REWARDS = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0].freeze
 
     REGRESSION_PENALTY = -0.15
     SECURITY_BONUS = 0.08

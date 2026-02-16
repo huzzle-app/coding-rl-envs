@@ -187,9 +187,7 @@ class CacheForgeEnvironment:
         info = {
             'reward_breakdown': {
                 'test_pass_score': reward_breakdown.test_pass_score,
-                'completion_bonus': reward_breakdown.completion_bonus,
-                'bug_bonus': reward_breakdown.bug_bonus,
-                'efficiency_bonus': reward_breakdown.efficiency_bonus,
+                'total': reward_breakdown.total,
             },
             'details': reward_breakdown.details,
         }
@@ -220,6 +218,17 @@ class CacheForgeEnvironment:
         if action_type == 'edit' and (file_path.startswith('tests/') or '/tests/' in file_path
                 or os.path.basename(file_path).startswith('test_')):
             return {'success': False, 'error': 'Editing test files is not allowed'}
+        # Reject edits to environment/reward files
+        if action_type == 'edit' and (file_path.startswith('environment/')
+                or os.path.basename(file_path) in ('reward.py', 'scoring.py', 'setup.py')):
+            return {'success': False, 'error': 'Editing environment files is not allowed'}
+        # Prevent removing test targets from CMakeLists.txt
+        if action_type == 'edit' and os.path.basename(file_path) == 'CMakeLists.txt':
+            content = action.get('content', '')
+            required_targets = ['unit_tests', 'integration_tests', 'concurrency_tests', 'security_tests']
+            for target in required_targets:
+                if target not in content:
+                    return {'success': False, 'error': f'CMakeLists.txt must retain test target: {target}'}
         content = action.get('content', '')
         if len(content) > 100_000:
             return {'success': False, 'error': 'Content exceeds 100K character limit'}

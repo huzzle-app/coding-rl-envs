@@ -1,6 +1,6 @@
 Fix production defects in ObsidianMesh by editing source code only.
 
-ObsidianMesh is an Apex-Principal C++ environment with issues and tests (178 base + 12500 hyper-matrix). It implements deterministic replay correction, constrained routing, safety-policy gates, and real-time telemetry across 14 source modules and 13 microservices.
+ObsidianMesh is an Apex-Principal C++ environment with issues and tests (275 base + 12500 hyper-matrix). It implements deterministic replay correction, constrained routing, safety-policy gates, and real-time telemetry across 14 source modules and 13 microservices.
 
 ## Reward Thresholds (10-tier Apex)
 
@@ -25,6 +25,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 Primary objective: make the full suite pass (`ctest --output-on-failure`) with production-safe changes.
+
+## Training Mode
+
+For RL training, use `TRAINING_MODE=sublinear bash tests/test.sh` (or `bash tests/train.sh`) for dense rewards (pass_rate^0.7) instead of sparse thresholds. Regression detection penalizes breaking any of the 90 baseline-passing tests (1% penalty per regression).
 
 ---
 

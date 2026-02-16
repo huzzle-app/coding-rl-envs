@@ -81,6 +81,15 @@ impl Environment {
                 if is_test_path {
                     return Err("editing test files is not allowed".to_string());
                 }
+                if normalized == "Cargo.toml" || normalized.ends_with("/Cargo.toml") {
+                    return Err("editing Cargo.toml is not allowed".to_string());
+                }
+                if normalized.starts_with("environment/") || normalized.contains("/environment/") {
+                    return Err("editing environment files is not allowed".to_string());
+                }
+                if normalized == "build.rs" || normalized.starts_with(".cargo/") {
+                    return Err("editing build configuration is not allowed".to_string());
+                }
             }
         }
         if action_type == "run_command" {
@@ -152,7 +161,7 @@ impl Environment {
     }
 
     fn run_full_tests(&self) -> TestSummary {
-        let output = self.execute_command("cargo test").unwrap_or_default();
+        let output = self.execute_command("cargo test --no-fail-fast").unwrap_or_default();
         parse_cargo_test_summary(&output, false)
     }
 
@@ -191,7 +200,7 @@ impl Environment {
         info.insert("step".to_string(), "0".to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
         info.insert("total_bugs".to_string(), "1270".to_string());
-        info.insert("target_tests".to_string(), "9212".to_string());
+        info.insert("target_tests".to_string(), "12755".to_string());
         info.insert("files_changed".to_string(), String::new());
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -265,7 +274,7 @@ impl Environment {
         info.insert("step".to_string(), self.step_count.to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
         info.insert("total_bugs".to_string(), "1270".to_string());
-        info.insert("target_tests".to_string(), "9212".to_string());
+        info.insert("target_tests".to_string(), "12755".to_string());
         info.insert("files_changed".to_string(), self.files_changed.join(","));
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());

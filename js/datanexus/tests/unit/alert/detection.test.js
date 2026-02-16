@@ -4,7 +4,7 @@
  * Tests for BUG G1-G8 alerting bugs
  */
 
-const { AlertDetector } = require('../../../services/alerts/src/services/detection');
+const { AlertDetector, AlertStateMachine, FlappingDetector, AlertCorrelationEngine } = require('../../../services/alerts/src/services/detection');
 
 describe('AlertDetector', () => {
   let detector;
@@ -315,6 +315,88 @@ describe('AlertDetector', () => {
       detector.evaluate('cpu', 0.9);
       detector.clearAll();
       expect(detector.getActiveAlerts()).toEqual([]);
+    });
+  });
+
+  describe('AlertCorrelationEngine severity ordering (G1)', () => {
+    test('group severity should be highest actual severity not last seen', () => {
+      const correlator = new AlertCorrelationEngine();
+      correlator.addCorrelationRule({ name: 'cpu', metric: 'cpu', timeWindow: 60000 });
+      const now = Date.now();
+      correlator.correlate([
+        { id: 'a1', metric: 'cpu', severity: 'info', timestamp: now },
+        { id: 'a2', metric: 'cpu', severity: 'critical', timestamp: now + 1000 },
+      ]);
+      const groups = correlator.getCorrelationGroups();
+      expect(groups[0].severity).toBe('critical');
+    });
+
+    test('severity ordering: critical > error > warning > info', () => {
+      const correlator = new AlertCorrelationEngine();
+      correlator.addCorrelationRule({ name: 'mem', metric: 'mem', timeWindow: 60000 });
+      const now = Date.now();
+      correlator.correlate([
+        { id: 'a1', metric: 'mem', severity: 'warning', timestamp: now },
+        { id: 'a2', metric: 'mem', severity: 'error', timestamp: now + 1000 },
+        { id: 'a3', metric: 'mem', severity: 'info', timestamp: now + 2000 },
+      ]);
+      const groups = correlator.getCorrelationGroups();
+      expect(groups[0].severity).toBe('error');
+    });
+  });
+
+  describe('AlertCorrelationEngine root cause (G2)', () => {
+    test('root cause should be earliest alert by timestamp', () => {
+      const correlator = new AlertCorrelationEngine();
+      correlator.addCorrelationRule({ name: 'disk', metric: 'disk', timeWindow: 60000 });
+      const now = Date.now();
+      correlator.correlate([
+        { id: 'a3', metric: 'disk', severity: 'warning', timestamp: now },
+        { id: 'a1', metric: 'disk', severity: 'critical', timestamp: now - 30000 },
+        { id: 'a2', metric: 'disk', severity: 'error', timestamp: now - 10000 },
+      ]);
+      const groups = correlator.getCorrelationGroups();
+      expect(groups[0].rootCause.id).toBe('a1');
+    });
+  });
+
+  describe('AlertStateMachine acknowledge bug (G4)', () => {
+    test('acknowledge should transition escalated alerts', () => {
+      const sm = new AlertStateMachine();
+      sm.createAlert('a1', { severity: 'critical' });
+      sm.transition('a1', 'firing');
+      sm.transition('a1', 'escalated');
+      const result = sm.acknowledge('a1', 'user-1');
+      expect(result.state).toBe('acknowledged');
+    });
+  });
+
+  describe('AlertStateMachine force flag (G3)', () => {
+    test('force flag with truthy non-boolean should not bypass validation', () => {
+      const sm = new AlertStateMachine();
+      sm.createAlert('a1');
+      sm.transition('a1', 'firing');
+      expect(() => {
+        sm.transition('a1', 'pending', { force: [] });
+      }).toThrow('Invalid transition');
+    });
+
+    test('force flag with truthy string should not bypass validation', () => {
+      const sm = new AlertStateMachine();
+      sm.createAlert('a2');
+      sm.transition('a2', 'firing');
+      expect(() => {
+        sm.transition('a2', 'pending', { force: 'yes' });
+      }).toThrow('Invalid transition');
+    });
+
+    test('force flag with number 1 should not bypass validation', () => {
+      const sm = new AlertStateMachine();
+      sm.createAlert('a3');
+      sm.transition('a3', 'firing');
+      expect(() => {
+        sm.transition('a3', 'pending', { force: 1 });
+      }).toThrow('Invalid transition');
     });
   });
 });

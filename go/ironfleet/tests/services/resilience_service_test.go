@@ -33,10 +33,12 @@ func TestEstimateReplayCoverageInRange(t *testing.T) {
 func TestFailoverPriorityDegradedHigherPriority(t *testing.T) {
 	healthy := resilience.FailoverPriority("us-east", false, 20)
 	degraded := resilience.FailoverPriority("us-east", true, 20)
-	_ = healthy
-	_ = degraded
 	// Both should be non-negative
 	if healthy < 0 || degraded < 0 {
 		t.Fatal("priority must be non-negative")
+	}
+	// Degraded nodes need failover sooner, so they should have higher priority
+	if degraded <= healthy {
+		t.Fatalf("expected degraded priority (%d) > healthy priority (%d)", degraded, healthy)
 	}
 }

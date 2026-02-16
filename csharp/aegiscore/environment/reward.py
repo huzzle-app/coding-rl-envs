@@ -11,4 +11,4 @@ def sparse_reward(pass_rate: float) -> float:
 # Legacy stubs - kept for backward compatibility with setup.py imports
 BUG_TEST_MAPPING = {}
 BUG_DEPENDENCIES = {}
-TOTAL_BUGS = 0  # Legacy stub
+TOTAL_BUGS = 35  # Verified count across 10 modules

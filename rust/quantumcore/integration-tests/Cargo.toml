@@ -1,0 +1,12 @@
+[package]
+name = "integration-tests"
+version.workspace = true
+edition.workspace = true
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+crossbeam = { workspace = true }
+dashmap = { workspace = true }
+subtle = { workspace = true }

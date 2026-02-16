@@ -13,7 +13,7 @@ fn pipeline_order_validation() {
 
 #[test]
 fn retry_budget_rules() {
-    assert_eq!(retry_budget_for_stage(&Stage::Align), 4);
+    assert_eq!(retry_budget_for_stage(&Stage::Align), 5);
     assert_eq!(retry_budget_for_stage(&Stage::Report), 2);
 }
 

@@ -2,7 +2,7 @@
 
 NimbusFlow coordinates dispatch planning, replay resilience, route policy, and security controls for maritime operations. The platform manages vessel berth allocation, multi-leg route planning, policy escalation/de-escalation, circuit breaker resilience, and real-time workflow tracking across eight interconnected services.
 
-The codebase contains issues across deep cross-module dependencies and deterministic invariants.
+The codebase contains 25 bugs across deep cross-module dependencies and deterministic invariants.
 
 ## Difficulty
 
@@ -19,7 +19,7 @@ Fix production defects in source files only.
 
 ## Completion Criteria
 
-- Full suite passes (`mvn test`) with **9200+ scenarios**.
+- Full suite passes (`mvn test`) with **9316 scenarios**.
 - Deterministic replay/routing behavior is preserved.
 - Security and workflow invariants remain enforced.
 - Do not edit files under `src/test/`.
@@ -29,6 +29,19 @@ Fix production defects in source files only.
 ```bash
 cd kotlin/nimbusflow && mvn test
 ```
+
+## Bug Categories
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| Logic inversion | 5 | Wrong comparison direction, inverted conditions |
+| Wrong operator | 5 | Multiplication vs division, addition vs subtraction |
+| Off-by-one | 3 | Boundary conditions using `<` vs `<=`, `>` vs `>=` |
+| Wrong constant | 2 | Incorrect ratio, wrong formula coefficient |
+| Missing feature | 3 | Missing keywords, missing port, missing terminal state |
+| Missing guard | 4 | Unconditional history write, negative coord handling, race conditions (x2) |
+| Wrong formula | 2 | Percentile rank calculation, floor vs ceil |
+| Wrong graph edge | 1 | Invalid state transition in workflow |
 
 ## Debugging Scenarios
 

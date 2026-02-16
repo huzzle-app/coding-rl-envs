@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "data/value.h"
 #include <cstring>
+#include <type_traits>
 
 using namespace cacheforge;
 
@@ -29,11 +30,15 @@ TEST(ValueTest, test_string_view_not_dangling_after_move) {
 }
 
 TEST(ValueTest, test_as_string_returns_copy) {
-    
+
     Value v("test");
     auto result = v.as_string();
     EXPECT_EQ(result, "test");
-    // result should be independent of v
+
+    // Verify as_string() returns a value type (copy), not a reference/view
+    // After fix, as_string_view should also be safe or removed
+    EXPECT_TRUE((std::is_same_v<decltype(v.as_string()), std::string>))
+        << "as_string() must return std::string (not string_view) to prevent dangling";
 }
 
 // ========== Bug D2: Strict aliasing violation ==========

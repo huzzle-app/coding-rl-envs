@@ -97,8 +97,10 @@ class ExtDispatchTest(unittest.TestCase):
         self.assertEqual(len(available), 1)
 
     def test_estimate_cost(self):
-        cost = estimate_cost(5, 100.0)
-        self.assertGreater(cost, 0)
+        cost_near = estimate_cost(5, 100.0)
+        cost_far = estimate_cost(5, 200.0)
+        per_km = round((cost_far - cost_near) / 100.0, 2)
+        self.assertEqual(per_km, 0.5)
 
     def test_estimate_turnaround(self):
         self.assertEqual(estimate_turnaround(5), 30)
@@ -152,7 +154,8 @@ class ExtPolicyTest(unittest.TestCase):
         self.assertEqual(previous_policy("normal"), "normal")
 
     def test_should_deescalate(self):
-        self.assertTrue(should_deescalate(20, "halted"))
+        self.assertFalse(should_deescalate(20, "halted"))
+        self.assertTrue(should_deescalate(21, "halted"))
         self.assertFalse(should_deescalate(3, "halted"))
 
     def test_policy_engine(self):

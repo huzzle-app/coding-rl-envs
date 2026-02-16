@@ -1,7 +1,7 @@
-"""GeneForge reward model - sparse reward calculation."""
+"""GeneForge reward model - sparse reward calculation (Principal, 8-threshold)."""
 
-PASS_THRESHOLDS = [0.10, 0.22, 0.36, 0.52, 0.67, 0.80, 0.90, 0.96, 0.99, 1.0]
-THRESHOLD_REWARDS = [0.0, 0.015, 0.05, 0.11, 0.19, 0.31, 0.47, 0.66, 0.85, 1.0]
+PASS_THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+THRESHOLD_REWARDS = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
 
 TOTAL_TESTS = 1280
 

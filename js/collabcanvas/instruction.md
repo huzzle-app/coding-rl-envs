@@ -89,12 +89,11 @@ Pass rate thresholds (sparse rewards):
 
 | Pass Rate | Reward |
 |-----------|--------|
-| < 25% | 0.00 |
-| 25-50% | 0.15 |
-| 50-75% | 0.35 |
-| 75-90% | 0.65 |
-| 90-100% | 0.65 |
-| 100% | 1.00 |
+| < 50%  | 0.00 |
+| >= 50% | 0.15 |
+| >= 75% | 0.35 |
+| >= 90% | 0.65 |
+| 100%   | 1.00 |
 
 Additional scoring:
 - **Regression penalty**: -0.15 for breaking previously passing tests

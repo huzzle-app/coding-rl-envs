@@ -6,7 +6,23 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::path::PathBuf;
 use parking_lot::{Mutex, RwLock, Condvar};
+
+// =============================================================================
+// Source-code verification helpers
+// =============================================================================
+
+fn workspace_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir.parent().unwrap().to_path_buf()
+}
+
+fn read_source(relative_path: &str) -> String {
+    let path = workspace_root().join(relative_path);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
+}
 
 // =============================================================================
 // B1: Lock Ordering Deadlock Tests
@@ -14,13 +30,13 @@ use parking_lot::{Mutex, RwLock, Condvar};
 
 #[test]
 fn test_b1_lock_ordering_consistent() {
-    
+
     let lock_a = Arc::new(Mutex::new(0u64));
     let lock_b = Arc::new(Mutex::new(0u64));
 
     let mut handles = vec![];
 
-    for i in 0..4 {
+    for _i in 0..4 {
         let la = lock_a.clone();
         let lb = lock_b.clone();
 
@@ -47,66 +63,66 @@ fn test_b1_lock_ordering_consistent() {
 }
 
 #[test]
-fn test_b1_timeout_deadlock_detection() {
-    // Deadlock detection via timeout
-    let start = Instant::now();
-    let max_duration = Duration::from_secs(5);
+fn test_b1_lock_ordering_in_source() {
+    // BUG B1: Matching engine acquires locks in inconsistent order
+    // submit_order: order_book -> risk_state
+    // update_risk_and_cancel: risk_state -> order_book
+    let src = read_source("services/matching/src/engine.rs");
 
-    // Simple concurrent operation
-    let counter = Arc::new(AtomicU64::new(0));
-    let mut handles = vec![];
+    // Find lock acquisition order in submit_order
+    let submit_fn = src.split("fn submit_order").nth(1).unwrap_or("");
+    let submit_body = submit_fn.split("\n    pub ").next().unwrap_or(submit_fn);
 
-    for _ in 0..4 {
-        let c = counter.clone();
-        handles.push(thread::spawn(move || {
-            for _ in 0..1000 {
-                c.fetch_add(1, Ordering::SeqCst);
-            }
-        }));
-    }
+    // Find lock acquisition order in update_risk_and_cancel
+    let cancel_fn = src.split("fn update_risk_and_cancel").nth(1).unwrap_or("");
+    let cancel_body = cancel_fn.split("\n    pub ").next().unwrap_or(cancel_fn);
 
-    for h in handles {
-        h.join().unwrap();
-    }
+    // In submit_order, order_books is locked before risk_state
+    let submit_books_first = submit_body.find("order_book").unwrap_or(usize::MAX)
+        < submit_body.find("risk_state").unwrap_or(usize::MAX);
 
-    assert!(start.elapsed() < max_duration, "Should complete quickly without deadlock");
+    // In update_risk_and_cancel, risk_state is locked before order_books
+    let cancel_risk_first = cancel_body.find("risk_state").unwrap_or(usize::MAX)
+        < cancel_body.find("order_book").unwrap_or(usize::MAX);
+
+    // If both acquire in different orders, deadlock is possible
+    assert!(!(submit_books_first && cancel_risk_first),
+        "Lock ordering is inconsistent: submit_order locks order_book->risk, \
+         but update_risk_and_cancel locks risk->order_book — DEADLOCK possible (bug B1)");
 }
 
 // =============================================================================
-// B2: Blocking in Async Context Tests
+// B2: Blocking in Async Context Tests (source-verifying)
 // =============================================================================
 
 #[test]
 fn test_b2_no_blocking_in_async() {
-    
-    // This test verifies the pattern
-
-    let work_done = Arc::new(AtomicU64::new(0));
-
-    // Simulate blocking work
-    let wd = work_done.clone();
-    let h = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(10));
-        wd.fetch_add(1, Ordering::SeqCst);
-    });
-
-    h.join().unwrap();
-    assert_eq!(work_done.load(Ordering::SeqCst), 1);
+    // BUG B2: Async functions should not use blocking operations
+    let src = read_source("services/orders/src/service.rs");
+    // Check for std::thread::sleep in async functions (blocking the executor)
+    let has_thread_sleep = src.contains("std::thread::sleep") || src.contains("thread::sleep");
+    // Check for std::sync::Mutex in async context (should use tokio::sync::Mutex)
+    let has_std_mutex_in_async = src.contains("std::sync::Mutex");
+    assert!(!has_thread_sleep,
+        "Async code should not use std::thread::sleep — use tokio::time::sleep instead");
+    assert!(!has_std_mutex_in_async,
+        "Async code should not use std::sync::Mutex — use tokio::sync::Mutex or parking_lot");
 }
 
 #[test]
 fn test_b2_spawn_blocking_used() {
-    // Blocking operations should use spawn_blocking
-    let cpu_bound_work = || -> u64 {
-        let mut sum = 0u64;
-        for i in 0..1000 {
-            sum = sum.wrapping_add(i);
-        }
-        sum
-    };
-
-    let result = cpu_bound_work();
-    assert!(result > 0, "CPU-bound work completed");
+    // BUG B2: CPU-bound work in async should use spawn_blocking
+    let matching_src = read_source("services/matching/src/engine.rs");
+    // The matching engine does CPU-bound work (order matching) — check if it's properly handled
+    // If running in async context, should use spawn_blocking for heavy computation
+    let has_spawn_blocking = matching_src.contains("spawn_blocking")
+        || matching_src.contains("block_in_place");
+    // Also acceptable: the engine runs on its own runtime/thread pool
+    let has_dedicated_runtime = matching_src.contains("Runtime")
+        || matching_src.contains("thread_pool")
+        || matching_src.contains("rayon");
+    assert!(has_spawn_blocking || has_dedicated_runtime,
+        "CPU-bound matching work should use spawn_blocking or dedicated thread pool");
 }
 
 // =============================================================================
@@ -115,7 +131,7 @@ fn test_b2_spawn_blocking_used() {
 
 #[test]
 fn test_b3_read_modify_write_atomic() {
-    
+
     let counter = Arc::new(AtomicU64::new(0));
     let mut handles = vec![];
 
@@ -139,7 +155,7 @@ fn test_b3_read_modify_write_atomic() {
 
 #[test]
 fn test_b3_check_then_act_atomic() {
-    
+
     let value = Arc::new(AtomicU64::new(100));
 
     let v1 = value.clone();
@@ -165,30 +181,41 @@ fn test_b3_check_then_act_atomic() {
     assert!(final_val == 99 || final_val == 100, "Value should be consistent");
 }
 
+#[test]
+fn test_b3_race_in_order_book() {
+    // BUG B3: get_best_prices drops and reacquires lock between bid and ask reads
+    let src = read_source("services/matching/src/engine.rs");
+    let best_prices_fn = src.split("fn get_best_prices").nth(1).unwrap_or("");
+    let fn_body = best_prices_fn.split("\n    pub ").next().unwrap_or(best_prices_fn);
+    // Count how many times the lock is acquired in this function
+    let lock_count = fn_body.matches(".lock()").count();
+    // Should hold lock for the entire operation (1 lock), not release and reacquire (2+ locks)
+    assert!(lock_count <= 1,
+        "get_best_prices acquires the lock {} times — should hold lock for both bid and ask reads \
+         to prevent inconsistent (crossed) market data (bug B3)", lock_count);
+}
+
 // =============================================================================
-// B4: Future Send Tests
+// B4: Future Send Tests (source-verifying)
 // =============================================================================
 
 #[test]
 fn test_b4_data_is_send() {
-    
-    fn assert_send<T: Send>() {}
-
-    // These types should be Send
-    assert_send::<u64>();
-    assert_send::<String>();
-    assert_send::<Arc<Mutex<u64>>>();
-    assert_send::<Arc<AtomicU64>>();
+    // BUG E5/B4: Check that unsafe Send/Sync impls aren't used incorrectly
+    let src = read_source("shared/src/discovery.rs");
+    // Unsafe Send/Sync implementations are dangerous and usually indicate a bug
+    let has_unsafe_send = src.contains("unsafe impl Send");
+    assert!(!has_unsafe_send,
+        "ServiceDiscovery has unsafe impl Send — this bypasses compiler safety checks (bug E5)");
 }
 
 #[test]
 fn test_b4_data_is_sync() {
-    
-    fn assert_sync<T: Sync>() {}
-
-    assert_sync::<AtomicU64>();
-    assert_sync::<Arc<Mutex<u64>>>();
-    assert_sync::<Arc<RwLock<u64>>>();
+    // BUG E5/B4: Check that unsafe Sync impl isn't used
+    let src = read_source("shared/src/discovery.rs");
+    let has_unsafe_sync = src.contains("unsafe impl Sync");
+    assert!(!has_unsafe_sync,
+        "ServiceDiscovery has unsafe impl Sync — this bypasses compiler safety checks (bug E5)");
 }
 
 // =============================================================================
@@ -212,7 +239,8 @@ fn test_b5_mutex_poison_handled() {
 
     // Mutex is now poisoned - must handle this
     let m = mutex.clone();
-    match m.lock() {
+    let lock_result = m.lock();
+    match lock_result {
         Ok(_) => panic!("Should be poisoned"),
         Err(poisoned) => {
             // Recover from poisoning
@@ -248,7 +276,7 @@ fn test_b5_parking_lot_no_poison() {
 fn test_b6_channel_backpressure() {
     use std::sync::mpsc;
 
-    
+
     // Bounded channel provides backpressure
     let (tx, rx) = mpsc::sync_channel::<u64>(10);
 
@@ -269,6 +297,8 @@ fn test_b6_channel_backpressure() {
         received += 1;
     }
 
+    // Drop receiver so producer gets SendError and breaks
+    drop(rx);
     producer.join().unwrap();
 
     // Should have received some messages
@@ -302,7 +332,7 @@ fn test_b6_bounded_channel() {
 
 #[test]
 fn test_b7_atomic_ordering_correct() {
-    
+
     let value = Arc::new(AtomicU64::new(0));
     let flag = Arc::new(AtomicBool::new(false));
 
@@ -324,24 +354,18 @@ fn test_b7_atomic_ordering_correct() {
 
 #[test]
 fn test_b7_seqcst_for_ordering() {
-    // SeqCst provides strongest ordering guarantee
-    let counter = Arc::new(AtomicU64::new(0));
-
-    let mut handles = vec![];
-    for _ in 0..4 {
-        let c = counter.clone();
-        handles.push(thread::spawn(move || {
-            for _ in 0..1000 {
-                c.fetch_add(1, Ordering::SeqCst);
-            }
-        }));
+    // BUG B7: Position tracker uses Ordering::Relaxed for event counter
+    let src = read_source("services/positions/src/tracker.rs");
+    // Event counter should use SeqCst or at least Acquire/Release, not Relaxed
+    let lines: Vec<&str> = src.lines().collect();
+    let mut relaxed_in_counter = false;
+    for line in &lines {
+        if line.contains("event_counter") && line.contains("Relaxed") {
+            relaxed_in_counter = true;
+        }
     }
-
-    for h in handles {
-        h.join().unwrap();
-    }
-
-    assert_eq!(counter.load(Ordering::SeqCst), 4000);
+    assert!(!relaxed_in_counter,
+        "Event counter uses Ordering::Relaxed — should use SeqCst for cross-thread visibility (bug B7)");
 }
 
 // =============================================================================
@@ -350,7 +374,6 @@ fn test_b7_seqcst_for_ordering() {
 
 #[test]
 fn test_b8_no_spin_loop_in_async() {
-    
 
     let ready = Arc::new(AtomicBool::new(false));
 
@@ -371,26 +394,39 @@ fn test_b8_no_spin_loop_in_async() {
 
 #[test]
 fn test_b8_use_condvar() {
-    // Better: use condvar for waiting
-    let pair = Arc::new((Mutex::new(false), Condvar::new()));
+    // Better: use condvar for waiting (with timeout to avoid test hanging)
+    use std::sync::mpsc;
 
-    let p = pair.clone();
-    let setter = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(10));
-        let (lock, cvar) = &*p;
+    let (done_tx, done_rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let pair = Arc::new((Mutex::new(false), Condvar::new()));
+
+        let p = pair.clone();
+        let setter = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(10));
+            let (lock, cvar) = &*p;
+            let mut ready = lock.lock();
+            *ready = true;
+            cvar.notify_one();
+        });
+
+        let (lock, cvar) = &*pair;
         let mut ready = lock.lock();
-        *ready = true;
-        cvar.notify_one();
+        // Use wait_for with timeout to avoid blocking forever
+        let result = cvar.wait_for(&mut ready, Duration::from_secs(2));
+        let success = *ready && !result.timed_out();
+        drop(ready);
+
+        let _ = setter.join();
+        let _ = done_tx.send(success);
     });
 
-    let (lock, cvar) = &*pair;
-    let mut ready = lock.lock();
-    while !*ready {
-        cvar.wait(&mut ready);
+    match done_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(true) => {} // Condvar properly notified
+        Ok(false) => panic!("Condvar notification failed or timed out"),
+        Err(_) => panic!("Test timed out — condvar deadlock detected"),
     }
-
-    setter.join().unwrap();
-    assert!(*lock.lock());
 }
 
 // =============================================================================
@@ -399,7 +435,7 @@ fn test_b8_use_condvar() {
 
 #[test]
 fn test_b9_condvar_spurious_wakeup() {
-    
+
     let pair = Arc::new((Mutex::new(0u64), Condvar::new()));
 
     let p = pair.clone();
@@ -450,7 +486,7 @@ fn test_b9_wait_while() {
 
 #[test]
 fn test_b10_thread_pool_bounded() {
-    
+
     let max_threads = 4;
     let active = Arc::new(AtomicU64::new(0));
     let max_seen = Arc::new(AtomicU64::new(0));
@@ -489,7 +525,7 @@ fn test_b10_thread_pool_bounded() {
 
 #[test]
 fn test_b11_aba_with_tagged_pointer() {
-    
+
     let counter = Arc::new(AtomicU64::new(0));
 
     // Tagged value: lower bits = value, upper bits = tag
@@ -522,7 +558,7 @@ fn test_b11_aba_with_tagged_pointer() {
 
 #[test]
 fn test_b12_memory_ordering_prices() {
-    
+
     let price = Arc::new(AtomicU64::new(0));
     let sequence = Arc::new(AtomicU64::new(0));
 
@@ -546,21 +582,17 @@ fn test_b12_memory_ordering_prices() {
 }
 
 #[test]
-fn test_b12_market_price_visibility() {
-    // Prices should be visible to all readers
-    let prices: Vec<Arc<AtomicU64>> = (0..5)
-        .map(|_| Arc::new(AtomicU64::new(100)))
-        .collect();
-
-    // Update all prices
-    for (i, p) in prices.iter().enumerate() {
-        p.store((i as u64 + 1) * 100, Ordering::SeqCst);
-    }
-
-    // All readers see updates
-    for (i, p) in prices.iter().enumerate() {
-        assert_eq!(p.load(Ordering::SeqCst), (i as u64 + 1) * 100);
-    }
+fn test_b12_memory_ordering_in_source() {
+    // BUG B12: Matching engine uses Relaxed ordering for price updates
+    let src = read_source("services/matching/src/engine.rs");
+    // Find the update_last_price function
+    let update_fn = src.split("fn update_last_price").nth(1).unwrap_or("");
+    let fn_body = update_fn.split("\n    fn ").next().unwrap_or(update_fn);
+    // Price stores should use Release (or stronger), not Relaxed
+    let uses_relaxed = fn_body.contains("Ordering::Relaxed");
+    assert!(!uses_relaxed,
+        "update_last_price uses Ordering::Relaxed — price updates must use Release/SeqCst \
+         for cross-thread visibility (bug B12)");
 }
 
 // =============================================================================

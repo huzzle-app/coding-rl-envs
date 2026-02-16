@@ -14,24 +14,18 @@ import java.util.concurrent.atomic.DoubleAdder;
  * dispatch assignments, billing amounts).
  *
  * Designed to be exported to Prometheus or similar monitoring backends.
+ *
+ * Bugs: J4, J5
+ * Categories: Observability
  */
 public class MetricsCollector {
 
     private final Map<String, AtomicLong> counters = new ConcurrentHashMap<>();
     private final Map<String, DoubleAdder> gauges = new ConcurrentHashMap<>();
 
-    
-    // The levels map uses uppercase keys ("TRACE", "DEBUG", "INFO", etc.),
-    // but callers may pass lowercase or mixed-case level strings from
-    // configuration files or environment variables. "info" won't match
-    // "INFO" in the map lookup, causing isLevelEnabled() to return false
-    // for valid levels. This silently suppresses all logging in services
-    // that use lowercase log level configuration (e.g., LOG_LEVEL=info
-    // in docker-compose.yml).
+    // Bug J4: The log level lookup map uses uppercase keys but callers may pass
+    // lowercase or mixed-case level strings, causing lookups to fail silently.
     // Category: Observability
-    // Fix: Normalize both parameters to uppercase before lookup:
-    //   Integer configured = levels.get(configuredLevel.toUpperCase());
-    //   Integer requested = levels.get(requestedLevel.toUpperCase());
 
     /**
      * Checks if a requested log level is enabled given the configured threshold.
@@ -49,43 +43,20 @@ public class MetricsCollector {
             "ERROR", 4
         );
 
-        
-        // levels.get("info") returns null, so the method returns false even
-        // though "info" is a valid log level.
         Integer configured = levels.get(configuredLevel);
         Integer requested = levels.get(requestedLevel);
 
         if (configured == null || requested == null) {
             return false;
-            
-            // like "info", "Info", "debug", etc.
         }
 
         return requested >= configured;
-        // Fix:
-        // Integer configured = levels.get(configuredLevel != null ? configuredLevel.toUpperCase() : "");
-        // Integer requested = levels.get(requestedLevel != null ? requestedLevel.toUpperCase() : "");
-        // if (configured == null || requested == null) return false;
-        // return requested >= configured;
     }
 
-    
-    // The startSpan() method returns an AutoCloseable that decrements the active
-    // span counter and records duration when closed. However, the API design
-    // does not enforce try-with-resources usage. If the caller does:
-    //   AutoCloseable span = metrics.startSpan("process");
-    //   doWork(); // throws exception
-    //   span.close(); // never reached
-    // The active span counter is incremented but never decremented, causing
-    // monitoring dashboards to show ever-increasing "active" counts and
-    // incorrect duration metrics. Over time this produces misleading alerts.
+    // Bug J5: The startSpan() API does not enforce try-with-resources usage.
+    // If the caller does not use try-with-resources and an exception occurs,
+    // the active span counter stays incremented permanently.
     // Category: Observability
-    // Fix: Provide a method that takes a Runnable/Callable and wraps it in
-    //      try-finally internally, or document that callers MUST use
-    //      try-with-resources. Better API:
-    //   public <T> T withSpan(String name, Callable<T> work) throws Exception {
-    //       try (var span = startSpan(name)) { return work.call(); }
-    //   }
 
     /**
      * Starts a timed metric span. The returned AutoCloseable MUST be used
@@ -99,10 +70,6 @@ public class MetricsCollector {
         counters.computeIfAbsent(name + ".active", k -> new AtomicLong(0)).incrementAndGet();
         counters.computeIfAbsent(name + ".total", k -> new AtomicLong(0)).incrementAndGet();
 
-        
-        // The API returns AutoCloseable but doesn't enforce proper usage.
-        // If the caller doesn't use try-with-resources and an exception occurs,
-        // the active counter stays incremented permanently.
         return () -> {
             long elapsed = System.nanoTime() - startTime;
             counters.computeIfAbsent(name + ".active", k -> new AtomicLong(0)).decrementAndGet();

@@ -14,6 +14,13 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 
+/**
+ * Token validator handling JWT validation, password verification,
+ * and session deserialization.
+ *
+ * Bugs: S6, S7, S8
+ * Categories: Security
+ */
 @Component
 public class TokenValidator {
 
@@ -26,13 +33,10 @@ public class TokenValidator {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    
-    // Token validation doesn't enforce a specific algorithm
-    // Attacker can craft token with alg=none to bypass signature check
-    // Fix: Explicitly set verifyWith(getSigningKey()) to enforce algorithm
+    // Bug S6: Token validation doesn't enforce a specific signing algorithm.
+    // Category: Security
     public String validateToken(String token) {
         try {
-            
             Jws<Claims> claims = Jwts.parser()
                 .build()
                 .parseSignedClaims(token);
@@ -43,24 +47,19 @@ public class TokenValidator {
         }
     }
 
-    
-    // String.equals() short-circuits on first character mismatch
-    // Attacker can determine password length and characters via timing
-    // Fix: Use constant-time comparison (MessageDigest.isEqual)
+    // Bug S7: Password comparison uses String.equals() which is vulnerable
+    // to timing attacks.
+    // Category: Security
     public boolean validatePassword(String provided, String stored) {
-        
         return provided.equals(stored);
-        // Fix: return java.security.MessageDigest.isEqual(
-        //          provided.getBytes(), stored.getBytes());
     }
 
-    
-    // ObjectInputStream used on untrusted data allows arbitrary code execution
-    // Fix: Use JSON deserialization or ObjectInputFilter
+    // Bug S8: ObjectInputStream used on untrusted data allows arbitrary
+    // code execution via deserialization gadget chains.
+    // Category: Security
     @SuppressWarnings("unchecked")
     public Map<String, Object> deserializeSession(byte[] data) {
         try {
-            
             ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data));
             Map<String, Object> session = (Map<String, Object>) ois.readObject();
             ois.close();

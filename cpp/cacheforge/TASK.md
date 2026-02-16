@@ -37,11 +37,15 @@ cmake --build build --parallel
 # Run all tests
 cd build && ctest --output-on-failure
 
-# Run specific test category
-ctest -R unit_tests --output-on-failure
-ctest -R integration_tests --output-on-failure
-ctest -R concurrency_tests --output-on-failure
-ctest -R security_tests --output-on-failure
+# Run specific test category (fine-grained CTest targets)
+ctest -R setup_tests --output-on-failure
+ctest -R parser_core_tests --output-on-failure
+ctest -R value_tests --output-on-failure
+ctest -R deadlock_tests --output-on-failure
+ctest -R eviction_tests --output-on-failure
+ctest -R security_suite --output-on-failure
+ctest -R source_check_tests --output-on-failure
+ctest -R ub_detection_tests --output-on-failure
 ```
 
 **Important**: The build system itself has issues that must be fixed first. Setup bugs (L1-L4) prevent the project from building or starting correctly. Fix these before tackling other categories.
@@ -59,34 +63,33 @@ ctest -R security_tests --output-on-failure
 ## Test Structure
 
 | Category | Test Binary | Tests | Weight |
-| Unit | `unit_tests` | ~55 | 1.0x |
-| Integration | `integration_tests` | ~35 | 1.5x |
-| Concurrency | `concurrency_tests` | ~20 | 2.5x |
-| Security | `security_tests` | ~15 | 2.0x |
-| **Total** | | **125+** | |
+| Unit | `unit_tests` | 82 | 1.0x |
+| Integration | `integration_tests` | 35 | 1.5x |
+| Concurrency | `concurrency_tests` | 14 | 2.5x |
+| Security | `security_tests` | 18 | 2.0x |
+| **Total** | | **149** | |
+
+Tests are organized into 15 CTest targets with dependency chains. Some tests (e.g., deadlock, eviction) depend on setup tests passing first. Use `ctest --output-on-failure` to see the full dependency-ordered execution.
 
 ## Key Files to Investigate
 
 ## Scoring
 
-Your score is based on the weighted percentage of tests passing:
+Your score is a blend of test pass rate (70%) and code correctness (30%):
+
+**Test pass rate** (5-threshold sparse):
 
 | Pass Rate | Reward |
 |-----------|--------|
-| < 25% | 0.00 |
-| 25-49% | 0.00-0.15 |
-| 50-74% | 0.15-0.35 |
-| 75-89% | 0.35-0.65 |
-| 90-99% | 0.65-1.00 |
+| < 50% | 0.00 |
+| >= 50% | 0.15 |
+| >= 75% | 0.35 |
+| >= 90% | 0.65 |
 | 100% | 1.00 |
 
-### Bonuses
-- Category completion bonuses for fixing all bugs in a category
-- Concurrency fix bonus (+3%) for resolving all race/deadlock issues
-- Security fix bonus (+2%) for resolving all security vulnerabilities
+**Code correctness** checks 12 source-level patterns (signal safety, const correctness, RAII usage, etc.) and contributes up to 0.30 to the final reward.
 
-### Penalties
-- Regression penalty (-15%) for re-breaking previously passing tests
+**Final reward** = 0.70 * test_pass_reward + 0.30 * code_correctness_score
 
 ## Hints
 

@@ -105,8 +105,29 @@ async fn test_versioning_prune_no_double_borrow() {
 /// After fix, the check happens before the move.
 #[test]
 fn test_list_files_skips_tmp_before_move() {
-    // Simulate the fixed logic:
-    // The fix moves the .ends_with(".tmp") check BEFORE creating FileResponse
+    // Verify the source code checks .tmp BEFORE moving the file name
+    let files_src = include_str!("../src/handlers/files.rs");
+
+    // After fix: the .ends_with(".tmp") check must come BEFORE the FileResponse creation
+    // that moves file.name. Look for the pattern where tmp check precedes the struct literal.
+    let list_files_section = files_src.split("pub async fn list_files")
+        .nth(1)
+        .unwrap_or("");
+
+    // In the buggy version, FileResponse is created first (moving file.name),
+    // then file.name.ends_with(".tmp") is checked (use-after-move).
+    // After fix: check must come before the move.
+    let response_pos = list_files_section.find("FileResponse");
+    let tmp_check_pos = list_files_section.find(".tmp");
+
+    if let (Some(resp), Some(tmp)) = (response_pos, tmp_check_pos) {
+        assert!(
+            tmp < resp,
+            "The .tmp check must appear BEFORE FileResponse creation to avoid use-after-move (A4)"
+        );
+    }
+
+    // Also verify the logic still works
     let files = vec![
         FileMetadata { name: "document.pdf".to_string(), ..FileMetadata::new("1") },
         FileMetadata { name: "temp.tmp".to_string(), ..FileMetadata::new("2") },
@@ -115,7 +136,6 @@ fn test_list_files_skips_tmp_before_move() {
 
     let mut kept = Vec::new();
     for file in &files {
-        // Fixed: check before move
         if file.name.ends_with(".tmp") {
             continue;
         }
@@ -129,16 +149,31 @@ fn test_list_files_skips_tmp_before_move() {
 /
 #[test]
 fn test_list_files_no_use_after_move() {
-    let files = vec![
-        FileMetadata::new("1"),
-        FileMetadata::new("2"),
-    ];
+    // Verify the source code in files.rs doesn't have use-after-move
+    let files_src = include_str!("../src/handlers/files.rs");
 
-    // After fix: no use-after-move; all fields consumed in one place
-    let responses: Vec<String> = files.into_iter()
-        .map(|f| f.id.clone())
-        .collect();
+    let list_files_section = files_src.split("pub async fn list_files")
+        .nth(1)
+        .unwrap_or("");
+    // Truncate at next function
+    let next_fn = list_files_section.find("pub async fn")
+        .unwrap_or(list_files_section.len());
+    let list_body = &list_files_section[..next_fn];
 
+    // After fix: file.name should not be used after being moved into FileResponse
+    // The buggy pattern: creates FileResponse (moving name), then checks file.name
+    // Count how many times file.name appears - if it appears after FileResponse,
+    // there's a use-after-move bug
+    let has_use_after_move_comment = list_body.contains("ERROR: use of moved value");
+    assert!(
+        !has_use_after_move_comment,
+        "list_files must not have use-after-move bug (A4). \
+         Check .tmp before creating FileResponse."
+    );
+
+    // Also verify the basic pattern works
+    let files = vec![FileMetadata::new("1"), FileMetadata::new("2")];
+    let responses: Vec<String> = files.into_iter().map(|f| f.id.clone()).collect();
     assert_eq!(responses.len(), 2, "All files must be processed (A4)");
 }
 
@@ -542,6 +577,182 @@ async fn test_changes_since_does_not_hold_lock() {
     ).await;
 
     assert_eq!(all_changes.len(), 2, "Both changes must be recorded (A2 - lock released)");
+}
+
+// ===== Source verification tests =====
+// These tests verify the source code is actually fixed (not just that tests pass).
+
+/// Verify storage.rs doesn't use data after moving it in upload_file (A1).
+#[test]
+fn test_upload_source_no_use_after_move() {
+    let src = include_str!("../src/services/storage.rs");
+    let upload_section = src.split("pub async fn upload_file")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = upload_section.find("pub async fn")
+        .unwrap_or(upload_section.len());
+    let upload_body = &upload_section[..next_fn];
+
+    // After fix: metadata.size = data.len() must appear BEFORE data is moved
+    // The bug was: data is moved into split_into_chunks, then data.len() is called
+    let has_error_comment = upload_body.contains("ERROR: value borrowed after move");
+    assert!(
+        !has_error_comment,
+        "upload_file must not have use-after-move bug (A1). \
+         Capture data.len() before passing data to split_into_chunks."
+    );
+}
+
+/// Verify sync.rs returns owned ChangeEntry values (A2).
+#[test]
+fn test_sync_source_returns_owned() {
+    let src = include_str!("../src/services/sync.rs");
+    let changes_section = src.split("pub async fn get_changes_since")
+        .nth(1)
+        .unwrap_or("");
+
+    // After fix: return type should be Vec<ChangeEntry>, not Vec<&ChangeEntry>
+    let returns_ref = changes_section.starts_with("(&self")
+        && changes_section.contains("Vec<&ChangeEntry>");
+    assert!(
+        !returns_ref,
+        "get_changes_since must return Vec<ChangeEntry> (owned), not Vec<&ChangeEntry> (A2)"
+    );
+}
+
+/// Verify versioning.rs calculate_next_version takes immutable ref (A3).
+#[test]
+fn test_versioning_source_immutable_ref() {
+    let src = include_str!("../src/services/versioning.rs");
+
+    // After fix: calculate_next_version should take &[FileVersion] or &Vec<FileVersion>
+    // NOT &mut Vec<FileVersion>
+    let has_mut_ref = src.contains("fn calculate_next_version(&self, versions: &mut Vec<FileVersion>)");
+    assert!(
+        !has_mut_ref,
+        "calculate_next_version must take immutable reference, not &mut Vec<FileVersion> (A3). \
+         This causes double mutable borrow when used inside create_version."
+    );
+}
+
+/// Verify sync.rs uses atomic version numbering (C3).
+#[test]
+fn test_sync_source_atomic_version() {
+    let src = include_str!("../src/services/sync.rs");
+    let record_section = src.split("pub async fn record_change")
+        .nth(1)
+        .unwrap_or("");
+    let next_fn = record_section.find("pub async fn")
+        .unwrap_or(record_section.len());
+    let record_body = &record_section[..next_fn];
+
+    // After fix: read and write should be in the same lock scope
+    // The bug was: read lock, drop, then write lock (race between them)
+    let has_separate_read_write = record_body.contains("read().await")
+        && record_body.contains("write().await");
+    if has_separate_read_write {
+        // If both read() and write() are used, verify they're not separated
+        // (the fix should use a single write() lock for both operations)
+        let read_pos = record_body.find("read().await").unwrap_or(0);
+        let write_pos = record_body.find("write().await").unwrap_or(0);
+        // In the buggy version, read comes first, releases, then write acquires
+        // After fix: only write() should be used (or read+write in same scope)
+        assert!(
+            read_pos > write_pos || !record_body.contains("read().await"),
+            "record_change must use atomic read+write (single write lock), not separate read then write (C3)"
+        );
+    }
+}
+
+/// Verify temp_file.rs drop doesn't use unwrap (D4).
+#[test]
+fn test_temp_file_source_no_unwrap_in_drop() {
+    let src = include_str!("../src/models/temp_file.rs");
+
+    // Find Drop impl for TempFile
+    let drop_section = src.split("impl Drop for TempFile")
+        .nth(1)
+        .unwrap_or("");
+    let drop_end = drop_section.find("impl Drop for TempDirectory")
+        .or(drop_section.find("impl TempDirectory"))
+        .unwrap_or(drop_section.len());
+    let drop_body = &drop_section[..drop_end];
+
+    assert!(
+        !drop_body.contains(".unwrap()") && !drop_body.contains(".expect("),
+        "TempFile Drop must not use .unwrap() or .expect() (D4). \
+         Use if let Err(e) or .ok() to handle errors silently in drop."
+    );
+
+    // Also check TempDirectory Drop
+    let dir_drop = src.split("impl Drop for TempDirectory")
+        .nth(1)
+        .unwrap_or("");
+    assert!(
+        !dir_drop.contains(".unwrap()") && !dir_drop.contains(".expect("),
+        "TempDirectory Drop must not use .unwrap() or .expect() (D4)"
+    );
+}
+
+/// Verify folder.rs uses Weak for parent reference (E1).
+#[test]
+fn test_folder_source_uses_weak() {
+    let src = include_str!("../src/models/folder.rs");
+
+    // After fix: parent field should be Option<Weak<RefCell<Folder>>>
+    assert!(
+        src.contains("Weak") && src.contains("parent"),
+        "Folder struct must use Weak<RefCell<Folder>> for parent reference (E1). \
+         Using Rc creates a reference cycle that leaks memory."
+    );
+
+    // The parent field specifically should use Weak, not Rc
+    let parent_line = src.lines()
+        .find(|l| l.contains("parent") && (l.contains("Rc<") || l.contains("Weak<")));
+    if let Some(line) = parent_line {
+        assert!(
+            line.contains("Weak<"),
+            "parent field must be Option<Weak<RefCell<Folder>>>, not Option<Rc<RefCell<Folder>>> (E1). \
+             Found: {}",
+            line.trim()
+        );
+    }
+}
+
+/// Verify sync.rs uses bounded channel (E3).
+#[test]
+fn test_sync_source_bounded_channel() {
+    let src = include_str!("../src/services/sync.rs");
+
+    // After fix: should use mpsc::channel (bounded) not mpsc::unbounded_channel
+    let has_unbounded = src.contains("unbounded_channel");
+    assert!(
+        !has_unbounded,
+        "SyncService must use bounded channel (mpsc::channel), not unbounded_channel (E3). \
+         Unbounded channels can cause OOM under backpressure."
+    );
+}
+
+/// Verify notification.rs keeps receiver alive (C5).
+#[test]
+fn test_notification_source_keeps_receiver() {
+    let src = include_str!("../src/services/notification.rs");
+
+    // After fix: NotificationService struct should store a receiver
+    // The bug was: receiver created in new() then immediately dropped
+    let struct_section = src.split("pub struct NotificationService")
+        .nth(1)
+        .unwrap_or("");
+    let struct_end = struct_section.find("impl ").unwrap_or(struct_section.len());
+    let struct_body = &struct_section[..struct_end];
+
+    // Should have a receiver field (even if prefixed with _)
+    assert!(
+        struct_body.contains("receiver") || struct_body.contains("_receiver")
+            || struct_body.contains("_rx"),
+        "NotificationService must keep a broadcast::Receiver alive in the struct (C5). \
+         Without it, send() always fails because there are no receivers."
+    );
 }
 
 // ===== Concurrent uploads =====

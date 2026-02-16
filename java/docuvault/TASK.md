@@ -138,11 +138,11 @@ Critical security vulnerabilities.
 
 | Category | Package | Tests | Weight |
 |----------|---------|-------|--------|
-| Unit | `com.docuvault.unit.*` | ~55 | 1.0x |
-| Integration | `com.docuvault.integration.*` | ~35 | 1.5x |
-| Concurrency | `com.docuvault.concurrency.*` | ~20 | 2.5x |
-| Security | `com.docuvault.security.*` | ~15 | 2.0x |
-| **Total** | | **125+** | |
+| Unit | `com.docuvault.unit.*` | 91 | 1.0x |
+| Integration | `com.docuvault.integration.*` | 36 | 1.5x |
+| Concurrency | `com.docuvault.concurrency.*` | 21 | 2.5x |
+| Security | `com.docuvault.security.*` | 15 | 2.0x |
+| **Total** | | **163** | |
 
 ## Key Files to Investigate
 
@@ -172,11 +172,10 @@ Your score is based on the weighted percentage of tests passing:
 
 | Pass Rate | Reward |
 |-----------|--------|
-| < 25% | 0.00 |
-| 25-49% | 0.00-0.15 |
-| 50-74% | 0.15-0.35 |
-| 75-89% | 0.35-0.65 |
-| 90-99% | 0.65-1.00 |
+| < 50% | 0.00 |
+| >= 50% | 0.15 |
+| >= 75% | 0.35 |
+| >= 90% | 0.65 |
 | 100% | 1.00 |
 
 ### Bonuses

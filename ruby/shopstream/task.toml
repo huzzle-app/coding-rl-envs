@@ -4,6 +4,7 @@ version = "1.0"
 name = "shopstream"
 description = "Debug a Ruby e-commerce platform with microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "ruby"

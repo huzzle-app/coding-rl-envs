@@ -18,24 +18,19 @@ import java.util.stream.Collectors;
  * In production, this would be backed by PostgreSQL with the events
  * table, but this in-memory implementation is used for testing and
  * as the contract definition for the persistence layer.
+ *
+ * Bugs: E5, E6, E8
+ * Categories: Event Sourcing
  */
 public class EventStore {
 
     private final Map<String, List<EventRecord>> eventsByAggregate = new ConcurrentHashMap<>();
     private final List<EventRecord> allEvents = new CopyOnWriteArrayList<>();
 
-    
-    // There is no isolation between concurrent readers and writers.
+    // Bug E5: No isolation between concurrent readers and writers.
     // A reader calling getEventsForAggregate() while a writer is in the
-    // middle of appendAll() can see a partial batch of events, leading to
-    // inconsistent aggregate state reconstruction. For example, a dispatch
-    // ticket that requires both "assigned" and "route-set" events to be
-    // valid could be reconstructed with only "assigned", causing the
-    // dispatch service to send a driver without a route.
+    // middle of appendAll() can see a partial batch of events.
     // Category: Event Sourcing
-    // Fix: Use ReadWriteLock to provide snapshot isolation, or use
-    //      synchronized blocks around batch operations, or implement
-    //      event version validation in getEventsForAggregate().
 
     /**
      * Appends a single event to the store.
@@ -43,26 +38,14 @@ public class EventStore {
      * @param event the event to store
      */
     public void append(EventRecord event) {
-        
-        // before the full batch in appendAll() completes
         allEvents.add(event);
         eventsByAggregate.computeIfAbsent(event.aggregateId(), k -> new CopyOnWriteArrayList<>())
             .add(event);
     }
 
-    
-    // instead of using batch operations. Each call to append() adds to both
-    // allEvents and the per-aggregate list individually, resulting in N
-    // CopyOnWriteArrayList copy operations for N events. For the tracking
-    // service processing 1000 GPS events per second, this creates massive
-    // garbage collection pressure and throughput bottlenecks.
+    // Bug E6: appendAll iterates and calls append() individually instead of
+    // using batch operations, resulting in N CopyOnWriteArrayList copy operations.
     // Category: Event Sourcing
-    // Fix: Collect all events, then add them in bulk:
-    //   allEvents.addAll(events);
-    //   events.stream().collect(Collectors.groupingBy(EventRecord::aggregateId))
-    //       .forEach((aggId, aggEvents) ->
-    //           eventsByAggregate.computeIfAbsent(aggId, k -> new CopyOnWriteArrayList<>())
-    //               .addAll(aggEvents));
 
     /**
      * Appends a batch of events to the store.
@@ -74,39 +57,24 @@ public class EventStore {
             return;
         }
         for (EventRecord event : events) {
-            
-            // Each append() triggers a full array copy in CopyOnWriteArrayList,
-            // making this O(n^2) for n events.
             append(event);
         }
     }
 
-    
-    // When concurrent writes occur for the same aggregate, events may be
-    // stored in arrival order rather than version order. Replaying events
-    // in the wrong order produces incorrect aggregate state. For example,
-    // a vehicle's "fuel-level-updated(80%)" at version 3 followed by
-    // "fuel-level-updated(50%)" at version 2 would show 50% instead of 80%.
+    // Bug E8: Events may be stored in arrival order rather than version order
+    // when concurrent writes occur for the same aggregate. Replaying events
+    // in the wrong order produces incorrect aggregate state.
     // Category: Event Sourcing
-    // Fix: Sort events by version before returning:
-    //   return events.stream()
-    //       .sorted(Comparator.comparingInt(EventRecord::version))
-    //       .collect(Collectors.toList());
 
     /**
      * Returns all events for a given aggregate, for state reconstruction.
      *
      * @param aggregateId the aggregate identifier
-     * @return list of events for the aggregate (may be in wrong order - see BUG E8)
+     * @return list of events for the aggregate (may be in wrong order)
      */
     public List<EventRecord> getEventsForAggregate(String aggregateId) {
         List<EventRecord> events = eventsByAggregate.getOrDefault(aggregateId, List.of());
-        
-        // order which could differ from version order if concurrent writes occurred.
         return new ArrayList<>(events);
-        // Fix: return events.stream()
-        //          .sorted(Comparator.comparingInt(EventRecord::version))
-        //          .collect(Collectors.toList());
     }
 
     /**

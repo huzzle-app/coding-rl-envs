@@ -61,6 +61,10 @@ impl Environment {
                     || normalized.starts_with("__tests__/")
                     || normalized.ends_with("_test.rs");
                 if is_test_path { return Err("editing test files is not allowed".to_string()); }
+                let is_infra = normalized.starts_with("environment/")
+                    || normalized == "Cargo.toml"
+                    || normalized == "cargo.toml";
+                if is_infra { return Err("editing infrastructure files is not allowed".to_string()); }
             }
         }
         if action_type == "run_command" {
@@ -142,7 +146,7 @@ impl Environment {
         info.insert("step".to_string(), "0".to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
         info.insert("total_bugs".to_string(), "136".to_string());
-        info.insert("target_tests".to_string(), "1280".to_string());
+        info.insert("target_tests".to_string(), "1200".to_string());
         info.insert("files_changed".to_string(), String::new());
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -207,7 +211,7 @@ impl Environment {
         info.insert("step".to_string(), self.step_count.to_string());
         info.insert("max_steps".to_string(), self.max_steps.to_string());
         info.insert("total_bugs".to_string(), "136".to_string());
-        info.insert("target_tests".to_string(), "1280".to_string());
+        info.insert("target_tests".to_string(), "1200".to_string());
         info.insert("files_changed".to_string(), self.files_changed.join(","));
         info.insert("tests_total".to_string(), summary.total.to_string());
         info.insert("tests_failed".to_string(), summary.failed.to_string());
@@ -248,8 +252,8 @@ fn extract_count(line: &str, marker: &str) -> usize {
 }
 
 fn sparse_reward(pass_rate: f64) -> f64 {
-    const THRESHOLDS: [f64; 10] = [0.10, 0.22, 0.36, 0.52, 0.67, 0.80, 0.90, 0.96, 0.99, 1.0];
-    const REWARDS: [f64; 10] = [0.0, 0.015, 0.05, 0.11, 0.19, 0.31, 0.47, 0.66, 0.85, 1.0];
+    const THRESHOLDS: [f64; 7] = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0];
+    const REWARDS: [f64; 7] = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0];
     for i in (0..THRESHOLDS.len()).rev() { if pass_rate >= THRESHOLDS[i] { return REWARDS[i]; } }
     0.0
 }

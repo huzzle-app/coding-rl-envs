@@ -77,10 +77,11 @@ def authenticated_client(api_client, user):
 def skill(db):
     """Create a test skill."""
     from apps.candidates.models import Skill
-    return Skill.objects.create(
+    obj, _ = Skill.objects.get_or_create(
         name='Python',
-        category='Programming',
+        defaults={'category': 'Programming'},
     )
+    return obj
 
 
 @pytest.fixture
@@ -88,11 +89,11 @@ def skills(db):
     """Create multiple test skills."""
     from apps.candidates.models import Skill
     return [
-        Skill.objects.create(name='Python', category='Programming'),
-        Skill.objects.create(name='Django', category='Framework'),
-        Skill.objects.create(name='PostgreSQL', category='Database'),
-        Skill.objects.create(name='Redis', category='Database'),
-        Skill.objects.create(name='Docker', category='DevOps'),
+        Skill.objects.get_or_create(name='Python', defaults={'category': 'Programming'})[0],
+        Skill.objects.get_or_create(name='Django', defaults={'category': 'Framework'})[0],
+        Skill.objects.get_or_create(name='PostgreSQL', defaults={'category': 'Database'})[0],
+        Skill.objects.get_or_create(name='Redis', defaults={'category': 'Database'})[0],
+        Skill.objects.get_or_create(name='Docker', defaults={'category': 'DevOps'})[0],
     ]
 
 

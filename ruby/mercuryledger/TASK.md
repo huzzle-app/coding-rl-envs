@@ -14,12 +14,14 @@ Hyper-Principal (70-140h expected).
 |----------|-------|
 | Unit tests (9 modules) | 10 |
 | Extended tests | 49 |
+| Advanced bug tests | 144 |
+| Anti-tampering tests | 12 |
 | Integration tests | 3 |
 | Contract tests | 1 |
 | Service tests (8 services × 4) | 32 |
 | Service mesh matrix (stress) | 2,168 |
 | Hyper matrix (stress) | 7,000 |
-| **Total** | **9,263** |
+| **Total** | **9,419** |
 
 ## Infrastructure
 
@@ -45,7 +47,7 @@ Fix production defects in source files only.
 
 ## Completion Criteria
 
-- Full suite passes (`ruby -Ilib -Itests tests/run_all.rb`) with **9,263 scenarios**.
+- Full suite passes (`ruby -Ilib -Itests tests/run_all.rb`) with **9,419 scenarios**.
 - Deterministic settlement, replay, and routing behavior is preserved.
 - Security and workflow invariants remain enforced.
 - Do not edit files under `tests/`.

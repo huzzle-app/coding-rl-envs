@@ -55,14 +55,17 @@ VaultFS is a Rust web service with the following components:
 ## Test Categories
 
 | Category | Tests | Focus |
-| Unit | 55 | Individual functions, error cases |
-| Integration | 35 | API endpoints, database operations |
-| Concurrency | 20 | Race conditions, deadlocks |
-| Security | 15 | Injection, path traversal, auth |
+|----------|-------|-------|
+| Setup | 9 | Configuration, runtime, shutdown |
+| Storage/Models | 34 | Ownership, error handling, memory |
+| Concurrency | 14 | Send bounds, lifetimes, error conversion |
+| Lock Manager | 8 | Deadlock prevention, lock ordering |
+| Cache | 9 | Lifetime issues, owned return types |
+| Security | 16 | Injection, traversal, timing, mmap |
 
 ## Success Criteria
 
-- All 125 tests pass
+- All 90 tests pass
 - No compiler warnings
 - `cargo clippy` passes without errors
 - No panics under normal operation

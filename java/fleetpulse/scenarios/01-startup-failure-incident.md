@@ -127,14 +127,6 @@ LAST SEEN   TYPE      REASON          OBJECT                           MESSAGE
    com.fasterxml.jackson.databind.ObjectMapper.registerModules()'
    ```
 
-## Files to Investigate
-
-Based on error messages, focus on:
-- `shared/src/main/java/com/fleetpulse/shared/config/AppConfig.java`
-- `shared/src/main/java/com/fleetpulse/shared/events/EventBus.java`
-- `shared/src/main/resources/bootstrap.yml`
-- `pom.xml` (parent and shared module)
-
 ---
 
 **Status**: CRITICAL - ALL SERVICES DOWN

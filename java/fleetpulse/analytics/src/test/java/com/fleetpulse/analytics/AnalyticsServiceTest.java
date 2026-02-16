@@ -243,7 +243,7 @@ public class AnalyticsServiceTest {
     void test_pagination_last_page_partial() {
         List<String> items = createStringList(7);
         List<String> lastPage = analyticsService.paginate(items, 2, 5);
-        // With fix: page 2 gets items[5..6] = 2 items
+        // page 2 should get items[5..6] = 2 items
         assertTrue(lastPage.size() <= 5);
     }
 

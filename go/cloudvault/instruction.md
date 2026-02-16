@@ -1,6 +1,6 @@
 # CloudVault - Go Cloud Storage and File Sync Service
 
- in a cloud storage and file sync service built with Go 1.21, Gin, PostgreSQL, Redis, and MinIO.
+Fix bugs in a cloud storage and file sync service built with Go 1.21, Gin, PostgreSQL, Redis, and MinIO.
 
 ## Bug Categories
 

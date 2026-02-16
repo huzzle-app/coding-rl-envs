@@ -15,30 +15,18 @@ import java.util.function.Consumer;
  *
  * Note: This is NOT a replacement for Kafka cross-service messaging.
  * This handles only intra-service event dispatch.
+ *
+ * Bugs: E1
+ * Categories: Event Sourcing
  */
 public class EventBus {
 
     private final Map<Class<?>, List<Consumer<?>>> handlers = new ConcurrentHashMap<>();
 
-    
-    // When a handler is registered for a base type (e.g., DomainEvent interface),
-    // publish() only looks up handlers for the exact runtime class of the event
-    // (e.g., VehicleMovedEvent). Handlers registered for superclasses or interfaces
-    // are never invoked, breaking the expected polymorphic dispatch pattern.
-    //
-    // Example: subscribe(DomainEvent.class, auditLogger) will never receive a
-    // VehicleMovedEvent even though VehicleMovedEvent implements DomainEvent.
-    //
-    // This affects the compliance service's audit trail (registers for DomainEvent
-    // but never receives concrete events) and analytics aggregation.
+    // Bug E1: publish() only looks up handlers for the exact runtime class of the event.
+    // Handlers registered for superclasses or interfaces are never invoked, breaking
+    // the expected polymorphic dispatch pattern.
     // Category: Event Sourcing
-    // Fix: Walk the class hierarchy and interface tree in publish():
-    //   Set<Class<?>> types = new HashSet<>();
-    //   for (Class<?> c = event.getClass(); c != null; c = c.getSuperclass()) {
-    //       types.add(c);
-    //       Collections.addAll(types, c.getInterfaces());
-    //   }
-    //   for (Class<?> type : types) { /* invoke handlers for type */ }
 
     /**
      * Registers a handler for events of the specified type.
@@ -63,28 +51,12 @@ public class EventBus {
             return;
         }
 
-        
-        // Handlers registered for superclasses or interfaces are never invoked.
         List<Consumer<?>> eventHandlers = handlers.get(event.getClass());
         if (eventHandlers != null) {
             for (Consumer handler : eventHandlers) {
                 handler.accept(event);
             }
         }
-        // Fix: Walk the class hierarchy:
-        // Set<Class<?>> types = new LinkedHashSet<>();
-        // for (Class<?> c = event.getClass(); c != null; c = c.getSuperclass()) {
-        //     types.add(c);
-        //     Collections.addAll(types, c.getInterfaces());
-        // }
-        // for (Class<?> type : types) {
-        //     List<Consumer<?>> h = handlers.get(type);
-        //     if (h != null) {
-        //         for (Consumer handler : h) {
-        //             handler.accept(event);
-        //         }
-        //     }
-        // }
     }
 
     /**

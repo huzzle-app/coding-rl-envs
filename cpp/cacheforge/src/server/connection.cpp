@@ -16,9 +16,6 @@ void Connection::start() {
     active_.store(true);
 
     
-    // The destructor will never be called because self_ref_ prevents ref count
-    // from reaching zero.
-    // FIX: Remove this line - use weak_from_this() in async callbacks instead
     self_ref_ = shared_from_this();
 
     do_read();
@@ -29,7 +26,6 @@ void Connection::stop() {
         boost::system::error_code ec;
         socket_.close(ec);
         
-        // FIX: Add: self_ref_.reset();
     }
 }
 
@@ -43,8 +39,6 @@ void Connection::send(const std::string& data) {
 
 void Connection::enqueue_reply(const std::string& reply) {
     
-    // FIX: auto weak_self = weak_from_this();
-    //      then in lambda: if (auto self = weak_self.lock()) { self->send(reply); }
     auto self = shared_from_this();
     boost::asio::post(socket_.get_executor(), [self, reply]() {
         self->send(reply);
@@ -58,9 +52,6 @@ void Connection::set_buffer(std::unique_ptr<char[]> buf, size_t size) {
 
 char* Connection::get_buffer_raw() {
     
-    // If caller deletes this pointer, double-free occurs when aux_buffer_ destructor runs
-    // FIX: Document clearly that caller must NOT delete the returned pointer,
-    // or provide a release() method for ownership transfer
     return aux_buffer_.get();
 }
 
@@ -101,13 +92,6 @@ void Connection::handle_data(const uint8_t* data, size_t length) {
     // This would normally dispatch to the command handler
     std::string msg(reinterpret_cast<const char*>(data), length);
     
-    // fmt format specifiers (e.g., "{}" or "%s"), passing it as the format
-    // string to spdlog/fmt can cause crashes or information leaks.
-    // Currently using positional args which is safe, but error paths may
-    // concatenate user input into the format string directly.
-    // FIX: Always use user data as an argument, never as the format string.
-    // e.g., spdlog::debug("Received {} bytes: {}", length, msg) is safe,
-    //       spdlog::debug(msg) would be UNSAFE.
     spdlog::debug("Received {} bytes: {}", length, msg.substr(0, 50));
 }
 

@@ -43,4 +43,8 @@ func TestFleetSummarySortsVessels(t *testing.T) {
 	if len(sorted) != 3 {
 		t.Fatalf("expected 3 vessels, got %d", len(sorted))
 	}
+	// Highest load should be first (descending order for operational priority)
+	if sorted[0].Load < sorted[len(sorted)-1].Load {
+		t.Fatalf("expected descending load order, got first=%.2f last=%.2f", sorted[0].Load, sorted[len(sorted)-1].Load)
+	}
 }

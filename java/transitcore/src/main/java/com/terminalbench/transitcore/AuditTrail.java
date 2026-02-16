@@ -4,7 +4,7 @@ import java.util.List;
 
 public final class AuditTrail {
     public String fingerprint(String tenant, String traceId, String eventType) {
-        return (tenant + ":" + traceId + ":" + eventType).toLowerCase().trim();
+        return (tenant + ":" + traceId + ":" + eventType).trim();
     }
 
     public long appendHash(long previous, String payload) {
@@ -12,7 +12,7 @@ public final class AuditTrail {
         for (char c : payload.toCharArray()) {
             sum += c;
         }
-        return (previous * 31 + sum) % 1_000_000_007L;
+        return (previous * 37 + sum) % 1_000_000_007L;
     }
 
     public boolean ordered(List<Long> sequenceNumbers) {

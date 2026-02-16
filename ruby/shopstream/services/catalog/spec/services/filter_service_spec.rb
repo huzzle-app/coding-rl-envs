@@ -13,7 +13,7 @@ RSpec.describe FilterService do
 
       # If mutable default is reused, second call has stale state
       # Both calls with no args should produce equivalent results
-      expect(result1.to_sql).to eq(result2.to_sql) rescue nil
+      expect(result1.to_sql).to eq(result2.to_sql)
     end
 
     it 'does not modify the caller-provided hash' do
@@ -28,7 +28,7 @@ RSpec.describe FilterService do
 
     it 'applies active: true by default' do
       scope = service.filter
-      expect(scope.to_sql).to include('active') rescue nil
+      expect(scope.to_sql).to include('active')
     end
   end
 

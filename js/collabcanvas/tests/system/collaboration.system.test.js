@@ -1,215 +1,230 @@
 /**
  * Collaboration System Tests
  *
- * End-to-end collaboration workflow tests
+ * End-to-end collaboration workflow tests using actual source services.
+ * Tests bugs B1-B4 (CRDT/state), C1-C2 (database), A1-A2 (sync)
  */
 
+const CRDTService = require('../../src/services/canvas/crdt.service');
+const HistoryService = require('../../src/services/canvas/history.service');
+const PermissionService = require('../../src/services/board/permission.service');
+
 describe('Collaboration System', () => {
-  describe('multi-user editing', () => {
-    it('should handle simultaneous edits to different elements', async () => {
-      const boardState = {
+  let crdtService;
+  let historyService;
+
+  beforeEach(() => {
+    crdtService = new CRDTService();
+    historyService = new HistoryService();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('multi-user editing via CRDT', () => {
+    it('should apply concurrent updates to different elements', () => {
+      const state = {
         elements: {
-          'elem-1': { x: 0, y: 0 },
-          'elem-2': { x: 100, y: 100 },
+          'elem-1': { x: 0, y: 0, type: 'rectangle' },
+          'elem-2': { x: 100, y: 100, type: 'ellipse' },
         },
+        clock: {},
       };
 
       // User 1 edits elem-1
-      boardState.elements['elem-1'].x = 50;
+      const op1 = crdtService.createOperation('elem-1', { x: 50, y: 25 }, 'update');
+      const state1 = crdtService.applyOperation(op1, state);
 
-      // User 2 edits elem-2 simultaneously
-      boardState.elements['elem-2'].y = 150;
+      // User 2 edits elem-2
+      const op2 = crdtService.createOperation('elem-2', { y: 150 }, 'update');
+      const state2 = crdtService.applyOperation(op2, state1);
 
-      expect(boardState.elements['elem-1'].x).toBe(50);
-      expect(boardState.elements['elem-2'].y).toBe(150);
+      expect(state2.elements['elem-1'].x).toBe(50);
+      expect(state2.elements['elem-2'].y).toBe(150);
     });
 
-    it('should resolve conflicts with last-write-wins', async () => {
-      let elementState = { x: 0, timestamp: 0 };
-
-      const applyUpdate = (update) => {
-        if (update.timestamp > elementState.timestamp) {
-          elementState = update;
-        }
+    /**
+     * BUG B2: Shallow copy loses deeply nested properties during concurrent edits.
+     * mergeState does one level of merge — updating a nested object replaces it.
+     */
+    it('should preserve nested properties during partial formatting update', () => {
+      const state = {
+        elements: {
+          'elem-1': {
+            type: 'sticky',
+            x: 0,
+            y: 0,
+            content: {
+              text: 'Note',
+              formatting: { bold: true, color: '#000000', fontSize: 14 },
+            },
+          },
+        },
+        clock: {},
       };
 
-      // Conflicting updates
-      applyUpdate({ x: 100, timestamp: 1 });
-      applyUpdate({ x: 50, timestamp: 2 }); // Later timestamp wins
-      applyUpdate({ x: 75, timestamp: 1 }); // Earlier timestamp ignored
+      // Update formatting partially — only change color
+      const op = crdtService.createOperation('elem-1', {
+        content: { formatting: { color: '#ff0000' } },
+      }, 'update');
 
-      expect(elementState.x).toBe(50);
-    });
+      const newState = crdtService.applyOperation(op, state);
 
-    it('should track edit history per element', async () => {
-      const history = [];
-
-      const recordEdit = (elementId, changes, userId) => {
-        history.push({
-          elementId,
-          changes,
-          userId,
-          timestamp: Date.now(),
-        });
-      };
-
-      recordEdit('elem-1', { x: 100 }, 'user-1');
-      recordEdit('elem-1', { x: 150 }, 'user-2');
-      recordEdit('elem-2', { fill: '#ff0000' }, 'user-1');
-
-      const elem1History = history.filter(h => h.elementId === 'elem-1');
-      expect(elem1History.length).toBe(2);
+      // BUG B2: shallow merge at content level replaces entire formatting object
+      // bold and fontSize should be preserved after partial formatting update
+      expect(newState.elements['elem-1'].content.formatting.color).toBe('#ff0000');
+      expect(newState.elements['elem-1'].content.formatting.bold).toBe(true);
+      expect(newState.elements['elem-1'].content.formatting.fontSize).toBe(14);
     });
   });
 
-  describe('board permissions', () => {
-    it('should allow owner full access', async () => {
-      const board = { ownerId: 'user-1' };
-      const checkPermission = (userId, action) => {
-        if (userId === board.ownerId) return true;
-        return false;
+  describe('undo/redo via HistoryService', () => {
+    it('should track state changes for undo', () => {
+      const boardId = 'board-1';
+      const states = [
+        { x: 0 },
+        { x: 100 },
+        { x: 200 },
+      ];
+
+      states.forEach(state => {
+        historyService.pushState(boardId, state);
+      });
+
+      expect(historyService.canUndo(boardId)).toBe(true);
+    });
+
+    it('should undo last state change', () => {
+      const boardId = 'board-1';
+
+      historyService.pushState(boardId, { x: 0 });
+      historyService.pushState(boardId, { x: 100 });
+      historyService.pushState(boardId, { x: 200 });
+
+      const undone = historyService.undo(boardId);
+
+      expect(undone).toBeDefined();
+    });
+
+    it('should redo after undo', () => {
+      const boardId = 'board-1';
+
+      historyService.pushState(boardId, { x: 0 });
+      historyService.pushState(boardId, { x: 100 });
+
+      // Pass currentState so it's stored in redo stack
+      const undone = historyService.undo(boardId, { x: 100 });
+
+      expect(historyService.canRedo(boardId)).toBe(true);
+
+      const redone = historyService.redo(boardId, undone);
+      expect(redone).toBeDefined();
+      expect(redone.x).toBe(100);
+    });
+
+    /**
+     * BUG B4: pushState stores reference not deep copy.
+     * Mutations to the original state object affect the stored undo history.
+     */
+    it('should store deep copies in undo stack', () => {
+      const boardId = 'board-1';
+      const state = { elements: { 'elem-1': { x: 0 } } };
+
+      historyService.pushState(boardId, state);
+
+      // Mutate the original state
+      state.elements['elem-1'].x = 999;
+
+      // BUG B4: Because pushState stores a reference, the stored state
+      // is also mutated. Undo should return { x: 0 }, not { x: 999 }
+      const undone = historyService.undo(boardId);
+      expect(undone.elements['elem-1'].x).toBe(0);
+    });
+
+    /**
+     * canUndo/canRedo should return false for non-initialized boards,
+     * not undefined.
+     */
+    it('should return false for canUndo on uninitialized board', () => {
+      const result = historyService.canUndo('non-existent-board');
+      expect(result).toBe(false);
+    });
+
+    it('should return false for canRedo on uninitialized board', () => {
+      const result = historyService.canRedo('non-existent-board');
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('board permissions via PermissionService', () => {
+    let permissionService;
+    let mockDb;
+
+    beforeEach(() => {
+      mockDb = {
+        Board: {
+          findByPk: jest.fn(),
+        },
+        BoardMember: {
+          findOne: jest.fn(),
+          findOrCreate: jest.fn(),
+          destroy: jest.fn().mockResolvedValue(1),
+          update: jest.fn().mockResolvedValue([1]),
+          ROLE_LEVELS: { viewer: 1, editor: 2, admin: 3, owner: 4 },
+        },
+        Element: {
+          findByPk: jest.fn(),
+        },
       };
 
-      expect(checkPermission('user-1', 'edit')).toBe(true);
-      expect(checkPermission('user-1', 'delete')).toBe(true);
+      permissionService = new PermissionService(mockDb);
+    });
+
+    it('should allow owner full access', async () => {
+      mockDb.Board.findByPk.mockResolvedValue({
+        id: 'board-1',
+        ownerId: 'user-1',
+      });
+
+      const canEdit = await permissionService.checkPermission('user-1', 'board-1', 'edit');
+      const canAdmin = await permissionService.checkPermission('user-1', 'board-1', 'admin');
+
+      expect(canEdit).toBe(true);
+      expect(canAdmin).toBe(true);
     });
 
     it('should restrict viewer to read-only', async () => {
-      const members = {
-        'user-viewer': { role: 'viewer' },
-        'user-editor': { role: 'editor' },
-      };
+      mockDb.Board.findByPk.mockResolvedValue({
+        id: 'board-1',
+        ownerId: 'other-owner',
+      });
+      mockDb.BoardMember.findOne.mockResolvedValue({
+        role: 'viewer',
+      });
 
-      const canEdit = (userId) => {
-        const member = members[userId];
-        return member?.role === 'editor' || member?.role === 'admin';
-      };
+      const canView = await permissionService.checkPermission('user-viewer', 'board-1', 'view');
+      const canEdit = await permissionService.checkPermission('user-viewer', 'board-1', 'edit');
 
-      expect(canEdit('user-viewer')).toBe(false);
-      expect(canEdit('user-editor')).toBe(true);
+      expect(canView).toBe(true);
+      expect(canEdit).toBe(false);
     });
 
-    it('should handle permission changes in real-time', async () => {
-      const permissions = new Map();
-      permissions.set('user-1', 'editor');
+    /**
+     * BUG D3: createChecker loses 'this' context.
+     */
+    it('should maintain this context in permission checker', async () => {
+      mockDb.Board.findByPk.mockResolvedValue({
+        id: 'board-1',
+        ownerId: 'user-1',
+      });
 
-      // Demote to viewer
-      permissions.set('user-1', 'viewer');
+      const checker = permissionService.createChecker('edit');
 
-      expect(permissions.get('user-1')).toBe('viewer');
-    });
-  });
-
-  describe('board sharing', () => {
-    it('should generate shareable link', async () => {
-      const generateShareLink = (boardId, permissions) => {
-        const token = Buffer.from(JSON.stringify({ boardId, permissions })).toString('base64');
-        return `https://app.example.com/board/${boardId}?share=${token}`;
-      };
-
-      const link = generateShareLink('board-123', 'view');
-
-      expect(link).toContain('board-123');
-      expect(link).toContain('share=');
-    });
-
-    it('should validate share token', async () => {
-      const validateToken = (token) => {
-        try {
-          const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-          return decoded.boardId && decoded.permissions;
-        } catch {
-          return false;
-        }
-      };
-
-      const validToken = Buffer.from(JSON.stringify({ boardId: 'b1', permissions: 'view' })).toString('base64');
-      const invalidToken = 'invalid-token';
-
-      expect(validateToken(validToken)).toBe(true);
-      expect(validateToken(invalidToken)).toBe(false);
-    });
-  });
-
-  describe('undo/redo system', () => {
-    it('should undo last action', async () => {
-      const undoStack = [];
-      const redoStack = [];
-      let state = { x: 0 };
-
-      const doAction = (newState) => {
-        undoStack.push({ ...state });
-        state = newState;
-        redoStack.length = 0; // Clear redo on new action
-      };
-
-      const undo = () => {
-        if (undoStack.length > 0) {
-          redoStack.push({ ...state });
-          state = undoStack.pop();
-        }
-      };
-
-      doAction({ x: 100 });
-      doAction({ x: 200 });
-      undo();
-
-      expect(state.x).toBe(100);
-    });
-
-    it('should redo undone action', async () => {
-      const undoStack = [];
-      const redoStack = [];
-      let state = { x: 0 };
-
-      const doAction = (newState) => {
-        undoStack.push({ ...state });
-        state = newState;
-      };
-
-      const undo = () => {
-        if (undoStack.length > 0) {
-          redoStack.push({ ...state });
-          state = undoStack.pop();
-        }
-      };
-
-      const redo = () => {
-        if (redoStack.length > 0) {
-          undoStack.push({ ...state });
-          state = redoStack.pop();
-        }
-      };
-
-      doAction({ x: 100 });
-      undo();
-      redo();
-
-      expect(state.x).toBe(100);
-    });
-
-    it('should handle undo across multiple users', async () => {
-      const userStacks = {
-        'user-1': [],
-        'user-2': [],
-      };
-
-      const doAction = (userId, action) => {
-        userStacks[userId].push(action);
-      };
-
-      const undoLast = (userId) => {
-        return userStacks[userId].pop();
-      };
-
-      doAction('user-1', { type: 'create', elementId: 'elem-1' });
-      doAction('user-2', { type: 'create', elementId: 'elem-2' });
-      doAction('user-1', { type: 'update', elementId: 'elem-1' });
-
-      const undone = undoLast('user-1');
-
-      expect(undone.type).toBe('update');
-      expect(userStacks['user-2'].length).toBe(1);
+      // BUG D3: The regular function returned by createChecker loses 'this'
+      // when called directly (not as a method on the object)
+      const result = await checker('user-1', 'board-1');
+      expect(result).toBe(true);
     });
   });
 });

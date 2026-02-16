@@ -1,11 +1,13 @@
 package com.vertexgrid.shared;
 
 import com.vertexgrid.shared.config.KafkaConfig;
+import com.vertexgrid.shared.event.EventBus;
 import com.vertexgrid.shared.event.EventStore;
 import com.vertexgrid.shared.model.EventRecord;
 import com.vertexgrid.shared.model.ServiceStatus;
 import com.vertexgrid.shared.security.JwtTokenProvider;
 import com.vertexgrid.shared.util.CollectionUtils;
+import com.vertexgrid.shared.util.MetricsCollector;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
@@ -14,6 +16,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -27,14 +30,16 @@ public class HyperMatrixTest {
         final int total = 12000;
         return IntStream.range(0, total).mapToObj(idx ->
             DynamicTest.dynamicTest("hyper_case_" + idx, () -> {
-                int mode = idx % 6;
+                int mode = idx % 8;
                 switch (mode) {
                     case 0 -> enum_set_matrix(idx);
                     case 1 -> event_ordering_matrix(idx);
                     case 2 -> kafka_matrix();
                     case 3 -> jwt_matrix(idx);
                     case 4 -> map_matrix(idx);
-                    default -> throughput_matrix(idx);
+                    case 5 -> throughput_matrix(idx);
+                    case 6 -> log_level_matrix(idx);
+                    case 7 -> event_bus_polymorphic_matrix(idx);
                 }
             })
         );
@@ -106,5 +111,54 @@ public class HyperMatrixTest {
             .toList();
         store.appendAll(batch);
         assertEquals(8, store.getEventsForAggregate(aggregate).size());
+    }
+
+    // BUG O1: MetricsCollector log level case sensitivity
+    private void log_level_matrix(int idx) {
+        MetricsCollector metrics = new MetricsCollector();
+        // Bug: isLevelEnabled uses uppercase map but callers may pass lowercase
+        String[][] pairs = {
+            {"info", "INFO"}, {"debug", "DEBUG"}, {"warn", "WARN"},
+            {"error", "ERROR"}, {"trace", "TRACE"}, {"Info", "Warn"},
+            {"INFO", "info"}, {"DEBUG", "debug"}
+        };
+        String[] pair = pairs[idx % pairs.length];
+        // Both should be recognized as valid levels regardless of case
+        boolean result = metrics.isLevelEnabled(pair[0], pair[1]);
+        // When configured=info, requested=INFO should be true (INFO >= INFO)
+        // When configured=INFO, requested=info should be true (INFO >= INFO)
+        // The bug makes lowercase levels unrecognized -> returns false
+        String configUpper = pair[0].toUpperCase();
+        String requestUpper = pair[1].toUpperCase();
+        java.util.Map<String, Integer> levels = java.util.Map.of(
+            "TRACE", 0, "DEBUG", 1, "INFO", 2, "WARN", 3, "ERROR", 4);
+        Integer configLevel = levels.get(configUpper);
+        Integer requestLevel = levels.get(requestUpper);
+        if (configLevel != null && requestLevel != null) {
+            boolean expected = requestLevel >= configLevel;
+            assertEquals(expected, result,
+                "isLevelEnabled(\"" + pair[0] + "\", \"" + pair[1] + "\") should be " + expected);
+        }
+    }
+
+    // BUG E1: EventBus polymorphic dispatch
+    private void event_bus_polymorphic_matrix(int idx) {
+        EventBus bus = new EventBus();
+        AtomicInteger count = new AtomicInteger(0);
+        // Subscribe for Number (supertype of Integer, Double, Long, etc.)
+        bus.subscribe(Number.class, n -> count.incrementAndGet());
+
+        // Publish a subtype of Number
+        switch (idx % 4) {
+            case 0 -> bus.publish(idx);           // Integer
+            case 1 -> bus.publish((double) idx);   // Double
+            case 2 -> bus.publish((long) idx);     // Long
+            default -> bus.publish((short) (idx % 100)); // Short
+        }
+
+        // Bug: EventBus.publish only looks up exact runtime class, not supertypes
+        // Handler registered for Number should receive Integer/Double/Long/Short events
+        assertEquals(1, count.get(),
+            "Handler for Number should receive subtype event (polymorphic dispatch)");
     }
 }

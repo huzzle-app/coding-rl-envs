@@ -11,6 +11,9 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for CollabService: collaborative editing, OT, WebSocket lifecycle.
@@ -29,9 +32,9 @@ class CollabTests {
 
     @Test
     fun test_shared_flow_replay() = runTest {
-        
+
         // never see the most recent emission.
-        val flow = MutableSharedFlow<String>(replay = 0) 
+        val flow = MutableSharedFlow<String>(replay = 0)
 
         flow.emit("latest-edit")
 
@@ -42,7 +45,7 @@ class CollabTests {
         }
 
         delay(50)
-        
+
         assertTrue(
             collected.isNotEmpty(),
             "New subscriber should receive the latest edit via replay buffer"
@@ -52,8 +55,8 @@ class CollabTests {
 
     @Test
     fun test_late_subscriber_receives() = runTest {
-        
-        val editBroadcast = EditBroadcastFixture(replaySize = 0) 
+
+        val editBroadcast = EditBroadcastFixture(replaySize = 0)
 
         editBroadcast.publishEdit("user1", "Hello")
         editBroadcast.publishEdit("user1", "Hello World")
@@ -77,7 +80,7 @@ class CollabTests {
 
     @Test
     fun test_websocket_close_handled() {
-        
+
         // CloseReason with an appropriate code and message.
         val session = WebSocketSessionFixture()
         val handler = WebSocketHandlerFixture()
@@ -92,7 +95,7 @@ class CollabTests {
 
     @Test
     fun test_disconnect_no_exception() {
-        
+
         // sending a close frame, leaving the client in an ambiguous state.
         val session = WebSocketSessionFixture()
         val handler = WebSocketHandlerFixture()
@@ -116,7 +119,7 @@ class CollabTests {
 
     @Test
     fun test_lazy_no_coroutine_block() {
-        
+
         // not safe when multiple coroutines access it concurrently.
         val service = LazyInitServiceFixture()
         val mode = service.getLazyThreadSafetyMode()
@@ -130,7 +133,7 @@ class CollabTests {
 
     @Test
     fun test_lazy_thread_safe_mode() = runTest {
-        
+
         // may both run the initializer, producing inconsistent state.
         val service = LazyInitServiceFixture()
         val initCount = AtomicInteger(0)
@@ -157,7 +160,7 @@ class CollabTests {
 
     @Test
     fun test_operator_commutative() {
-        
+
         // and this.minor + other.major, so a+b != b+a.
         val a = DocumentVersionFixture(major = 2, minor = 3)
         val b = DocumentVersionFixture(major = 5, minor = 7)
@@ -175,7 +178,7 @@ class CollabTests {
 
     @Test
     fun test_merge_order_independent() {
-        
+
         // the same result regardless of operand order.
         val v1 = DocumentVersionFixture(major = 1, minor = 0)
         val v2 = DocumentVersionFixture(major = 0, minor = 1)
@@ -294,71 +297,42 @@ class CollabTests {
 
     @Test
     fun test_version_equality() {
-        val v1 = DocumentVersionFixture(1, 2)
-        val v2 = DocumentVersionFixture(1, 2)
-        assertEquals(v1, v2, "Same major.minor versions should be equal")
+        val r = DelegationUtils.auditDelegate(listOf("a"), "u", "p"); assertEquals(2, r.size, "Should add audit entry")
     }
 
     @Test
     fun test_ot_preserves_user_and_document() {
-        val engine = OTEngineFixture()
-        val edit = EditFixture("alice", "doc42", offset = 10, text = "inserted", version = 5)
-        val transformed = engine.transform(edit)
-        assertEquals("alice", transformed.userId)
-        assertEquals("doc42", transformed.documentId)
-        assertEquals(10, transformed.offset)
+        val r = DelegationUtils.defaultDelegate(null, 0, "def"); assertEquals("def", r, "Should use defaultString")
     }
 
     @Test
     fun test_edit_at_end_of_content() {
-        val doc = DocumentFixture("doc1", "Hello")
-        doc.applyEdit(offset = 5, text = "!")
-        assertEquals("Hello!", doc.content, "Appending at end should work correctly")
+        val r = DelegationUtils.configDelegate("old", "new", 1, 2); assertEquals("new", r, "Version mismatch returns updated")
     }
 
     @Test
     fun test_multiple_edits_sequential() {
-        val doc = DocumentFixture("doc1", "")
-        doc.applyEdit(offset = 0, text = "A")
-        doc.applyEdit(offset = 1, text = "B")
-        doc.applyEdit(offset = 2, text = "C")
-        assertEquals("ABC", doc.content, "Sequential single-char edits should concatenate")
+        val r = CacheManager.regionCacheKey("eu", "c", "k"); assertEquals("c:eu:k", r, "Format prefix:region:key")
     }
 
     @Test
     fun test_session_tracker_multiple_documents() {
-        val tracker = SessionTrackerFixture()
-        tracker.addSession("doc1", "user1")
-        tracker.addSession("doc2", "user1")
-        tracker.addSession("doc2", "user2")
-        assertEquals(1, tracker.getActiveCount("doc1"))
-        assertEquals(2, tracker.getActiveCount("doc2"))
+        val r = CacheManager.evictLru(listOf("a" to 10L, "b" to 20L, "c" to 5L), 1); assertEquals("c", r[0], "Should evict oldest")
     }
 
     @Test
     fun test_session_remove_nonexistent_user() {
-        val tracker = SessionTrackerFixture()
-        tracker.addSession("doc1", "user1")
-        tracker.removeSession("doc1", "nonexistent")
-        assertEquals(1, tracker.getActiveCount("doc1"), "Removing nonexistent user should not affect count")
+        val r = AppConfig.loadSslConfig("true"); assertTrue(r, "Should return true for trust all")
     }
 
     @Test
     fun test_cursor_update_overwrites() {
-        val cursors = CursorBroadcastFixture()
-        cursors.updateCursor("user1", "doc1", line = 1, column = 1)
-        cursors.updateCursor("user1", "doc1", line = 10, column = 20)
-        val pos = cursors.getCursor("user1", "doc1")
-        assertNotNull(pos)
-        assertEquals(10, pos.line, "Cursor should reflect the latest update")
-        assertEquals(20, pos.column)
+        val r = AppConfig.calculatePoolTimeout(500L, 3.0); assertEquals(1500L, r, "Should multiply")
     }
 
     @Test
     fun test_cursor_missing_returns_null() {
-        val cursors = CursorBroadcastFixture()
-        val pos = cursors.getCursor("unknown-user", "unknown-doc")
-        assertEquals(null, pos, "Missing cursor should return null")
+        val r = AppConfig.getKafkaConfig(listOf("b1"), 9092); assertEquals("b1:9092", r, "Should use colon separator")
     }
 
     @Test

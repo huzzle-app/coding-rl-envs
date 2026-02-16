@@ -48,6 +48,11 @@ func (r *FileRepository) Close() error {
 	return nil
 }
 
+// PoolStats returns the current database connection pool statistics
+func (r *FileRepository) PoolStats() sql.DBStats {
+	return r.db.Stats()
+}
+
 // Create creates a new file record
 func (r *FileRepository) Create(ctx context.Context, file *models.File) error {
 	_, err := r.db.ExecContext(ctx,

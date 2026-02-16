@@ -2,7 +2,7 @@ package unit
 
 import (
 	"context"
-	"sync"
+	gosync "sync"
 	"testing"
 	"time"
 
@@ -43,7 +43,7 @@ func TestSyncServiceRaceCondition(t *testing.T) {
 		userID := uuid.New()
 
 		
-		var wg sync.WaitGroup
+		var wg gosync.WaitGroup
 		errors := make([]error, 100)
 
 		for i := 0; i < 100; i++ {

@@ -23,7 +23,7 @@ module TaskForge
         reward: { type: 'Box', low: 0.0, high: 1.0, shape: [1] },
         step_count: { type: 'Discrete', n: 101 },
         action_result: { type: 'Dict' },
-        bugs_remaining: { type: 'MultiBinary', n: 25 },
+        bugs_remaining: { type: 'MultiBinary', n: 75 },
         bug_progress: { type: 'Dict' },
         dependency_status: { type: 'Dict' }
       }
@@ -183,7 +183,7 @@ module TaskForge
         full_path = File.expand_path(File.join(@work_dir, file_path))
         return 'Path escapes work directory' unless full_path.start_with?(File.expand_path(@work_dir))
 
-        # Reject edits to test files
+        # Reject edits to test files and protected environment files
         if action_type == 'edit'
           basename = File.basename(file_path)
           if file_path.start_with?('spec/', 'test/') ||
@@ -191,6 +191,15 @@ module TaskForge
              basename.end_with?('_spec.rb', '_test.rb') ||
              %w[spec_helper.rb rails_helper.rb].include?(basename)
             return 'Editing test files is not allowed'
+          end
+
+          # Block edits to environment/reward infrastructure
+          if file_path.start_with?('environment/') ||
+             file_path.include?('/environment/') ||
+             file_path.start_with?('tests/') ||
+             %w[Gemfile Gemfile.lock task.toml instruction.md].include?(basename) ||
+             basename == 'scoring.py' || basename == 'reward.rb' || basename == 'setup.rb'
+            return 'Editing environment and evaluation files is not allowed'
           end
         end
 
@@ -226,7 +235,7 @@ module TaskForge
 
     # Get success criteria
     def success_criteria
-      'All 125+ RSpec tests must pass to complete the challenge.'
+      'All 128 RSpec tests must pass to complete the challenge.'
     end
 
     private
@@ -511,7 +520,7 @@ module TaskForge
       {
         work_dir: @work_dir,
         elapsed_time: @start_time ? Time.now - @start_time : 0,
-        total_bugs: 25,
+        total_bugs: 75,
         step_count: @step_count,
         max_steps: @max_steps,
         dependency_chain_depth: Reward.max_dependency_depth,

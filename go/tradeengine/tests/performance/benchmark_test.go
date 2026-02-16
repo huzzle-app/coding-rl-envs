@@ -3,11 +3,216 @@ package performance
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 )
+
+// Test* functions for performance-critical paths
+
+func TestOrderSubmissionLatency(t *testing.T) {
+	t.Run("should submit orders within latency budget", func(t *testing.T) {
+		engine := newMockMatchingEngine()
+
+		start := time.Now()
+		for i := 0; i < 1000; i++ {
+			engine.SubmitOrder(context.Background(), &Order{
+				UserID:   "user1",
+				Symbol:   "BTC-USD",
+				Side:     "buy",
+				Price:    decimal.NewFromFloat(50000.0),
+				Quantity: decimal.NewFromFloat(1.0),
+			})
+		}
+		elapsed := time.Since(start)
+
+		// 1000 orders should complete within 1 second
+		assert.Less(t, elapsed, time.Second,
+			"1000 order submissions should complete within 1s")
+	})
+}
+
+func TestConcurrentOrderThroughput(t *testing.T) {
+	t.Run("should handle concurrent submissions without data loss", func(t *testing.T) {
+		engine := newMockMatchingEngine()
+
+		var wg sync.WaitGroup
+		submitted := int32(0)
+
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				err := engine.SubmitOrder(context.Background(), &Order{
+					UserID:   "user1",
+					Symbol:   "BTC-USD",
+					Side:     "buy",
+					Price:    decimal.NewFromFloat(50000.0 + float64(idx)),
+					Quantity: decimal.NewFromFloat(0.1),
+				})
+				if err == nil {
+					atomic.AddInt32(&submitted, 1)
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		assert.Equal(t, int32(100), submitted,
+			"All concurrent submissions should succeed")
+
+		engine.mu.RLock()
+		count := len(engine.orders["BTC-USD"])
+		engine.mu.RUnlock()
+
+		assert.Equal(t, 100, count,
+			"All 100 orders should be in the book")
+	})
+}
+
+func TestPositionTrackerConcurrency(t *testing.T) {
+	t.Run("should handle concurrent position updates", func(t *testing.T) {
+		tracker := newMockPositionTracker()
+
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				tracker.UpdatePosition("user1", "BTC-USD", 0.01, 50000.0+float64(idx))
+			}(i)
+		}
+		wg.Wait()
+
+		tracker.mu.RLock()
+		qty := tracker.positions["user1"]["BTC-USD"]
+		tracker.mu.RUnlock()
+
+		assert.InDelta(t, 1.0, qty, 0.001,
+			"100 updates of 0.01 should sum to 1.0")
+	})
+}
+
+func TestCircuitBreakerPerformance(t *testing.T) {
+	t.Run("should not degrade under concurrent execution", func(t *testing.T) {
+		breaker := newMockCircuitBreaker()
+
+		var wg sync.WaitGroup
+		errors := int32(0)
+
+		start := time.Now()
+		for i := 0; i < 1000; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := breaker.Execute(func() error { return nil })
+				if err != nil {
+					atomic.AddInt32(&errors, 1)
+				}
+			}()
+		}
+		wg.Wait()
+		elapsed := time.Since(start)
+
+		assert.Equal(t, int32(0), errors,
+			"No errors expected when circuit is closed")
+		assert.Less(t, elapsed, 2*time.Second,
+			"1000 concurrent executions should complete quickly")
+	})
+}
+
+func TestCachePerformance(t *testing.T) {
+	t.Run("should handle concurrent reads and writes", func(t *testing.T) {
+		cache := newMockCache()
+
+		var wg sync.WaitGroup
+		// Writers
+		for i := 0; i < 50; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					cache.Set("key", "value")
+				}
+			}(i)
+		}
+		// Readers
+		for i := 0; i < 50; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					cache.Get("key")
+				}
+			}()
+		}
+		wg.Wait()
+	})
+}
+
+func TestAlertCheckPerformance(t *testing.T) {
+	t.Run("should check 1000 alerts efficiently", func(t *testing.T) {
+		engine := newMockAlertEngine()
+		for i := 0; i < 1000; i++ {
+			engine.CreateAlert("user1", "BTC-USD", "above", 50000.0+float64(i))
+		}
+
+		start := time.Now()
+		triggered := engine.CheckPrice("BTC-USD", 55000.0)
+		elapsed := time.Since(start)
+
+		// All alerts below 55000 should trigger
+		assert.Greater(t, len(triggered), 0,
+			"Some alerts should trigger when price exceeds thresholds")
+		assert.Less(t, elapsed, 100*time.Millisecond,
+			"Checking 1000 alerts should complete within 100ms")
+	})
+}
+
+func TestDecimalPrecision(t *testing.T) {
+	t.Run("should maintain precision through operations", func(t *testing.T) {
+		// Classic float precision test: 0.1 + 0.2 != 0.3 in float64
+		a := decimal.NewFromFloat(0.1)
+		b := decimal.NewFromFloat(0.2)
+		expected := decimal.NewFromFloat(0.3)
+
+		sum := a.Add(b)
+		assert.True(t, sum.Equal(expected),
+			"Decimal 0.1 + 0.2 should equal 0.3 exactly")
+	})
+
+	t.Run("should handle large multiplication without overflow", func(t *testing.T) {
+		price := decimal.NewFromFloat(99999.99)
+		qty := decimal.NewFromFloat(99999.99)
+
+		result := price.Mul(qty)
+		assert.True(t, result.IsPositive(),
+			"Large decimal multiplication should not overflow")
+	})
+}
+
+func TestOrderBookDepthPerformance(t *testing.T) {
+	t.Run("should retrieve depth from large book quickly", func(t *testing.T) {
+		book := newMockOrderBook("BTC-USD")
+		for i := 0; i < 10000; i++ {
+			book.AddOrder(&BookOrder{
+				Price:    decimal.NewFromFloat(50000.0 - float64(i)),
+				Quantity: decimal.NewFromFloat(1.0),
+				Side:     "buy",
+			})
+		}
+
+		start := time.Now()
+		bids, _ := book.GetDepth(100)
+		elapsed := time.Since(start)
+
+		_ = bids
+		assert.Less(t, elapsed, 50*time.Millisecond,
+			"Depth retrieval from 10k-order book should be fast")
+	})
+}
 
 // Benchmark tests for performance-critical paths
 

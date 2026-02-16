@@ -7,7 +7,7 @@ A high-performance real-time data processing platform for financial and IoT data
 SignalStream is a distributed system consisting of 10 microservices that handle real-time data ingestion, routing, transformation, aggregation, storage, and alerting for high-frequency financial market data and IoT sensor streams.
 
  across 11 categories
- (98 CTest + 12678 parametric scenarios)
+ (244 CTest entries: 117 unit + 127 hyper-matrix chunks of 100 scenarios each)
 
 ## Services
 
@@ -103,11 +103,12 @@ docker compose up -d
 ## Tips
 
 1. Start with Setup/Config bugs - services must start before tests can run
-2. Use sanitizers: `-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined"`
-3. Enable race detection: `-DCMAKE_CXX_FLAGS="-fsanitize=thread"`
-4. Check test output carefully - CTest shows detailed failure info
-5. Bug dependencies exist - some bugs must be fixed before others
-6. Focus on one service at a time to avoid overwhelming complexity
+2. Use sanitizers: `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON`
+3. Enable race detection: `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_TSAN=ON`
+4. Run tests by category: `ctest -L concurrency`, `ctest -L security`, etc.
+5. Check test output carefully - CTest shows detailed failure info
+6. Bug dependencies exist - some bugs must be fixed before others
+7. Focus on one service at a time to avoid overwhelming complexity
 
 ---
 

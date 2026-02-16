@@ -23,9 +23,6 @@ public class AppointmentController : ControllerBase
     [HttpGet("{id}")]
     public IActionResult GetAppointment(int id)
     {
-        // === BUG A1: Task.Result causes deadlock with SynchronizationContext ===
-        // In ASP.NET Core, calling .Result on an async method while on
-        // the request thread will deadlock if a SynchronizationContext is present
         var appointment = _appointmentService.GetByIdAsync(id).Result;
         if (appointment == null)
             return NotFound();

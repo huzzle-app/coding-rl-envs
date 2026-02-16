@@ -30,7 +30,6 @@ use std::time::{Duration, Instant};
 // =============================================================================
 
 /// Test that order event rebuild returns a proper result, not a panic.
-/
 ///         which panics if the event is incomplete. Fixed code returns Err.
 #[test]
 fn test_no_unwrap_in_production() {
@@ -111,7 +110,6 @@ fn test_order_error_handling() {
 // =============================================================================
 
 /// Test that error types preserve the full chain of context.
-/
 #[test]
 fn test_error_type_preserves_info() {
     #[derive(Debug)]
@@ -169,7 +167,6 @@ fn test_risk_error_chain() {
 // =============================================================================
 
 /// Test that panics in async tasks are caught, not propagated.
-/
 #[test]
 fn test_async_panic_caught() {
     // Simulate catching a panic
@@ -223,7 +220,6 @@ fn test_matching_panic_recovery() {
 // =============================================================================
 
 /// Test that events are processed in the correct sequence order.
-/
 #[test]
 fn test_event_ordering_guaranteed() {
     let processed_order = Arc::new(Mutex::new(Vec::new()));
@@ -294,7 +290,6 @@ fn test_nats_sequence_order() {
 // =============================================================================
 
 /// Test that distributed locks are always released, even on error.
-/
 #[test]
 fn test_distributed_lock_released() {
     let lock_held = Arc::new(AtomicBool::new(false));
@@ -389,7 +384,6 @@ fn test_position_lock_cleanup() {
 // =============================================================================
 
 /// Test that split-brain is detected and prevented in matching failover.
-/
 #[test]
 fn test_split_brain_prevented() {
     let leader_id = Arc::new(Mutex::new(None::<usize>));
@@ -462,7 +456,6 @@ fn test_matching_failover_safe() {
 // =============================================================================
 
 /// Test that order operations are idempotent.
-/
 #[test]
 fn test_idempotency_key_unique() {
     let mut processed_keys: HashSet<String> = HashSet::new();
@@ -517,7 +510,6 @@ fn test_order_idempotent() {
 // =============================================================================
 
 /// Test that saga compensation correctly rolls back partial transactions.
-/
 #[test]
 fn test_saga_compensation_correct() {
     #[derive(Debug, Clone, PartialEq)]
@@ -592,7 +584,6 @@ fn test_ledger_rollback_complete() {
 // =============================================================================
 
 /// Test that retries use exponential backoff, not constant interval.
-/
 #[test]
 fn test_retry_with_backoff() {
     let mut delays: Vec<Duration> = Vec::new();
@@ -658,7 +649,6 @@ fn test_no_retry_storm() {
 // =============================================================================
 
 /// Test that position tracker doesn't create Arc reference cycles.
-/
 #[test]
 fn test_no_arc_cycle_leak() {
     use std::sync::Weak;
@@ -826,7 +816,6 @@ fn test_market_conn_cleanup() {
 // =============================================================================
 
 /// Test that rounding uses banker's rounding (round half to even).
-/
 #[test]
 fn test_decimal_rounding_correct() {
     // Banker's rounding: round half to even
@@ -857,7 +846,7 @@ fn test_decimal_rounding_correct() {
 #[test]
 fn test_ledger_rounding_mode() {
     // Test that rounding a series doesn't accumulate bias
-    let values = vec![0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5];
+    let values: Vec<f64> = vec![0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5];
 
     // Banker's rounding: 0,2,2,4,4,6,6,8,8,10 = 50
     let bankers_sum: f64 = values.iter().map(|&v| {
@@ -1283,7 +1272,7 @@ fn test_position_closing() {
 /// Test order cancel is idempotent (not an error on double cancel)
 #[test]
 fn test_order_cancel_idempotent() {
-    #[derive(PartialEq)]
+    #[derive(Debug, PartialEq)]
     enum OrderStatus { Active, Cancelled }
 
     let mut status = OrderStatus::Active;

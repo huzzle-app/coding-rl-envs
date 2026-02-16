@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "utils/memory_pool.h"
 #include <set>
+#include <type_traits>
 
 using namespace cacheforge;
 
@@ -47,32 +48,41 @@ TEST(MemoryPoolTest, test_no_duplicate_allocations) {
 // ========== Bug B4: Double free from missing move constructor ==========
 
 TEST(MemoryPoolTest, test_no_double_free_on_copy) {
-    
-    // or the copy should properly deep-copy the pool storage.
-    // Without the fix, copying and destroying both leads to double-free.
 
-    // After fix, this should not compile (deleted copy ctor) OR
-    // should work correctly (deep copy)
+    // After fix, MemoryPool should be move-only (copy ctor deleted).
+    // This test verifies that copy construction is disabled.
+    // If copy is allowed, both copies own the same memory -> double-free on destruction.
+
+    // Verify MemoryPool is not copyable (should fail to compile if copy ctor exists)
+    EXPECT_FALSE(std::is_copy_constructible_v<MemoryPool>)
+        << "MemoryPool should not be copy-constructible (double-free risk)";
+    EXPECT_FALSE(std::is_copy_assignable_v<MemoryPool>)
+        << "MemoryPool should not be copy-assignable (double-free risk)";
+
+    // Verify basic allocate/deallocate still works
     MemoryPool pool(64, 8);
     void* p1 = pool.allocate();
     ASSERT_NE(p1, nullptr);
-
-    // The fix should make MemoryPool move-only
-    // For now, just test that allocation works properly
     pool.deallocate(p1);
     void* p2 = pool.allocate();
     EXPECT_EQ(p1, p2);  // Should return the same block
 }
 
 TEST(MemoryPoolTest, test_pool_move_semantics) {
-    
+
+    // After fix, MemoryPool should be move-constructible
+    EXPECT_TRUE(std::is_move_constructible_v<MemoryPool>)
+        << "MemoryPool should be move-constructible";
+
     MemoryPool pool(32, 4);
     void* p = pool.allocate();
     ASSERT_NE(p, nullptr);
 
-    // Move should transfer ownership
-    // Note: With the bug, the default copy ctor is used, causing double-free
-    // After fix, only move should be available
+    // Move should transfer ownership without double-free
+    MemoryPool moved_pool(std::move(pool));
+    // The moved-to pool should be usable
+    void* p2 = moved_pool.allocate();
+    ASSERT_NE(p2, nullptr);
 }
 
 // ========== Basic pool tests ==========

@@ -94,6 +94,29 @@ class JWTService {
   }
 
   /**
+   * Generate token with custom payload and options
+   * BUG: Does not filter sensitive fields from payload (password, secretKey, etc.)
+   * BUG: No default expiry - tokens without explicit expiresIn never expire
+   */
+  generateToken(payload, options = {}) {
+    return jwt.sign(payload, this.secret, options);
+  }
+
+  /**
+   * Refresh an existing token with a new expiry
+   * BUG: Uses decodeToken (no verification) instead of verifyToken
+   * This allows refreshing expired or tampered tokens
+   */
+  refreshToken(token) {
+    const decoded = this.decodeToken(token);
+    if (!decoded) {
+      throw new Error('Invalid token');
+    }
+    const { iat, exp, ...payload } = decoded;
+    return this.generateToken(payload, { expiresIn: this.accessTokenExpiry });
+  }
+
+  /**
    * Decode token without verification
    */
   decodeToken(token) {

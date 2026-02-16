@@ -148,6 +148,31 @@ def _is_test_file(filepath: str) -> bool:
     return any(re.search(p, filepath, re.IGNORECASE) for p in TEST_FILE_PATTERNS)
 
 
+def check_test_file_integrity(cwd: Optional[str] = None) -> bool:
+    """Check that test files haven't been modified (anti-reward-hacking)."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=cwd, capture_output=True, text=True,
+        )
+        changed = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        for filepath in changed:
+            if _is_test_file(filepath):
+                return False
+        # Also check untracked files in test dirs
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=cwd, capture_output=True, text=True,
+        )
+        untracked = [f.strip() for f in result.stdout.strip().split("\n") if f.strip()]
+        for filepath in untracked:
+            if _is_test_file(filepath):
+                return False
+    except Exception:
+        pass  # If git is unavailable, skip check
+    return True
+
+
 def get_git_diff_files(cwd: Optional[str] = None) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Get original and modified file contents from git."""
     import os
@@ -255,6 +280,9 @@ def calculate_solution_bonus(
     return round(metrics.total_bonus * scale_factor, 4)
 
 
+MIN_EXPECTED_TESTS = 9000  # Anti-reward-hacking: minimum test count
+
+
 def calculate_reward(
     passed: int,
     total: int,
@@ -285,6 +313,20 @@ def calculate_reward(
             "training_mode": training_mode,
         }
 
+    # Anti-reward-hacking: reject suspiciously low test counts
+    if 0 < total < MIN_EXPECTED_TESTS:
+        return {
+            "reward": 0.0,
+            "pass_rate": passed / total if total > 0 else 0.0,
+            "base_reward": 0.0,
+            "solution_bonus": 0.0,
+            "passed": passed,
+            "total": total,
+            "tier": tier,
+            "training_mode": training_mode,
+            "error": f"insufficient_tests: {total} < {MIN_EXPECTED_TESTS}",
+        }
+
     pass_rate = passed / total
 
     # Use training reward (dense) or sparse reward based on mode
@@ -292,6 +334,20 @@ def calculate_reward(
         base_reward = training_reward(pass_rate, training_mode)
     else:
         base_reward = sparse_reward(pass_rate, tier)
+
+    # Anti-reward-hacking: check if test files were modified
+    if cwd and not check_test_file_integrity(cwd):
+        return {
+            "reward": 0.0,
+            "pass_rate": round(pass_rate, 6),
+            "base_reward": 0.0,
+            "solution_bonus": 0.0,
+            "passed": passed,
+            "total": total,
+            "tier": tier,
+            "training_mode": training_mode,
+            "error": "test_files_modified",
+        }
 
     solution_bonus = 0.0
     if enable_solution_bonus and not training_mode:

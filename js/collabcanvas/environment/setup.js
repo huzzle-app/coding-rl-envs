@@ -578,7 +578,7 @@ class CollabCanvasEnvironment {
    * Get success criteria description
    */
   getSuccessCriteria() {
-    return 'All 125 Jest tests must pass. Fix all 25 intentional bugs across 6 categories: WebSocket & Real-time (A), State Management (B), Database & Transactions (C), Authentication (D), File Handling (E), and Configuration (F).';
+    return 'All 259 Jest tests must pass. Fix all 25 intentional bugs across 6 categories: WebSocket & Real-time (A), State Management (B), Database & Transactions (C), Authentication (D), File Handling (E), and Configuration (F).';
   }
 
   /**

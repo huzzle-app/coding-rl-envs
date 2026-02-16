@@ -109,6 +109,24 @@ class BroadcastService {
   }
 
   /**
+   * Publish message to Redis pub/sub channel
+   * BUG A1: Missing await on async Redis publish
+   */
+  async publishToPubSub(channel, message) {
+    this.redis.publish(channel, JSON.stringify(message));
+    return { success: true };
+  }
+
+  /**
+   * Broadcast to all in room except sender socket
+   */
+  async broadcastExcept(senderSocket, boardId, event, data) {
+    const roomKey = `board:${boardId}`;
+    senderSocket.broadcast.to(roomKey).emit(event, data);
+    return { success: true };
+  }
+
+  /**
    * Broadcast system notification
    */
   async broadcastNotification(boardId, notification) {

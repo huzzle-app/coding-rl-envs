@@ -186,7 +186,7 @@ func TestRiskMetrics(t *testing.T) {
 		var_ := calc.CalculateVaR("user1", 0.95, 1) // 95% confidence, 1 day
 
 		assert.LessOrEqual(t, var_, 0.0,
-			"BUG G5: VaR should be <= 0 (represents potential loss at confidence level)")
+			"VaR should be <= 0 (represents potential loss at confidence level)")
 	})
 
 	t.Run("should calculate exposure", func(t *testing.T) {
@@ -246,11 +246,11 @@ func TestLeverageCalculation(t *testing.T) {
 		leverage := calc.CalculateLeverage(50000.0, 0.0)
 		// Should return 0 or max leverage, not Inf or NaN
 		assert.False(t, leverage != leverage, // NaN check: NaN != NaN is true
-			"BUG F7: CalculateLeverage with zero margin should not return NaN")
+			"CalculateLeverage with zero margin should not return NaN")
 		assert.NotEqual(t, leverage, math.Inf(1),
-			"BUG F7: CalculateLeverage with zero margin should not return +Inf")
+			"CalculateLeverage with zero margin should not return +Inf")
 		assert.GreaterOrEqual(t, leverage, 0.0,
-			"BUG F7: CalculateLeverage with zero margin should return a safe non-negative value")
+			"CalculateLeverage with zero margin should return a safe non-negative value")
 	})
 }
 
@@ -264,7 +264,7 @@ func TestMarginWithDecimal(t *testing.T) {
 		// 0.1 + 0.2 = 0.3 as price, * 1000 * 0.1 = 30.0
 		margin := calc.CalculateMargin(0.3, 1000.0, "BTC-USD")
 		assert.Equal(t, 30.0, margin,
-			"BUG G1: Margin calc should use decimal to produce exact 30.0, not 29.999...")
+			"Margin calc should use decimal to produce exact 30.0, not 29.999...")
 	})
 }
 
@@ -293,7 +293,7 @@ func TestPositionLimitsConcurrent(t *testing.T) {
 		wg.Wait()
 		// At least some should be rejected since 100 * 50000 > 10000 limit
 		assert.Greater(t, violations, int32(0),
-			"BUG G2: Position limits must be enforced even under concurrent access")
+			"Position limits must be enforced even under concurrent access")
 	})
 }
 
@@ -313,7 +313,7 @@ func TestDailyLossLimitReset(t *testing.T) {
 
 		result = calc.CheckOrder("user1", "BTC-USD", "buy", 1.0, 100.0)
 		assert.True(t, result.Allowed,
-			"BUG G3: After ResetDailyPnL, trading should be allowed again")
+			"After ResetDailyPnL, trading should be allowed again")
 	})
 }
 
@@ -324,9 +324,9 @@ func TestLeverageOverflow(t *testing.T) {
 
 		leverage := calc.CalculateLeverage(1e18, 1.0)
 		assert.False(t, math.IsInf(leverage, 0),
-			"BUG G4: Extreme leverage should not produce Inf")
+			"Extreme leverage should not produce Inf")
 		assert.False(t, math.IsNaN(leverage),
-			"BUG G4: Extreme leverage should not produce NaN")
+			"Extreme leverage should not produce NaN")
 	})
 }
 
@@ -339,7 +339,7 @@ func TestVaRCalculation(t *testing.T) {
 
 		var_ := calc.CalculateVaR("user1", 0.99, 1)
 		assert.LessOrEqual(t, var_, 0.0,
-			"BUG G5: VaR at 99%% confidence for a long position should be <= 0 (a loss)")
+			"VaR at 99%% confidence for a long position should be <= 0 (a loss)")
 	})
 }
 
@@ -355,6 +355,6 @@ func TestExposureAggregation(t *testing.T) {
 		exposure := calc.GetTotalExposure("user1")
 		// 50000 + 30000 + 15000 = 95000
 		assert.InDelta(t, 95000.0, exposure, 0.01,
-			"BUG G6: Total exposure should be sum of all position notional values")
+			"Total exposure should be sum of all position notional values")
 	})
 }

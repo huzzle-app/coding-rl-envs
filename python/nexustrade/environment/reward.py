@@ -50,10 +50,10 @@ class RewardCalculator:
 
     # Extremely sparse thresholds
     pass_thresholds: List[float] = field(default_factory=lambda: [
-        0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0
+        0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0
     ])
     threshold_rewards: List[float] = field(default_factory=lambda: [
-        0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0
+        0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0
     ])
 
     # Penalty and bonus weights

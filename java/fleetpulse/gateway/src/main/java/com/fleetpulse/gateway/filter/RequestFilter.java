@@ -9,6 +9,12 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.UUID;
 
+/**
+ * Request filter that sets up request context for downstream processing.
+ *
+ * Bugs: C2
+ * Categories: Concurrency
+ */
 @Component
 public class RequestFilter implements Filter {
 
@@ -22,15 +28,13 @@ public class RequestFilter implements Filter {
         String requestId = UUID.randomUUID().toString();
         String userId = httpRequest.getHeader("X-User-Id");
 
-        
-        // is called - which it isn't in the finally block below
+        // Bug C2: RequestContext is set on ThreadLocal but never cleared
         requestService.setRequestContext(
             new RequestService.RequestContext(requestId, userId));
 
         try {
             chain.doFilter(request, response);
         } finally {
-            
             // ThreadLocal leaks to next request on same thread
         }
     }

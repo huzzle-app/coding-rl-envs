@@ -8,7 +8,7 @@
 
 ## Success Criteria
 
-- All 7,tests pass (`python tests/run_all.py`).
+- All 7,150+ tests pass (`python tests/run_all.py`).
 - Deterministic replay, scheduling, routing, and policy behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
 

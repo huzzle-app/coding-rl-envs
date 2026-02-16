@@ -1,8 +1,10 @@
 using Xunit;
 using System;
+using System.Reflection;
 using EventHorizon.Shared.Models;
 
-namespace EventHorizon.Shared.Tests;
+namespace EventHorizon.Shared.Tests
+{
 
 public class ModelTests
 {
@@ -391,6 +393,8 @@ public class ModelTests
         Assert.Equal(5.50m, remainder);
     }
 }
+
+} // namespace EventHorizon.Shared.Tests
 
 // Mock model classes for testing
 namespace EventHorizon.Shared.Models

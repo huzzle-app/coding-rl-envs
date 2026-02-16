@@ -4,7 +4,6 @@
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::str::FromStr;
 
 // =============================================================================
 // F1: Float Precision in Prices Tests
@@ -189,8 +188,6 @@ fn test_f4_no_float_conversion_rate() {
 
 #[test]
 fn test_f5_fee_calculation_precise() {
-    
-    use rust_decimal::prelude::*;
 
     let order_value = dec!(100.00);
     let fee_rate = dec!(0.001); // 0.1%

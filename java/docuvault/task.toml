@@ -4,6 +4,7 @@ version = "1.0"
 name = "docuvault"
 description = "Debug a Java Spring Boot document management system"
 difficulty = "medium"
+tier = "senior"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "java"

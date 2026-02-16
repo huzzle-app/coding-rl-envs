@@ -71,10 +71,10 @@ class SyncService {
     // Store updated state
     this.boardStates.set(boardId, newState);
 
-    
+
     this.redis.set(`board:${boardId}:state`, JSON.stringify(newState));
 
-    return newState;
+    return { success: true, state: newState };
   }
 
   /**
@@ -177,6 +177,15 @@ class SyncService {
     this.broadcastUpdate(boardId, operation, socketId);
 
     return { operation, state: newState };
+  }
+
+  /**
+   * Set board state directly
+   * BUG A1: Missing await on Redis set
+   */
+  async setState(boardId, state) {
+    this.boardStates.set(boardId, state);
+    this.redis.set(`board:${boardId}:state`, JSON.stringify(state));
   }
 
   /**

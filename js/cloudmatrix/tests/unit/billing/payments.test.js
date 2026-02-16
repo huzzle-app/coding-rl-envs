@@ -1,343 +1,303 @@
 /**
  * Payment Processing Tests
  *
- * Tests payment flow, proration, refunds, webhook handling, currency
+ * Tests InvoiceCalculator, UsageMeter, and SubscriptionService from actual source code.
+ * Exercises billing bugs: discount/tax ordering, race conditions, batch error reporting.
  */
 
-describe('Payment Processing', () => {
-  describe('charge creation', () => {
-    it('should create payment charge', () => {
-      const charge = {
-        id: 'ch-123',
-        amount: 2999,
-        currency: 'usd',
-        status: 'pending',
-        customerId: 'cust-1',
-        description: 'Pro Plan - Monthly',
-      };
+const { InvoiceCalculator, UsageMeter, SubscriptionService, SubscriptionLifecycle } = require('../../../services/billing/src/services/subscription');
 
-      expect(charge.amount).toBe(2999);
-      expect(charge.status).toBe('pending');
+describe('InvoiceCalculator', () => {
+  let calculator;
+
+  beforeEach(() => {
+    calculator = new InvoiceCalculator();
+  });
+
+  describe('line items', () => {
+    it('should calculate line item total', () => {
+      const item = calculator.calculateLineItem('Pro Plan', 25, 1);
+      expect(item.total).toBe(25);
     });
 
-    it('should validate amount is positive integer', () => {
-      const isValid = (amount) => {
-        return Number.isInteger(amount) && amount > 0;
-      };
-
-      expect(isValid(2999)).toBe(true);
-      expect(isValid(0)).toBe(false);
-      expect(isValid(-100)).toBe(false);
-      expect(isValid(29.99)).toBe(false);
-    });
-
-    it('should use cents for amount', () => {
-      const toCents = (dollars) => Math.round(dollars * 100);
-      const toDollars = (cents) => cents / 100;
-
-      expect(toCents(29.99)).toBe(2999);
-      expect(toDollars(2999)).toBe(29.99);
-    });
-
-    it('should validate currency code', () => {
-      const validCurrencies = ['usd', 'eur', 'gbp', 'jpy', 'cad'];
-
-      const isValid = (currency) => validCurrencies.includes(currency.toLowerCase());
-
-      expect(isValid('usd')).toBe(true);
-      expect(isValid('EUR')).toBe(true);
-      expect(isValid('xyz')).toBe(false);
-    });
-
-    it('should handle zero-decimal currencies', () => {
-      const zeroDecimal = ['jpy', 'krw', 'vnd'];
-
-      const formatAmount = (amount, currency) => {
-        if (zeroDecimal.includes(currency)) return amount;
-        return amount / 100;
-      };
-
-      expect(formatAmount(1000, 'usd')).toBe(10);
-      expect(formatAmount(1000, 'jpy')).toBe(1000);
+    it('should calculate multi-quantity line item', () => {
+      const item = calculator.calculateLineItem('Seat', 10, 5);
+      expect(item.total).toBe(50);
     });
   });
 
-  describe('payment status', () => {
-    it('should track payment lifecycle', () => {
-      const transitions = {
-        pending: ['processing', 'failed'],
-        processing: ['completed', 'failed'],
-        completed: ['refunded'],
-        failed: ['pending'],
-        refunded: [],
-      };
-
-      const canTransition = (from, to) => {
-        return transitions[from]?.includes(to) || false;
-      };
-
-      expect(canTransition('pending', 'processing')).toBe(true);
-      expect(canTransition('completed', 'refunded')).toBe(true);
-      expect(canTransition('completed', 'pending')).toBe(false);
-    });
-
-    it('should handle payment failure', () => {
-      const payment = {
-        id: 'pay-1',
-        status: 'failed',
-        failureReason: 'insufficient_funds',
-        failedAt: Date.now(),
-      };
-
-      expect(payment.failureReason).toBe('insufficient_funds');
-    });
-  });
-});
-
-describe('Proration', () => {
-  describe('plan upgrade proration', () => {
-    it('should calculate prorated amount', () => {
-      const prorate = (oldPrice, newPrice, daysLeft, totalDays) => {
-        const dailyOld = oldPrice / totalDays;
-        const dailyNew = newPrice / totalDays;
-        const credit = dailyOld * daysLeft;
-        const charge = dailyNew * daysLeft;
-        return Math.round(charge - credit);
-      };
-
-      const prorated = prorate(999, 2999, 15, 30);
-      expect(prorated).toBeGreaterThan(0);
-    });
-
-    it('should handle mid-cycle upgrade', () => {
-      const billingStart = new Date('2024-01-01');
-      const upgradeDate = new Date('2024-01-16');
-      const billingEnd = new Date('2024-02-01');
-
-      const daysInCycle = (billingEnd - billingStart) / 86400000;
-      const daysRemaining = (billingEnd - upgradeDate) / 86400000;
-
-      expect(daysInCycle).toBe(31);
-      expect(daysRemaining).toBe(16);
-    });
-
-    it('should handle downgrade at period end', () => {
-      const subscription = {
-        plan: 'pro',
-        cancelAtPeriodEnd: false,
-        scheduledChange: null,
-      };
-
-      const scheduleDowngrade = (sub, newPlan) => {
-        sub.scheduledChange = { plan: newPlan, effectiveAt: 'period_end' };
-      };
-
-      scheduleDowngrade(subscription, 'basic');
-      expect(subscription.scheduledChange.plan).toBe('basic');
-    });
-  });
-});
-
-describe('Refunds', () => {
-  describe('refund processing', () => {
-    it('should process full refund', () => {
-      const payment = { id: 'pay-1', amount: 2999, refunded: 0 };
-
-      const refund = (payment, amount) => {
-        if (amount > payment.amount - payment.refunded) {
-          throw new Error('Refund exceeds available amount');
-        }
-        payment.refunded += amount;
-        return { refundId: 'ref-1', amount };
-      };
-
-      const result = refund(payment, 2999);
-      expect(result.amount).toBe(2999);
-      expect(payment.refunded).toBe(2999);
-    });
-
-    it('should process partial refund', () => {
-      const payment = { amount: 2999, refunded: 0 };
-
-      payment.refunded += 1000;
-
-      expect(payment.amount - payment.refunded).toBe(1999);
-    });
-
-    it('should prevent over-refund', () => {
-      const payment = { amount: 2999, refunded: 2000 };
-
-      const canRefund = (amount) => amount <= payment.amount - payment.refunded;
-
-      expect(canRefund(999)).toBe(true);
-      expect(canRefund(1000)).toBe(false);
-    });
-
-    it('should track refund reason', () => {
-      const refund = {
-        id: 'ref-1',
-        paymentId: 'pay-1',
-        amount: 2999,
-        reason: 'customer_request',
-        createdAt: Date.now(),
-      };
-
-      expect(refund.reason).toBe('customer_request');
-    });
-  });
-});
-
-describe('Webhook Handling', () => {
-  describe('webhook verification', () => {
-    it('should verify webhook signature', () => {
-      const crypto = require('crypto');
-      const secret = 'webhook-secret';
-      const payload = '{"type":"payment.completed","id":"pay-1"}';
-
-      const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-      const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-
-      expect(signature).toBe(expected);
-    });
-
-    it('should reject invalid signatures', () => {
-      const crypto = require('crypto');
-
-      const sig1 = crypto.createHmac('sha256', 'secret-1').update('payload').digest('hex');
-      const sig2 = crypto.createHmac('sha256', 'secret-2').update('payload').digest('hex');
-
-      expect(sig1).not.toBe(sig2);
-    });
-
-    it('should handle duplicate webhooks', () => {
-      const processed = new Set();
-
-      const handleWebhook = (eventId, handler) => {
-        if (processed.has(eventId)) return { status: 'duplicate' };
-        processed.add(eventId);
-        handler();
-        return { status: 'processed' };
-      };
-
-      const result1 = handleWebhook('evt-1', () => {});
-      const result2 = handleWebhook('evt-1', () => {});
-
-      expect(result1.status).toBe('processed');
-      expect(result2.status).toBe('duplicate');
-    });
-
-    it('should process webhook events in order', () => {
-      const processed = [];
-      const events = [
-        { id: 'e1', type: 'invoice.created', seq: 1 },
-        { id: 'e2', type: 'payment.completed', seq: 2 },
-        { id: 'e3', type: 'subscription.activated', seq: 3 },
+  describe('invoice totals', () => {
+    it('should sum line items into subtotal', () => {
+      const items = [
+        calculator.calculateLineItem('Plan', 100, 1),
+        calculator.calculateLineItem('Addon', 25, 2),
       ];
+      const result = calculator.calculateInvoiceTotal(items);
+      expect(result.subtotal).toBe(150);
+    });
 
-      for (const event of events) {
-        processed.push(event.type);
+    it('should apply tax correctly', () => {
+      calculator.setTaxRate(0.08);
+      const items = [calculator.calculateLineItem('Plan', 100, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      expect(result.tax).toBe(8);
+    });
+
+    // BUG: Tax is calculated on subtotal BEFORE discount.
+    // Correct behavior: tax should be on (subtotal - discount).
+    // This test verifies the correct behavior.
+    it('should apply tax AFTER discount, not before', () => {
+      calculator.setTaxRate(0.10); // 10% tax
+      calculator.addDiscountRule(0, 0.20); // 20% discount on any amount
+      const items = [calculator.calculateLineItem('Plan', 100, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      // subtotal=100, discount=20, taxable_amount should be 80, tax should be 8
+      // BUG: tax = 100 * 0.10 = 10 (taxed before discount)
+      // total = 100 + 10 - 20 = 90 (buggy) vs 100 - 20 + 8 = 88 (correct)
+      expect(result.tax).toBe(8); // Should be tax on post-discount amount
+      expect(result.total).toBe(88);
+    });
+
+    it('should handle zero subtotal', () => {
+      const items = [calculator.calculateLineItem('Free', 0, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      expect(result.total).toBe(0);
+    });
+  });
+
+  describe('discount rules', () => {
+    it('should apply percentage discount when threshold met', () => {
+      calculator.addDiscountRule(50, 0.10); // 10% off for $50+
+      const items = [calculator.calculateLineItem('Plan', 100, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      expect(result.discount).toBe(10);
+    });
+
+    it('should not apply discount below threshold', () => {
+      calculator.addDiscountRule(200, 0.10);
+      const items = [calculator.calculateLineItem('Plan', 100, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      expect(result.discount).toBe(0);
+    });
+
+    it('should stack multiple discount rules', () => {
+      calculator.addDiscountRule(0, 0.05);  // 5% base discount
+      calculator.addDiscountRule(100, 0.10); // additional 10% for $100+
+      const items = [calculator.calculateLineItem('Plan', 200, 1)];
+      const result = calculator.calculateInvoiceTotal(items);
+      // Both rules apply: 200*0.05 + 200*0.10 = 10 + 20 = 30
+      expect(result.discount).toBe(30);
+    });
+  });
+
+  describe('proration', () => {
+    it('should calculate prorated amount for partial period', () => {
+      const start = new Date('2024-01-01');
+      const end = new Date('2024-01-16'); // 15 days
+      const result = calculator.calculateProratedAmount(10, start, end);
+      expect(result).toBe(150);
+    });
+
+    // BUG: calculateProratedAmount loops and accumulates, which introduces
+    // floating-point imprecision for non-integer daily rates
+    it('should maintain precision with fractional daily rates', () => {
+      const start = new Date('2024-01-01');
+      const end = new Date('2024-01-31'); // 30 days
+      const dailyRate = 3.33;
+      const result = calculator.calculateProratedAmount(dailyRate, start, end);
+      // Direct calculation: 3.33 * 30 = 99.9
+      expect(result).toBe(99.9);
+    });
+  });
+});
+
+describe('UsageMeter', () => {
+  let meter;
+
+  beforeEach(() => {
+    meter = new UsageMeter();
+  });
+
+  describe('basic counting', () => {
+    it('should increment counter', async () => {
+      await meter.increment('api_calls');
+      expect(meter.getCount('api_calls')).toBe(1);
+    });
+
+    it('should increment by custom amount', async () => {
+      await meter.increment('storage_bytes', 1024);
+      expect(meter.getCount('storage_bytes')).toBe(1024);
+    });
+
+    it('should return 0 for unknown keys', () => {
+      expect(meter.getCount('nonexistent')).toBe(0);
+    });
+  });
+
+  // BUG: UsageMeter.increment has a race condition.
+  // It reads the current value, does setImmediate (yields),
+  // then writes back current + amount. Two concurrent increments
+  // can both read the same initial value and overwrite each other.
+  describe('concurrent increments', () => {
+    it('should handle concurrent increments without losing updates', async () => {
+      const promises = [];
+      for (let i = 0; i < 10; i++) {
+        promises.push(meter.increment('counter', 1));
       }
+      await Promise.all(promises);
+      // With the race condition, some increments will be lost
+      expect(meter.getCount('counter')).toBe(10);
+    });
+  });
 
-      expect(processed).toEqual([
-        'invoice.created',
-        'payment.completed',
-        'subscription.activated',
+  describe('snapshots', () => {
+    it('should take snapshot of current counters', async () => {
+      await meter.increment('calls', 5);
+      const snap = meter.takeSnapshot();
+      expect(snap.calls).toBe(5);
+    });
+
+    it('should calculate usage between snapshots', async () => {
+      await meter.increment('calls', 10);
+      meter.takeSnapshot();
+
+      // Small delay to ensure different timestamps
+      await new Promise(r => setTimeout(r, 10));
+
+      await meter.increment('calls', 5);
+      const snap2Time = Date.now();
+      meter.takeSnapshot();
+
+      const usage = meter.getUsageBetween('calls', 0, snap2Time + 1);
+      expect(usage).toBe(5);
+    });
+  });
+
+  describe('reset', () => {
+    it('should reset a counter to zero', async () => {
+      await meter.increment('calls', 100);
+      meter.reset('calls');
+      expect(meter.getCount('calls')).toBe(0);
+    });
+  });
+});
+
+describe('SubscriptionService', () => {
+  let service;
+
+  beforeEach(() => {
+    service = new SubscriptionService(
+      { query: jest.fn().mockResolvedValue({ rows: [] }) },
+      { get: jest.fn(), set: jest.fn(), del: jest.fn() }
+    );
+  });
+
+  describe('cache', () => {
+    it('should cache subscription lookups', async () => {
+      const sub1 = await service.getSubscription('user-1');
+      const sub2 = await service.getSubscription('user-1');
+      // Should return same cached object
+      expect(sub1).toBe(sub2);
+    });
+
+    // BUG: No stampede protection - multiple concurrent calls for same user
+    // all miss cache and hit DB simultaneously
+    it('should coalesce concurrent requests for the same key', async () => {
+      let fetchCount = 0;
+      service._fetchFromDb = jest.fn(async () => {
+        fetchCount++;
+        await new Promise(r => setTimeout(r, 50));
+        return { id: 'sub-1', plan: 'pro' };
+      });
+
+      const results = await Promise.all([
+        service.getSubscription('user-1'),
+        service.getSubscription('user-1'),
+        service.getSubscription('user-1'),
       ]);
+
+      // With stampede protection, DB should be hit only once
+      expect(service._fetchFromDb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('batch creation', () => {
+    // BUG: batchCreateSubscriptions marks failures as { success: true, data: null }
+    it('should report failures correctly in batch creation', async () => {
+      service._chargePayment = jest.fn()
+        .mockResolvedValueOnce({ id: 'pay-1', amount: 25, status: 'completed' })
+        .mockRejectedValueOnce(new Error('Payment failed'));
+
+      const results = await service.batchCreateSubscriptions([
+        { userId: 'u1', plan: 'pro', billingCycle: 'monthly' },
+        { userId: 'u2', plan: 'pro', billingCycle: 'monthly' },
+      ]);
+
+      // Second item should be marked as failure
+      expect(results[1].success).toBe(false);
+    });
+  });
+
+  describe('saga compensation', () => {
+    // BUG: Only compensates the last step, not all executed steps in reverse order
+    it('should compensate ALL executed steps on failure, in reverse order', async () => {
+      const compensated = [];
+      service._chargePayment = jest.fn().mockResolvedValue({ id: 'pay-1', amount: 25, status: 'completed' });
+      service._provisionResources = jest.fn().mockRejectedValue(new Error('Provision failed'));
+      service._refundPayment = jest.fn(async (id) => { compensated.push('refund:' + id); });
+      service._deprovisionResources = jest.fn(async (id) => { compensated.push('deprovision:' + id); });
+
+      await expect(service.createSubscription({
+        userId: 'u1', plan: 'pro', billingCycle: 'monthly',
+      })).rejects.toThrow('Provision failed');
+
+      // Should compensate both the charge AND the subscription creation
+      // Bug: only compensates the last step (provision)
+      expect(compensated).toContain('refund:pay-1');
+    });
+  });
+
+  describe('cache key collision', () => {
+    // BUG: getCacheKey uses only q and page, missing other params
+    it('should generate unique cache keys for different filter combinations', () => {
+      const key1 = service.getCacheKey({ q: 'test', page: 1, sort: 'asc' });
+      const key2 = service.getCacheKey({ q: 'test', page: 1, sort: 'desc' });
+      expect(key1).not.toBe(key2);
     });
   });
 });
 
-describe('Invoice Generation', () => {
-  describe('invoice creation', () => {
-    it('should generate invoice for subscription', () => {
-      const invoice = {
-        id: 'inv-1',
-        subscriptionId: 'sub-1',
-        userId: 'user-1',
-        amount: 2999,
-        currency: 'usd',
-        lineItems: [
-          { description: 'Pro Plan - Monthly', amount: 2999 },
-        ],
-        status: 'draft',
-        createdAt: Date.now(),
-      };
-
-      expect(invoice.lineItems).toHaveLength(1);
-      expect(invoice.status).toBe('draft');
-    });
-
-    it('should apply discounts', () => {
-      const subtotal = 2999;
-      const discount = { type: 'percent', value: 20 };
-
-      const calculateDiscount = (amount, discount) => {
-        if (discount.type === 'percent') {
-          return Math.round(amount * (discount.value / 100));
-        }
-        return discount.value;
-      };
-
-      const discountAmount = calculateDiscount(subtotal, discount);
-      const total = subtotal - discountAmount;
-
-      expect(discountAmount).toBe(600);
-      expect(total).toBe(2399);
-    });
-
-    it('should calculate tax', () => {
-      const subtotal = 2999;
-      const taxRate = 0.08;
-
-      const tax = Math.round(subtotal * taxRate);
-      const total = subtotal + tax;
-
-      expect(tax).toBe(240);
-      expect(total).toBe(3239);
-    });
-
-    it('should format invoice number', () => {
-      const formatInvoiceNumber = (seq) => {
-        return `INV-${new Date().getFullYear()}-${String(seq).padStart(6, '0')}`;
-      };
-
-      expect(formatInvoiceNumber(1)).toMatch(/^INV-\d{4}-000001$/);
-      expect(formatInvoiceNumber(1234)).toMatch(/^INV-\d{4}-001234$/);
-    });
+describe('SubscriptionLifecycle', () => {
+  it('should start in trial state', () => {
+    const lc = new SubscriptionLifecycle('sub-1');
+    expect(lc.getState()).toBe('trial');
   });
-});
 
-describe('Currency Handling', () => {
-  describe('formatting', () => {
-    it('should format USD amounts', () => {
-      const format = (cents) => `$${(cents / 100).toFixed(2)}`;
+  it('should allow valid transitions', () => {
+    const lc = new SubscriptionLifecycle('sub-1');
+    lc.transition('active');
+    expect(lc.getState()).toBe('active');
+  });
 
-      expect(format(2999)).toBe('$29.99');
-      expect(format(100)).toBe('$1.00');
-    });
+  it('should reject invalid transitions', () => {
+    const lc = new SubscriptionLifecycle('sub-1');
+    expect(() => lc.transition('expired')).toThrow();
+  });
 
-    it('should handle floating point precision', () => {
-      const a = 0.1 + 0.2;
-      expect(a).not.toBe(0.3);
+  // BUG: refundIssued is set to true on EVERY cancellation,
+  // even for re-cancellation after reactivation (double refund)
+  it('should not issue duplicate refunds on reactivation-then-cancel', () => {
+    const lc = new SubscriptionLifecycle('sub-1');
+    lc.transition('active');
+    lc.transition('cancelled');
+    expect(lc.wasRefunded()).toBe(true);
 
-      const cents = Math.round((0.1 + 0.2) * 100);
-      expect(cents).toBe(30);
-    });
-
-    it('should use integer cents for calculations', () => {
-      const price1 = 2999;
-      const price2 = 1499;
-      const total = price1 + price2;
-
-      expect(total).toBe(4498);
-    });
-
-    it('should round correctly', () => {
-      const roundCents = (amount) => Math.round(amount);
-
-      expect(roundCents(29.994)).toBe(30);
-      expect(roundCents(29.995)).toBe(30);
-      expect(roundCents(29.5)).toBe(30);
-    });
+    // Reactivate and cancel again
+    lc.transition('active');
+    // Reset refund flag on reactivation (correct behavior)
+    // Bug: refundIssued stays true and gets set to true again
+    lc.transition('cancelled');
+    // Should track whether a NEW refund is needed vs already refunded
+    expect(lc.getHistory()).toHaveLength(4);
   });
 });

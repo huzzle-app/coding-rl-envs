@@ -44,6 +44,46 @@ class PermissionService {
   }
 
   /**
+   * Check if user has permission to perform action on board
+   * Returns boolean for simplified permission check
+   */
+  async checkPermission(userId, boardId, action) {
+    // Check if user is board owner
+    const board = await this.db.Board.findByPk(boardId);
+    if (board && board.ownerId === userId) {
+      return true;
+    }
+
+    // Check member role
+    const member = await this.db.BoardMember.findOne({
+      where: { userId, boardId },
+    });
+
+    if (!member) {
+      return false;
+    }
+
+    // Map action to required role level
+    const roleHierarchy = { viewer: 1, editor: 2, admin: 3 };
+    const actionRequirements = { view: 1, edit: 2, admin: 3 };
+
+    const userLevel = roleHierarchy[member.role] || 0;
+    const requiredLevel = actionRequirements[action] || 0;
+
+    return userLevel >= requiredLevel;
+  }
+
+  /**
+   * Create a permission checker function for a given action
+   * BUG D3: Uses regular function - loses 'this' context when called as callback
+   */
+  createChecker(action) {
+    return async function(userId, boardId) {
+      return this.checkPermission(userId, boardId, action);
+    };
+  }
+
+  /**
    * Check if user is board owner
    */
   async isBoardOwner(userId, boardId) {

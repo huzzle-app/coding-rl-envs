@@ -1,6 +1,5 @@
 #pragma once
 
-// FIX: This file is fine; connection.h needs its own unique guard name
 #ifndef CACHEFORGE_CONFIG_H
 #define CACHEFORGE_CONFIG_H
 
@@ -27,14 +26,12 @@ struct Config {
     std::string redis_url;
 
     
-    // will throw std::invalid_argument on non-numeric CACHEFORGE_PORT env var
-    // FIX: Wrap std::stoi in try-catch and return default on failure
+    // NOTE: CACHEFORGE_PORT env var is parsed without error handling
     static Config from_env();
 };
 
 
-// file-scope static, but init order across translation units is undefined
-// FIX: Replace with a function returning a function-local static (Meyers' singleton)
+// Global configuration instance used across translation units
 extern Config CONFIG_INSTANCE;
 
 Config& get_config();

@@ -160,7 +160,9 @@ class TestAnalyticsAPIReliability:
         )
 
         score = _calculate_candidate_score(candidate)
-        assert score >= 0
+        expected_base = (7 / 15) * 30
+        assert score == pytest.approx(expected_base, abs=0.01), \
+            f"Score for 7 years experience should be ~{expected_base:.2f}, got {score}"
 
     @pytest.mark.bug_g1
     def test_report_timezone_consistency(self, company, db):
@@ -343,11 +345,22 @@ class TestWebhookDelivery:
         """
         Tests batch delivery - actually tests chord callback.
         """
-        pass
+        from apps.jobs.tasks import score_single_candidate
+
+        # score_single_candidate must not have ignore_result=True for chords
+        assert score_single_candidate.ignore_result is False, \
+            "score_single_candidate should not ignore results (breaks chord pattern)"
 
     @pytest.mark.bug_b3
     def test_webhook_retry_mechanism(self):
         """
         Tests retry mechanism - actually tests Redis leak.
         """
-        pass
+        from apps.analytics.caching import QueryResultCache
+
+        cache = QueryResultCache()
+        initial_connections = len(cache._connections)
+
+        # After fix, connections should be managed properly (singleton or pool)
+        assert initial_connections == 0, \
+            f"New QueryResultCache should start with 0 connections, got {initial_connections}"

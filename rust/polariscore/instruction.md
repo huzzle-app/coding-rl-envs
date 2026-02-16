@@ -3,20 +3,22 @@
 ## Overview
 - **Name:** PolarisCore
 - **Language:** Rust
-- **Bug Count:** issues
-- **Test Count:** 97 test functions
+- **Bug Count:** ~32 bugs across 9 source modules
+- **Test Count:** 164 test functions (133 in hyper_matrix + 31 in targeted test files)
 - **Difficulty:** Hyper-Principal (70-140h expected)
 
 ## Bug Categories
 | Category | Count | Files |
 |----------|-------|-------|
-| Policy | 4 | policy.rs |
-| Resilience | 3 | resilience.rs |
-| Statistics | 3 | statistics.rs |
-| Routing | 2 | routing.rs |
-| Queue | 2 | queue.rs |
+| Statistics | 5 | statistics.rs |
+| Workflow | 5 | workflow.rs |
+| Resilience | 4 | resilience.rs |
+| Queue | 4 | queue.rs |
+| Allocator | 3 | allocator.rs |
+| Routing | 3 | routing.rs |
+| Economics | 3 | economics.rs |
 | Security | 2 | security.rs |
-| Economics | 2 | economics.rs |
+| Policy | 3 | policy.rs |
 
 ## Getting Started
 ```bash

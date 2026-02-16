@@ -3,6 +3,7 @@ package unit
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/terminal-bench/cloudvault/internal/models"
 	"github.com/terminal-bench/cloudvault/internal/services/storage"
 )
 
@@ -122,8 +124,16 @@ func TestStorageServiceGoroutineLeak(t *testing.T) {
 			userID := uuid.New()
 			data := bytes.NewReader([]byte("test"))
 
-			
-			svc.Upload(ctx, userID, data, 4, "test.txt")
+			// Upload may panic with nil client (BUG A1: goroutine leak)
+			// Recover so it doesn't crash the entire test binary
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Errorf("Upload panicked (nil client / goroutine leak): %v", r)
+					}
+				}()
+				svc.Upload(ctx, userID, data, 4, "test.txt")
+			}()
 			cancel()
 		}
 
@@ -144,12 +154,25 @@ func TestStorageServiceConcurrency(t *testing.T) {
 		}
 
 		userID := uuid.New()
-		session, err := svc.InitiateChunkedUpload(context.Background(), userID, "test.txt", 10240)
-		if err != nil {
+		var session *models.UploadSession
+		var initErr error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					initErr = fmt.Errorf("InitiateChunkedUpload panicked (nil client / BUG A4): %v", r)
+				}
+			}()
+			session, initErr = svc.InitiateChunkedUpload(context.Background(), userID, "test.txt", 10240)
+		}()
+		if initErr != nil {
+			t.Errorf("chunked upload failed: %v", initErr)
+			return
+		}
+		if session == nil {
 			t.Skip("chunked upload not available")
 		}
 
-		
+
 		var wg sync.WaitGroup
 		errors := make(chan error, 10)
 
@@ -208,8 +231,21 @@ func TestStorageServiceChannelClose(t *testing.T) {
 		}
 
 		userID := uuid.New()
-		session, err := svc.InitiateChunkedUpload(context.Background(), userID, "test.txt", 1024)
-		if err != nil {
+		var session *models.UploadSession
+		var initErr error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					initErr = fmt.Errorf("InitiateChunkedUpload panicked (nil client): %v", r)
+				}
+			}()
+			session, initErr = svc.InitiateChunkedUpload(context.Background(), userID, "test.txt", 1024)
+		}()
+		if initErr != nil {
+			t.Errorf("chunked upload failed: %v", initErr)
+			return
+		}
+		if session == nil {
 			t.Skip("chunked upload not available")
 		}
 
@@ -217,8 +253,8 @@ func TestStorageServiceChannelClose(t *testing.T) {
 		data := bytes.NewReader(bytes.Repeat([]byte("x"), 1024))
 		svc.UploadChunk(context.Background(), session.ID, 0, data, 1024)
 
-		
-		_, err = svc.CompleteChunkedUpload(context.Background(), session.ID)
+
+		_, err := svc.CompleteChunkedUpload(context.Background(), session.ID)
 		assert.NoError(t, err)
 
 		// Second complete should fail gracefully, not panic

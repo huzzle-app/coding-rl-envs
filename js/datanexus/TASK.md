@@ -75,13 +75,14 @@ datanexus/
 ## Test Categories
 
 | Category | Tests | Weight |
-| Unit | ~370 | 1.0x |
-| Integration | ~120 | 1.5x |
+| Unit | ~410 | 1.0x |
+| Integration | ~125 | 1.5x |
 | Contract | ~30 | 2.0x |
 | Chaos | ~70 | 3.0x |
 | Security | ~70 | 2.5x |
-| Performance | ~30 | 2.0x |
+| Performance | ~35 | 2.0x |
 | System | ~55 | 3.0x |
+| Stress | ~130 | 1.0x |
 
 ## Hints
 

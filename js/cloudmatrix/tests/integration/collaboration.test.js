@@ -81,11 +81,12 @@ describe('Real-Time Collaboration Integration', () => {
     it('multi-service presence sync test', async () => {
       jest.resetModules();
       const { PresenceTracker } = require('../../shared/realtime');
+      const mockRedis = global.testUtils.mockRedis();
 
-      const tracker = new PresenceTracker();
+      const tracker = new PresenceTracker(mockRedis, { debounceMs: 0 });
 
-      tracker.updatePresence('user-1', 'doc-1', { cursor: 10, selection: null });
-      tracker.updatePresence('user-2', 'doc-1', { cursor: 20, selection: { start: 15, end: 25 } });
+      await tracker.updatePresence('user-1', 'doc-1', { cursor: 10, selection: null });
+      await tracker.updatePresence('user-2', 'doc-1', { cursor: 20, selection: { start: 15, end: 25 } });
 
       const presence = tracker.getDocumentPresence('doc-1');
       expect(presence.size).toBe(2);
@@ -94,10 +95,11 @@ describe('Real-Time Collaboration Integration', () => {
     it('presence cleanup on disconnect test', async () => {
       jest.resetModules();
       const { PresenceTracker } = require('../../shared/realtime');
+      const mockRedis = global.testUtils.mockRedis();
 
-      const tracker = new PresenceTracker();
+      const tracker = new PresenceTracker(mockRedis, { debounceMs: 0 });
 
-      tracker.updatePresence('user-1', 'doc-1', { cursor: 10 });
+      await tracker.updatePresence('user-1', 'doc-1', { cursor: 10 });
       tracker.removeUser('user-1', 'doc-1');
 
       const presence = tracker.getDocumentPresence('doc-1');

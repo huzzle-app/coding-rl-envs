@@ -2,7 +2,7 @@
 
 AegisCore manages route dispatch, replay controls, queue pressure, and security policy gates for maritime operations. The platform coordinates vessel berth allocation, multi-leg route planning, policy escalation/de-escalation, circuit breaker resilience, and real-time workflow tracking across eight interconnected services.
 
-The codebase contains issues across deep dependency links across policy, routing, replay, and workflow transitions.
+The codebase contains 30+ issues across deep dependency links across allocator, routing, policy, queue management, security, resilience, statistics, workflow, and contract services.
 
 ## Difficulty
 

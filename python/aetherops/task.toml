@@ -4,6 +4,7 @@ version = "1.0"
 name = "aetherops"
 description = "Debug a Python orbital operations control platform with services"
 difficulty = "hard"
+tier = "hyper-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "python"

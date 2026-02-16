@@ -192,6 +192,125 @@ describe('Service Router', () => {
   });
 });
 
+describe('ServiceHealthMonitor', () => {
+  let ServiceHealthMonitor;
+
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../services/gateway/src/services/registry');
+    ServiceHealthMonitor = mod.ServiceHealthMonitor;
+  });
+
+  it('should mark instance unhealthy when failures reach threshold (not exceed)', () => {
+    const monitor = new ServiceHealthMonitor({});
+    monitor.failureThreshold = 3;
+
+    monitor.healthState.set('inst-1', {
+      healthy: true,
+      consecutiveFailures: 0,
+      consecutiveSuccesses: 0,
+      lastCheckTime: Date.now(),
+      lastResponseTime: 0,
+    });
+
+    const state = monitor.healthState.get('inst-1');
+    // Simulate exactly 3 consecutive failures
+    state.consecutiveFailures = 3;
+    // BUG: uses > instead of >= so threshold must be exceeded, not just met
+    if (state.healthy && state.consecutiveFailures >= monitor.failureThreshold) {
+      state.healthy = false;
+    }
+    const stateAfter = monitor.healthState.get('inst-1');
+    // With >= check, 3 failures should mark unhealthy
+    expect(stateAfter.healthy).toBe(false);
+  });
+
+  it('health check threshold should use >= not > for boundary', () => {
+    const monitor = new ServiceHealthMonitor({});
+    monitor.failureThreshold = 3;
+    monitor.recoveryThreshold = 2;
+
+    // Set up health state directly (avoid startMonitoring which creates intervals)
+    monitor.healthState.set('inst-1', {
+      healthy: true,
+      consecutiveFailures: 3,
+      consecutiveSuccesses: 0,
+      lastCheckTime: Date.now(),
+      lastResponseTime: 0,
+    });
+    const state = monitor.healthState.get('inst-1');
+
+    // The check in _performCheck uses > instead of >=
+    // So at exactly threshold, instance stays healthy (BUG)
+    const shouldBeUnhealthy = state.consecutiveFailures > monitor.failureThreshold;
+    // With '>' it's false at threshold=3, failures=3. Should use >=
+    expect(shouldBeUnhealthy).toBe(true);
+  });
+
+  it('recovery threshold should also use >= for consistency', () => {
+    const monitor = new ServiceHealthMonitor({});
+    monitor.recoveryThreshold = 2;
+
+    // Set up health state directly
+    monitor.healthState.set('inst-1', {
+      healthy: false,
+      consecutiveFailures: 0,
+      consecutiveSuccesses: 2,
+      lastCheckTime: Date.now(),
+      lastResponseTime: 0,
+    });
+    const state = monitor.healthState.get('inst-1');
+
+    // BUG: uses > instead of >= for recovery too
+    const shouldRecover = state.consecutiveSuccesses > monitor.recoveryThreshold;
+    expect(shouldRecover).toBe(true);
+  });
+
+  it('instance with exactly failureThreshold failures should be marked unhealthy', () => {
+    const monitor = new ServiceHealthMonitor({});
+    monitor.failureThreshold = 5;
+
+    // Set up health state directly
+    monitor.healthState.set('inst-1', {
+      healthy: true,
+      consecutiveFailures: 5,
+      consecutiveSuccesses: 0,
+      lastCheckTime: Date.now(),
+      lastResponseTime: 0,
+    });
+    const state = monitor.healthState.get('inst-1');
+
+    // Simulate what _performCheck does with the buggy '>'
+    if (state.healthy && state.consecutiveFailures > monitor.failureThreshold) {
+      state.healthy = false;
+    }
+    // BUG: 5 > 5 is false, so instance stays healthy at exactly the threshold
+    expect(state.healthy).toBe(false);
+  });
+
+  it('failure threshold boundary check should be inclusive', () => {
+    const monitor = new ServiceHealthMonitor({});
+    monitor.failureThreshold = 1;
+
+    // Set up health state directly
+    monitor.healthState.set('inst-1', {
+      healthy: true,
+      consecutiveFailures: 1,
+      consecutiveSuccesses: 0,
+      lastCheckTime: Date.now(),
+      lastResponseTime: 0,
+    });
+    const state = monitor.healthState.get('inst-1');
+
+    // With threshold=1, even 1 failure should trigger unhealthy
+    if (state.healthy && state.consecutiveFailures > monitor.failureThreshold) {
+      state.healthy = false;
+    }
+    // BUG: 1 > 1 is false
+    expect(state.healthy).toBe(false);
+  });
+});
+
 describe('WebSocket Proxy', () => {
   describe('ws upgrade', () => {
     it('should validate upgrade request', () => {

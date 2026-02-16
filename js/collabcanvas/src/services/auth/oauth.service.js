@@ -8,16 +8,83 @@ const crypto = require('crypto');
 const axios = require('axios');
 
 class OAuthService {
-  constructor(db, jwtService) {
-    this.db = db;
-    this.jwtService = jwtService;
+  constructor(dbOrRedis, jwtServiceOrConfig) {
     this.pendingStates = new Map(); // In-memory state storage
+
+    if (jwtServiceOrConfig && (jwtServiceOrConfig.clientId || jwtServiceOrConfig.clientSecret)) {
+      // Redis + config mode (stateless OAuth)
+      this.redis = dbOrRedis;
+      this.clientId = jwtServiceOrConfig.clientId;
+      this.clientSecret = jwtServiceOrConfig.clientSecret;
+      this.redirectUri = jwtServiceOrConfig.redirectUri;
+      this._mode = 'redis';
+    } else {
+      // DB + jwtService mode (original)
+      this.db = dbOrRedis;
+      this.jwtService = jwtServiceOrConfig;
+      this._mode = 'db';
+    }
+  }
+
+  /**
+   * Generate OAuth authorization URL (Redis/config mode)
+   * Used when constructed with (redis, config) pattern
+   */
+  async generateAuthUrlForUser(userId) {
+    const state = crypto.randomBytes(32).toString('hex');
+
+    if (this.redis) {
+      await this.redis.setex(
+        `oauth:state:${state}`,
+        600, // 10 minutes
+        JSON.stringify({ userId, createdAt: Date.now() })
+      );
+    }
+
+    const params = new URLSearchParams({
+      client_id: this.clientId || process.env.GOOGLE_CLIENT_ID,
+      redirect_uri: this.redirectUri || '',
+      response_type: 'code',
+      scope: 'email profile',
+      state,
+    });
+
+    return {
+      url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+      state,
+    };
+  }
+
+  /**
+   * Validate OAuth callback with state parameter (Redis/config mode)
+   * BUG D2: State parameter not validated - allows CSRF attacks
+   */
+  async validateCallback(code, state) {
+    // BUG D2: State is NOT validated against Redis
+    // Should check: const stateData = await this.redis.get(`oauth:state:${state}`);
+    // Should throw if: !stateData
+
+    // Delete state after use (even though we didn't validate it)
+    if (this.redis) {
+      await this.redis.del(`oauth:state:${state}`);
+    }
+
+    // Exchange code for tokens
+    const tokens = await this.exchangeCode(code);
+
+    return { tokens, state };
   }
 
   /**
    * Generate OAuth authorization URL
    */
-  generateAuthUrl(provider, redirectUri) {
+  generateAuthUrl(providerOrUserId, redirectUri) {
+    // Support both (userId) and (provider, redirectUri) signatures
+    if (!redirectUri && this._mode === 'redis') {
+      return this.generateAuthUrlForUser(providerOrUserId);
+    }
+
+    const provider = providerOrUserId;
     const state = crypto.randomBytes(32).toString('hex');
 
     // Store state for validation
@@ -106,7 +173,37 @@ class OAuthService {
   /**
    * Exchange authorization code for tokens
    */
-  async exchangeCode(provider, code, redirectUri) {
+  async exchangeCode(providerOrCode, code, redirectUri) {
+    // Redis/config mode: single arg is the auth code, use fetch
+    if (this._mode === 'redis' && !code) {
+      const authCode = providerOrCode;
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          code: authCode,
+          redirect_uri: this.redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Token exchange failed');
+      }
+
+      const data = await response.json();
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresIn: data.expires_in,
+      };
+    }
+
+    // DB mode: (provider, code, redirectUri) with axios
+    const provider = providerOrCode;
     const providers = {
       google: {
         tokenUrl: 'https://oauth2.googleapis.com/token',

@@ -16,10 +16,6 @@ SnapshotManager::~SnapshotManager() = default;
 bool SnapshotManager::save_snapshot(const std::vector<SnapshotEntry>& entries) {
     std::lock_guard lock(mutex_);
 
-    
-    // If generate_snapshot_path() throws (e.g., filesystem error),
-    // the allocated SnapshotWriter is leaked.
-    // FIX: auto writer = std::make_unique<SnapshotWriter>(generate_snapshot_path());
     SnapshotWriter* writer = new SnapshotWriter(generate_snapshot_path());
 
     try {

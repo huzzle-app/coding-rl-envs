@@ -4,12 +4,13 @@ version = "1.0"
 name = "geneforge"
 description = "Debug a Rust clinical genomics analysis platform"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "rust"
 
 [agent]
-timeout_sec = 28800.0
+timeout_sec = 7200.0
 
 [verifier]
-timeout_sec = 1800.0
+timeout_sec = 7200.0

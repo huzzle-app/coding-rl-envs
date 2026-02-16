@@ -28,7 +28,7 @@ The feature should integrate with the existing `Resilience` module's circuit bre
 ### Test Command
 
 ```bash
-./gradlew test
+mvn test
 ```
 
 ---
@@ -57,7 +57,7 @@ The refactoring should maintain backward compatibility with existing callers of 
 ### Test Command
 
 ```bash
-./gradlew test
+mvn test
 ```
 
 ---
@@ -86,7 +86,7 @@ The caching strategy should balance memory usage against hit rates. Routes that 
 ### Test Command
 
 ```bash
-./gradlew test
+mvn test
 ```
 
 ---
@@ -115,7 +115,7 @@ The extension should integrate with the `Policy` module - priority overrides may
 ### Test Command
 
 ```bash
-./gradlew test
+mvn test
 ```
 
 ---
@@ -144,5 +144,5 @@ The migration should integrate with the `CheckpointManager` to leverage existing
 ### Test Command
 
 ```bash
-./gradlew test
+mvn test
 ```

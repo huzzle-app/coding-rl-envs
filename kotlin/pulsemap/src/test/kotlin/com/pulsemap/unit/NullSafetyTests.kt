@@ -1,5 +1,6 @@
 package com.pulsemap.unit
 
+import com.pulsemap.core.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -26,20 +27,15 @@ class NullSafetyTests {
 
     @Test
     fun test_platform_type_null_check() {
-        
-        // When the geometry is empty, the Java lib returns null, but Kotlin treats it as non-null.
         val result = parseGeometryLocal("POINT EMPTY")
-        // Should not crash with NPE; should return null or empty safely
         assertNull(result, "Empty geometry should return null, not crash with NPE")
     }
 
     @Test
     fun test_empty_geometry_handled() {
-        
         val emptyWktStrings = listOf("POINT EMPTY", "LINESTRING EMPTY", "POLYGON EMPTY", "")
         for (wkt in emptyWktStrings) {
             val result = safeParseGeometryLocal(wkt)
-            // Should not throw; should return null for empty/invalid
             assertNull(result, "Empty/invalid WKT '$wkt' should return null")
         }
     }
@@ -50,7 +46,6 @@ class NullSafetyTests {
 
     @Test
     fun test_cache_miss_returns_404() {
-        
         val cache = mutableMapOf("key1" to "value1")
         val result = cacheLookupLocal(cache, "nonexistent_key")
         assertNull(result, "Cache miss should return null, not throw via !!")
@@ -58,9 +53,7 @@ class NullSafetyTests {
 
     @Test
     fun test_no_double_bang_on_map_get() {
-        
         val cache = mutableMapOf<String, String>()
-        // This should NOT throw; should handle missing key gracefully
         val result = cacheLookupLocal(cache, "missing")
         assertNull(result, "Empty cache lookup should return null safely")
     }
@@ -71,7 +64,6 @@ class NullSafetyTests {
 
     @Test
     fun test_nullable_column_insert() {
-        
         val record = SensorRecordLocal(id = "sr1", name = null, value = 42.0)
         val insertResult = insertRecordLocal(record)
         assertTrue(insertResult, "Inserting record with null name should succeed (use default or nullable column)")
@@ -79,9 +71,7 @@ class NullSafetyTests {
 
     @Test
     fun test_not_null_constraint_handled() {
-        
         val record = SensorRecordLocal(id = "sr2", name = null, value = 99.0)
-        // Should either use a default value or the column should be nullable
         val result = insertRecordLocal(record)
         assertTrue(result, "Null name should be handled without constraint violation")
     }
@@ -92,8 +82,6 @@ class NullSafetyTests {
 
     @Test
     fun test_safe_cast_on_deserialize() {
-        
-        // When the input is the wrong type, it throws ClassCastException instead of returning null/400
         val wrongTypeInput: Any = "this is a string, not a SensorReading"
         val result = safeCastDeserializeLocal(wrongTypeInput)
         assertNull(result, "Wrong type input should return null via safe cast, not throw ClassCastException")
@@ -101,7 +89,6 @@ class NullSafetyTests {
 
     @Test
     fun test_wrong_type_returns_400() {
-        
         val wrongInput: Any = 12345
         val response = handleDeserializeRequestLocal(wrongInput)
         assertEquals(400, response.statusCode, "Wrong type should return 400 Bad Request")
@@ -189,59 +176,5 @@ class NullSafetyTests {
         val value: String? = "present"
         val result = checkNotNull(value)
         assertEquals("present", result)
-    }
-
-    // =========================================================================
-    // Local stubs simulating buggy production code
-    // =========================================================================
-
-    
-    private fun parseGeometryLocal(wkt: String): String? {
-        // Simulates a Java library that returns null for EMPTY geometries
-        
-        val javaResult: String? = if (wkt.contains("EMPTY") || wkt.isEmpty()) null else wkt
-        
-        return javaResult ?: throw NullPointerException("Null geometry from platform type")
-    }
-
-    private fun safeParseGeometryLocal(wkt: String): String? {
-        
-        if (wkt.isEmpty() || wkt.contains("EMPTY")) {
-            
-            throw NullPointerException("Cannot parse empty WKT")
-        }
-        return wkt
-    }
-
-    
-    private fun cacheLookupLocal(cache: Map<String, String>, key: String): String? {
-        
-        return cache[key]!!
-    }
-
-    
-    data class SensorRecordLocal(val id: String, val name: String?, val value: Double)
-
-    private fun insertRecordLocal(record: SensorRecordLocal): Boolean {
-        
-        val nameForDb: String = record.name ?: throw IllegalStateException("name is null but column is NOT NULL")
-        // Simulates constraint violation
-        return nameForDb.isNotEmpty()
-    }
-
-    
-    data class SimpleReading(val id: String, val value: Double)
-
-    private fun safeCastDeserializeLocal(input: Any): SimpleReading? {
-        
-        return input as SimpleReading
-    }
-
-    data class HttpResponseLocal(val statusCode: Int, val body: String)
-
-    private fun handleDeserializeRequestLocal(input: Any): HttpResponseLocal {
-        
-        val reading = input as SimpleReading
-        return HttpResponseLocal(200, "OK: ${reading.id}")
     }
 }

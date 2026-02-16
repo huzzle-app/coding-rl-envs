@@ -1,320 +1,125 @@
 /**
  * API Contract Tests
  *
- * Tests service API contracts and compatibility
+ * Tests service API contracts using actual source modules.
+ * Exercises bugs K1 (feature flags), K3 (rate limit string),
+ * E1 (JWT claims), F1 (bitrate precision).
  */
+
+const config = require('../../services/gateway/src/config');
+const { BitrateCalculator } = require('../../services/transcode/src/services/bitrate');
 
 describe('Gateway API Contract', () => {
   describe('Video Endpoints', () => {
-    it('GET /videos/:id contract', async () => {
-      const response = {
-        id: 'video-123',
-        title: 'Test Video',
-        description: 'A test video',
-        duration: 120,
-        status: 'published',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-        owner: {
-          id: 'user-1',
-          name: 'Test User',
-        },
-        thumbnailUrl: 'https://cdn.example.com/thumb.jpg',
-        streamUrl: 'https://cdn.example.com/stream.m3u8',
-      };
-
-      // Verify required fields
-      expect(response).toHaveProperty('id');
-      expect(response).toHaveProperty('title');
-      expect(response).toHaveProperty('status');
-      expect(response).toHaveProperty('owner');
-      expect(response.owner).toHaveProperty('id');
+    it('should have feature flags as booleans not undefined', () => {
+      // BUG K1: Feature flags are process.env values (undefined when not set)
+      // They should default to false, not undefined
+      expect(typeof config.featureFlags.enableHDR).toBe('boolean');
     });
 
-    it('POST /videos contract', async () => {
-      const request = {
-        title: 'New Video',
-        description: 'Description',
-        visibility: 'public',
-      };
-
-      const response = {
-        id: 'video-new',
-        title: request.title,
-        description: request.description,
-        status: 'processing',
-        uploadUrl: 'https://upload.example.com/presigned-url',
-      };
-
-      expect(response).toHaveProperty('id');
-      expect(response).toHaveProperty('uploadUrl');
-      expect(response.status).toBe('processing');
+    it('should have enable4K as boolean', () => {
+      // BUG K1: process.env.FEATURE_4K is undefined when not set
+      expect(typeof config.featureFlags.enable4K).toBe('boolean');
     });
 
-    it('PATCH /videos/:id contract', async () => {
-      const request = {
-        title: 'Updated Title',
-      };
+    it('should have enableLiveStreaming as boolean', () => {
+      // BUG K1: process.env.FEATURE_LIVE is undefined when not set
+      expect(typeof config.featureFlags.enableLiveStreaming).toBe('boolean');
+    });
 
-      const response = {
-        id: 'video-123',
-        title: 'Updated Title',
-        updatedAt: '2024-01-02T00:00:00Z',
-      };
+    it('should have rate limit max as number', () => {
+      // BUG K3: process.env values are strings, max is '100' not 100
+      expect(typeof config.rateLimit.max).toBe('number');
+    });
 
-      expect(response.title).toBe(request.title);
-      expect(response).toHaveProperty('updatedAt');
+    it('should have rate limit window as number', () => {
+      expect(typeof config.rateLimit.windowMs).toBe('number');
+      expect(config.rateLimit.windowMs).toBe(60000);
     });
   });
 
   describe('Auth Endpoints', () => {
-    it('POST /auth/login contract', async () => {
-      const request = {
-        email: 'user@example.com',
-        password: 'password123',
-      };
-
-      const response = {
-        accessToken: 'eyJ...',
-        refreshToken: 'eyJ...',
-        expiresIn: 900,
-        tokenType: 'Bearer',
-      };
-
-      expect(response).toHaveProperty('accessToken');
-      expect(response).toHaveProperty('refreshToken');
-      expect(response).toHaveProperty('expiresIn');
-      expect(response.tokenType).toBe('Bearer');
+    it('should not use wildcard CORS origin', () => {
+      // Security: CORS origin should not default to '*'
+      expect(config.cors.origin).not.toBe('*');
     });
 
-    it('POST /auth/refresh contract', async () => {
-      const request = {
-        refreshToken: 'eyJ...',
-      };
+    it('should have credentials enabled for CORS', () => {
+      expect(config.cors.credentials).toBe(true);
+    });
 
-      const response = {
-        accessToken: 'eyJ...',
-        refreshToken: 'eyJ...',
-        expiresIn: 900,
-      };
-
-      expect(response).toHaveProperty('accessToken');
-      expect(response).toHaveProperty('refreshToken');
+    it('should have service URLs configured', () => {
+      expect(config.services.auth.url).toBeDefined();
+      expect(config.services.users.url).toBeDefined();
+      expect(config.services.upload.url).toBeDefined();
+      expect(config.services.catalog.url).toBeDefined();
     });
   });
 
   describe('User Endpoints', () => {
-    it('GET /users/:id contract', async () => {
-      const response = {
-        id: 'user-123',
-        email: 'user@example.com',
-        name: 'Test User',
-        createdAt: '2024-01-01T00:00:00Z',
-        profile: {
-          bio: 'A bio',
-          avatar: 'https://cdn.example.com/avatar.jpg',
-        },
-      };
-
-      expect(response).toHaveProperty('id');
-      expect(response).toHaveProperty('email');
-      expect(response).toHaveProperty('name');
-      expect(response).not.toHaveProperty('password');
+    it('should have all 9 service entries', () => {
+      const serviceNames = Object.keys(config.services);
+      expect(serviceNames).toHaveLength(9);
+      expect(serviceNames).toContain('auth');
+      expect(serviceNames).toContain('streaming');
+      expect(serviceNames).toContain('billing');
     });
 
-    it('PUT /users/:id/profile contract', async () => {
-      const request = {
-        bio: 'Updated bio',
-        avatar: 'https://cdn.example.com/new-avatar.jpg',
-      };
-
-      const response = {
-        id: 'user-123',
-        profile: {
-          bio: request.bio,
-          avatar: request.avatar,
-        },
-        updatedAt: '2024-01-02T00:00:00Z',
-      };
-
-      expect(response.profile.bio).toBe(request.bio);
+    it('should have service name matching key', () => {
+      for (const [key, service] of Object.entries(config.services)) {
+        expect(service.name).toBe(key);
+      }
     });
   });
 });
 
 describe('Internal Service Contracts', () => {
   describe('Transcode Service', () => {
-    it('transcode job contract', async () => {
-      const job = {
-        id: 'job-123',
-        videoId: 'video-123',
-        inputUrl: 's3://bucket/input.mp4',
-        outputPrefix: 's3://bucket/output/',
-        profiles: ['1080p', '720p', '480p'],
-        status: 'pending',
-        progress: 0,
-      };
+    it('should return integer bitrate values', () => {
+      const calc = new BitrateCalculator();
+      const bitrate = calc.calculate(1920, 1080, 30);
 
-      expect(job).toHaveProperty('id');
-      expect(job).toHaveProperty('videoId');
-      expect(job).toHaveProperty('profiles');
-      expect(Array.isArray(job.profiles)).toBe(true);
+      expect(Number.isInteger(bitrate)).toBe(true);
     });
 
-    it('transcode result contract', async () => {
-      const result = {
-        jobId: 'job-123',
-        videoId: 'video-123',
-        status: 'completed',
-        outputs: [
-          { profile: '1080p', url: 's3://bucket/output/1080p.m3u8', bitrate: 5000 },
-          { profile: '720p', url: 's3://bucket/output/720p.m3u8', bitrate: 2500 },
-        ],
-        duration: 120,
-        completedAt: '2024-01-01T01:00:00Z',
-      };
+    it('should return adaptive tiers with required fields', () => {
+      const calc = new BitrateCalculator();
+      const tiers = calc.calculateAdaptiveTiers(1920, 1080, 30);
 
-      expect(result).toHaveProperty('outputs');
-      expect(result.outputs.length).toBeGreaterThan(0);
-      expect(result.outputs[0]).toHaveProperty('profile');
-      expect(result.outputs[0]).toHaveProperty('url');
-    });
-  });
-
-  describe('Billing Service', () => {
-    it('subscription contract', async () => {
-      const subscription = {
-        id: 'sub-123',
-        userId: 'user-123',
-        planId: 'plan-premium',
-        status: 'active',
-        currentPeriodStart: '2024-01-01T00:00:00Z',
-        currentPeriodEnd: '2024-02-01T00:00:00Z',
-        cancelAtPeriodEnd: false,
-      };
-
-      expect(subscription).toHaveProperty('id');
-      expect(subscription).toHaveProperty('planId');
-      expect(subscription).toHaveProperty('status');
-      expect(['active', 'canceled', 'past_due']).toContain(subscription.status);
-    });
-
-    it('invoice contract', async () => {
-      const invoice = {
-        id: 'inv-123',
-        subscriptionId: 'sub-123',
-        amount: 999,
-        currency: 'usd',
-        status: 'paid',
-        lineItems: [
-          { description: 'Premium Plan', amount: 999 },
-        ],
-        paidAt: '2024-01-01T00:00:00Z',
-      };
-
-      expect(invoice).toHaveProperty('amount');
-      expect(invoice).toHaveProperty('lineItems');
-      expect(typeof invoice.amount).toBe('number');
+      for (const tier of tiers) {
+        expect(tier).toHaveProperty('width');
+        expect(tier).toHaveProperty('height');
+        expect(tier).toHaveProperty('bitrate');
+        expect(tier).toHaveProperty('label');
+        expect(typeof tier.width).toBe('number');
+        expect(typeof tier.bitrate).toBe('number');
+      }
     });
   });
 
   describe('Event Contracts', () => {
-    it('video.created event contract', async () => {
-      const event = {
-        id: 'evt-123',
-        type: 'video.created',
-        timestamp: '2024-01-01T00:00:00Z',
-        data: {
-          videoId: 'video-123',
-          userId: 'user-123',
-          title: 'New Video',
-        },
-      };
-
-      expect(event).toHaveProperty('id');
-      expect(event).toHaveProperty('type');
-      expect(event).toHaveProperty('timestamp');
-      expect(event).toHaveProperty('data');
-      expect(event.data).toHaveProperty('videoId');
-    });
-
-    it('transcode.completed event contract', async () => {
-      const event = {
-        id: 'evt-456',
-        type: 'transcode.completed',
-        timestamp: '2024-01-01T01:00:00Z',
-        data: {
-          jobId: 'job-123',
-          videoId: 'video-123',
-          outputs: ['1080p', '720p'],
-        },
-      };
-
-      expect(event.type).toBe('transcode.completed');
-      expect(event.data).toHaveProperty('outputs');
-    });
-
-    it('subscription.updated event contract', async () => {
-      const event = {
-        id: 'evt-789',
-        type: 'subscription.updated',
-        timestamp: '2024-01-15T00:00:00Z',
-        data: {
-          subscriptionId: 'sub-123',
-          userId: 'user-123',
-          previousPlan: 'plan-basic',
-          newPlan: 'plan-premium',
-        },
-      };
-
-      expect(event.data).toHaveProperty('previousPlan');
-      expect(event.data).toHaveProperty('newPlan');
+    it('should have consul configuration', () => {
+      expect(config.consul).toBeDefined();
+      expect(config.consul.host).toBeDefined();
+      expect(config.consul.port).toBeDefined();
     });
   });
 });
 
 describe('Error Response Contracts', () => {
-  it('validation error contract', async () => {
-    const error = {
-      status: 400,
-      error: 'ValidationError',
-      message: 'Validation failed',
-      details: [
-        { field: 'title', message: 'Title is required' },
-        { field: 'email', message: 'Invalid email format' },
-      ],
-    };
-
-    expect(error).toHaveProperty('status');
-    expect(error).toHaveProperty('error');
-    expect(error).toHaveProperty('details');
-    expect(Array.isArray(error.details)).toBe(true);
+  it('should have default port configured', () => {
+    // Port should be from env or default 3000
+    expect(config.port).toBeDefined();
   });
 
-  it('not found error contract', async () => {
-    const error = {
-      status: 404,
-      error: 'NotFoundError',
-      message: 'Video not found',
-      resourceType: 'video',
-      resourceId: 'video-999',
-    };
-
-    expect(error.status).toBe(404);
-    expect(error).toHaveProperty('resourceType');
+  it('should not have JWT secret as undefined in production', () => {
+    // BUG K2: jwtSecret comes from env and could be undefined
+    // Should have validation or a secure default
+    expect(config.jwtSecret).toBeDefined();
   });
 
-  it('rate limit error contract', async () => {
-    const error = {
-      status: 429,
-      error: 'RateLimitError',
-      message: 'Too many requests',
-      retryAfter: 60,
-      limit: 100,
-      remaining: 0,
-    };
-
-    expect(error.status).toBe(429);
-    expect(error).toHaveProperty('retryAfter');
+  it('should have consul port as number', () => {
+    const port = parseInt(config.consul.port, 10);
+    expect(port).toBe(8500);
   });
 });

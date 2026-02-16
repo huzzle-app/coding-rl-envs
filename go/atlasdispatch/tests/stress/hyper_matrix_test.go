@@ -69,9 +69,22 @@ func TestHyperMatrix(t *testing.T) {
 				t.Fatal("unexpected arrived -> queued")
 			}
 
-			pol := policy.NextPolicy(map[bool]string{true: "normal", false: "watch"}[i%2 == 0], 2+(i%2))
-			if pol != "watch" && pol != "restricted" && pol != "halted" {
-				t.Fatalf("unexpected policy: %s", pol)
+			startPol := "normal"
+			if i%2 != 0 {
+				startPol = "watch"
+			}
+			burst := 2 + (i % 2) // even: 2, odd: 3
+			pol := policy.NextPolicy(startPol, burst)
+			// NextPolicy should respect per-level thresholds (normal=3, watch=3)
+			switch {
+			case startPol == "normal" && burst == 2:
+				if pol != "normal" {
+					t.Fatalf("NextPolicy(normal, 2): burst below threshold (3), should not escalate, got %s", pol)
+				}
+			case startPol == "watch" && burst == 3:
+				if pol != "restricted" {
+					t.Fatalf("NextPolicy(watch, 3): burst at threshold, should escalate to restricted, got %s", pol)
+				}
 			}
 
 			depth := (i % 30) + 1

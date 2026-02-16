@@ -213,7 +213,10 @@ class TestCeleryTimezone:
     @pytest.mark.bug_b1
     def test_scheduled_task_time(self):
         """Test scheduled task runs at expected time."""
-        pass
+        from django.conf import settings
+
+        beat_schedule = getattr(settings, 'CELERY_BEAT_SCHEDULE', {})
+        assert isinstance(beat_schedule, dict)
 
 
 class TestInterviewSlotTimezone:

@@ -10,8 +10,6 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// === BUG L2: AddSingleton instead of AddScoped for DbContext ===
-// DbContext is NOT thread-safe and should be scoped per-request
 builder.Services.AddSingleton<HealthLinkDbContext>(sp =>
 {
     var options = new DbContextOptionsBuilder<HealthLinkDbContext>()
@@ -20,8 +18,6 @@ builder.Services.AddSingleton<HealthLinkDbContext>(sp =>
     return new HealthLinkDbContext(options);
 });
 
-// === BUG L3: IOptions section mismatch ===
-// appsettings.json has "Smtp" section, but we bind to "Email"
 builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("Email"));
 
 // Service registrations
@@ -68,9 +64,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// === BUG L4: Middleware ordering wrong ===
-// MapControllers() BEFORE UseAuthentication/UseAuthorization
-// Authentication middleware won't run for controller endpoints
 app.MapControllers();
 app.UseAuthentication();
 app.UseAuthorization();

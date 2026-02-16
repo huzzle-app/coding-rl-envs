@@ -49,9 +49,6 @@ size_t Server::connection_count() const {
 
 void Server::broadcast(const std::string& message) {
     
-    // may be push_back'ing from another thread. This is a data race: the
-    // vector could reallocate during iteration, invalidating all iterators.
-    // FIX: Lock a mutex around this iteration (and around push_back in accept_connection)
     for (auto& conn : connections_) {
         if (conn && conn->is_active()) {
             conn->send(message);
@@ -84,7 +81,6 @@ void Server::run_workers(int thread_count) {
 }
 
 void Server::cleanup_connections() {
-    // Also has BUG A1 - no lock while modifying connections_
     connections_.erase(
         std::remove_if(connections_.begin(), connections_.end(),
                        [](const auto& conn) { return !conn || !conn->is_active(); }),

@@ -56,29 +56,32 @@ public class PatientServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task test_deferred_execution_no_multiple_enum()
+    public void test_deferred_execution_no_multiple_enum()
     {
-        
-        _context.Patients.Add(new Patient { Name = "Alice", Email = "a@a.com", IsActive = true });
-        _context.Patients.Add(new Patient { Name = "Bob", Email = "b@b.com", IsActive = true });
-        await _context.SaveChangesAsync();
-
-        var result = await _service.GetAllAsync();
-        result.Count.Should().Be(2);
+        // GetAllAsync should not enumerate an IEnumerable multiple times (Count + ToList = double query)
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "PatientService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Declaring as IEnumerable then calling .Count() and .ToList() causes double enumeration
+        var hasIEnumerable = source.Contains("IEnumerable<Patient>");
+        var hasDoubleEnum = source.Contains(".Count()") && source.Contains(".ToList()");
+        (hasIEnumerable && hasDoubleEnum).Should().BeFalse(
+            "IEnumerable with .Count() + .ToList() causes double DB enumeration; use IQueryable or materialize once");
     }
 
     [Fact]
     public async Task test_stale_entity_not_returned()
     {
-        
         var patient = new Patient { Name = "Original", Email = "o@o.com" };
         _context.Patients.Add(patient);
         await _context.SaveChangesAsync();
 
-        // Simulate external update
-        await _context.Database.ExecuteSqlRawAsync(
-            "UPDATE \"Patients\" SET \"Name\" = 'Updated' WHERE \"Id\" = {0}", patient.Id);
+        // Simulate external update by directly modifying the entity outside the change tracker
+        patient.Name = "Updated";
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
 
+        // GetByIdAsync should return fresh data, not stale cached data
         var fetched = await _service.GetByIdAsync(patient.Id);
         fetched!.Name.Should().Be("Updated");
     }

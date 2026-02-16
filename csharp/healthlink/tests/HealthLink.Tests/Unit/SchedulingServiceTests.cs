@@ -25,21 +25,20 @@ public class SchedulingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task test_configure_await_false_in_library()
+    public void test_configure_await_false_in_library()
     {
-        
-        var patient = new Patient { Name = "Test", Email = "t@t.com" };
-        _context.Patients.Add(patient);
-        await _context.SaveChangesAsync();
-
-        var result = await _service.ScheduleAppointmentAsync(patient.Id, DateTime.UtcNow.AddDays(1), 1);
-        result.Should().NotBeNull();
+        // Library code should use ConfigureAwait(false) on await calls to prevent deadlocks
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "SchedulingService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        var configureAwaitCount = System.Text.RegularExpressions.Regex.Matches(source, @"ConfigureAwait\(false\)").Count;
+        configureAwaitCount.Should().BeGreaterOrEqualTo(2,
+            "library code should use ConfigureAwait(false) on await calls to prevent deadlocks when called with .Result");
     }
 
     [Fact]
     public async Task test_no_synchronization_context_deadlock()
     {
-        
         var patient = new Patient { Name = "Sync", Email = "s@t.com" };
         _context.Patients.Add(patient);
         await _context.SaveChangesAsync();

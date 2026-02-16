@@ -231,12 +231,12 @@ test('concurrency2-adv-020: EMA alpha=0 stays at initial', () => {
   assert.deepEqual(result, [10, 10, 10]);
 });
 
-test('concurrency2-adv-021: EMA alpha=0.5 smoothing', () => {
-  const result = exponentialMovingAverage([100, 0, 100, 0], 0.5);
+test('concurrency2-adv-021: EMA alpha=0.3 smoothing', () => {
+  // alpha=0.3 exposes swapped alpha bug (alpha=0.5 is symmetric)
+  const result = exponentialMovingAverage([100, 0, 100, 0], 0.3);
   assert.equal(result[0], 100);
-  assert.equal(result[1], 50);
-  assert.equal(result[2], 75);
-  assert.equal(result[3], 37.5);
+  // Correct: 0.3*0 + 0.7*100 = 70; buggy (swapped): 0.7*0 + 0.3*100 = 30
+  assert.equal(result[1], 70, 'alpha=0.3 weighs previous (100) more than current (0)');
 });
 
 // ===== ipWhitelist: pattern matching =====

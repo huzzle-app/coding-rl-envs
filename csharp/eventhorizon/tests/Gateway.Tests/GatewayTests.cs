@@ -67,7 +67,7 @@ public class GatewayTests
         // Test that CORS does not use wildcard origin
         var corsPolicy = "*"; 
 
-        Assert.NotEqual("*", corsPolicy, "CORS should not use wildcard '*' - specify allowed origins explicitly");
+        Assert.NotEqual("*", corsPolicy);
     }
 
     [Fact]

@@ -161,6 +161,35 @@ describe('JwtService', () => {
     });
   });
 
+  describe('socket auth timing (D4)', () => {
+    /**
+     * BUG D4: verifyToken catches jwt.verify errors and returns null
+     * instead of re-throwing. This makes it impossible for callers
+     * (like the socket auth middleware) to distinguish between
+     * "no token" and "expired/tampered token".
+     */
+    it('socket auth timing - verifyToken must throw on expired tokens', async () => {
+      const payload = { userId: 'user-1', socketId: 'socket-123' };
+      const token = jwtService.generateToken(payload, { expiresIn: '50ms' });
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // BUG D4: verifyToken returns null instead of throwing
+      expect(() => jwtService.verifyToken(token)).toThrow();
+    });
+
+    it('socket auth timing - verifyToken must throw on tampered tokens', () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
+
+      // Tamper with signature
+      const tamperedToken = token.slice(0, -5) + 'XXXXX';
+
+      // BUG D4: verifyToken returns null instead of throwing
+      expect(() => jwtService.verifyToken(tamperedToken)).toThrow();
+    });
+  });
+
   describe('decodeToken', () => {
     it('should decode without verification', () => {
       const payload = { userId: 'user-1', email: 'test@example.com' };

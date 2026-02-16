@@ -48,7 +48,7 @@ ObsidianMesh is an autonomous traffic-grid command-loop system built in C++20. I
 | J: Security | CHM087-096 | 10 | Token, password, HMAC, permissions | Format errors, reversed logic |
 | H: Observability | CHM107-114 | 8 | Error rate, latency, health | Inverted formulas, unit errors |
 | S: Statistics | CHM068-074, CHM083-084 | 9 | Weighted mean, EMA, correlation | Wrong denominators, missing operations |
-| P: Policy | CHM046-047, CHM056, CHM076-077, CHM081 | 6 | Weight ordering, thresholds | Fixed values, wrong sorts |
+| P: Policy | CHM046-047, CHM055-056, CHM076-077, CHM081 | 7 | Weight ordering, thresholds | Fixed values, wrong sorts |
 
 ## Getting Started
 
@@ -84,6 +84,23 @@ The `scenarios/` directory contains realistic debugging scenarios that describe 
 | `slack_005_workflow_bottleneck.md` | Team Discussion | Workflow | Multiple workflow metric bugs affecting operational dashboards |
 
 These scenarios present symptoms, logs, and failing tests to help practice debugging from real-world problem descriptions rather than explicit bug markers.
+
+## Training Mode
+
+For RL training, use dense rewards instead of the sparse 10-tier step function:
+
+```bash
+# Sublinear mode (recommended): reward = pass_rate^0.7
+# Gives stronger gradient signal for early progress
+TRAINING_MODE=sublinear bash tests/test.sh
+
+# Or use the convenience wrapper:
+bash tests/train.sh
+```
+
+Available modes: `linear` (1:1), `sublinear` (x^0.7, recommended), `smooth` (Hermite S-curve).
+
+Regression detection is active: breaking any of the 90 baseline-passing tests applies a multiplicative penalty (1% per regression) to prevent reward hacking through destructive changes.
 
 ## Difficulty
 

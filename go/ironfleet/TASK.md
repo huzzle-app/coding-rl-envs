@@ -19,6 +19,7 @@ Tests are failing in several areas. Previous maintainer noted problems with asyn
 ## Test Breakdown
 
 | Category | File | Tests |
+|----------|------|-------|
 | Unit | `tests/unit/core_test.go` | 8 |
 | Integration | `tests/integration/flow_test.go` | 1 |
 | Chaos | `tests/chaos/replay_test.go` | 2 |
@@ -26,17 +27,15 @@ Tests are failing in several areas. Previous maintainer noted problems with asyn
 | Service tests | `tests/services/*_service_test.go` | 32 |
 | Hyper matrix | `tests/stress/hyper_matrix_test.go` | 7,001 |
 | Service mesh matrix | `tests/stress/service_mesh_matrix_test.go` | 2,168 |
-| **Total** | | **9,213** |
-
-## Known Issues
-
-The test suite has multiple failures. Main issues appear to be in the core business logic and infrastructure layers.
+| Advanced bugs | `tests/stress/advanced_bugs_test.go` | 278 |
+| **Total** | | **9,491** |
 
 ## Debugging Scenarios
 
 The `scenarios/` directory contains realistic debugging scenarios that present bugs as they would appear in production:
 
 | Scenario | Format | Domain Area |
+|----------|--------|-------------|
 | `incident_001_mission_prioritization.md` | Incident Report | Mission dispatch ordering failures |
 | `incident_002_signature_verification.md` | Security Incident | Command authentication bypass |
 | `ticket_003_convoy_routing.md` | Support Ticket | Suboptimal channel selection |
@@ -59,6 +58,7 @@ Each scenario describes symptoms, includes failing test references, and shows op
 This environment supports additional task types beyond debugging:
 
 | Task File | Type | Tasks | Description |
+|-----------|------|-------|-------------|
 | [TASKS_ALTERNATIVE.md](./TASKS_ALTERNATIVE.md) | Feature/Refactor/Optimize | 5 | Convoy tracking, route consolidation, queue optimization, telemetry API, event sourcing |
 | [TASKS_GREENFIELD.md](./TASKS_GREENFIELD.md) | Greenfield Implementation | 3 | Fuel Optimizer, Maintenance Scheduler, Geofence Alert Service |
 

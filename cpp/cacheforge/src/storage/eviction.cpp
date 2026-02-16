@@ -54,10 +54,9 @@ void EvictionManager::touch(const std::string& key) {
     auto it = lookup_.find(key);
     if (it == lookup_.end()) return;
 
-    Node node = *it->second;           // copy the node
-    lru_list_.erase(it->second);       // erase from old position (invalidates iterator!)
-    lru_list_.push_front(node);        // insert at front
-    lookup_[key] = lru_list_.begin();  // update with new iterator
+    Node node = *it->second;
+    lru_list_.erase(it->second);
+    lru_list_.push_front(node);
 }
 
 size_t EvictionManager::current_size() const {

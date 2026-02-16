@@ -73,7 +73,7 @@ const SERVICES: [&str; 10] = [
 ];
 
 /
-const BUG_CATEGORIES: [(&str, &str, usize); 11] = [
+const BUG_CATEGORIES: [(&str, &str, usize); 9] = [
     ("L", "Setup/Configuration", 8),
     ("A", "Ownership/Borrowing", 10),
     ("B", "Concurrency", 12),
@@ -83,8 +83,6 @@ const BUG_CATEGORIES: [(&str, &str, usize); 11] = [
     ("F", "Numerical/Financial", 10),
     ("G", "Distributed Systems", 8),
     ("H", "Security", 5),
-    ("I", "Request Validation", 3),  // I1, I2, I3 from gateway/auth
-    ("J", "Observability", 2),       // J1, J2 from market/portfolio
 ];
 
 /

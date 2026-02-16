@@ -37,6 +37,14 @@ public class SearchServiceTest {
             doc.setId((long) i);
             doc.setName("document-" + i + ".pdf");
             doc.setContentType("application/pdf");
+            // Set createdAt to avoid NPE in sort comparisons
+            try {
+                java.lang.reflect.Field f = Document.class.getDeclaredField("createdAt");
+                f.setAccessible(true);
+                f.set(doc, java.time.LocalDateTime.now().minusDays(100 - i));
+            } catch (Exception e) {
+                // fall through - @PrePersist won't fire outside JPA
+            }
             sampleDocs.add(doc);
         }
     }
@@ -156,8 +164,6 @@ public class SearchServiceTest {
 
     @Test
     void test_group_by_content_type() {
-        when(documentRepository.findByNameContainingIgnoreCase(anyString())).thenReturn(sampleDocs);
-
         Map<String, List<Document>> grouped = searchService.groupByContentType(sampleDocs);
         assertTrue(grouped.containsKey("application/pdf"));
         assertEquals(100, grouped.get("application/pdf").size());

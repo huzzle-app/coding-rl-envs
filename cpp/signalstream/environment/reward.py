@@ -2,7 +2,7 @@
 SignalStream Reward Function
 Terminal Bench v2 - Very Sparse Reward System for C++ Streaming Platform
 
-Very sparse rewards with 8 thresholds (Principal difficulty).
+Very sparse rewards with 10 thresholds (Apex-Principal difficulty).
 """
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
@@ -23,10 +23,10 @@ TEST_WEIGHTS = {
 @dataclass
 class RewardCalculator:
     """
-    Very sparse reward calculator for SignalStream (Principal difficulty).
+    Very sparse reward calculator for SignalStream (Apex-Principal difficulty).
 
     Features:
-    - 8 threshold levels with very sparse payouts
+    - 10 threshold levels with very sparse payouts
     - Regression penalty
     - Service isolation bonus
     - Concurrency/security/template fix bonuses
@@ -34,10 +34,10 @@ class RewardCalculator:
     """
 
     pass_thresholds: List[float] = field(default_factory=lambda: [
-        0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0
+        0.10, 0.22, 0.36, 0.52, 0.67, 0.80, 0.90, 0.96, 0.99, 1.0
     ])
     threshold_rewards: List[float] = field(default_factory=lambda: [
-        0.0, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0
+        0.0, 0.015, 0.05, 0.11, 0.19, 0.31, 0.47, 0.66, 0.85, 1.0
     ])
 
     regression_penalty_weight: float = -0.15

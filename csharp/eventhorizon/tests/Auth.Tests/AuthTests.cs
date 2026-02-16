@@ -65,7 +65,7 @@ public class AuthTests
         // Test that type discriminators are validated
         var typeNameHandling = "All"; 
 
-        Assert.NotEqual("All", typeNameHandling, "Use JsonDerivedType with explicit type mapping instead of TypeNameHandling.All");
+        Assert.NotEqual("All", typeNameHandling);
     }
 
     

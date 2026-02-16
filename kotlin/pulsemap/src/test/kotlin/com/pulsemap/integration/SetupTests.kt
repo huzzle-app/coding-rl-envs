@@ -1,5 +1,6 @@
 package com.pulsemap.integration
 
+import com.pulsemap.core.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,9 +26,6 @@ class SetupTests {
 
     @Test
     fun test_content_negotiation_single_install() {
-        
-        // The second install uses strict JSON (ignoreUnknownKeys=false) which breaks
-        // endpoints that receive extra fields
         val app = SimulatedApp()
         val installCount = app.getContentNegotiationInstallCount()
         assertEquals(
@@ -39,8 +37,6 @@ class SetupTests {
 
     @Test
     fun test_json_serialization_works() {
-        
-        // which causes deserialization to fail when JSON has extra fields
         val app = SimulatedApp()
         val jsonWithExtraFields = """{"id":"s1","value":42.0,"extraField":"should be ignored"}"""
         val result = app.deserializeWithContentNegotiation(jsonWithExtraFields)
@@ -56,8 +52,6 @@ class SetupTests {
 
     @Test
     fun test_serialization_plugin_present() {
-        
-        // @Serializable annotation won't generate serializer at compile time
         val buildConfig = SimulatedBuildConfig()
         assertTrue(
             buildConfig.hasSerializationPlugin(),
@@ -67,8 +61,6 @@ class SetupTests {
 
     @Test
     fun test_serializable_annotation_works() {
-        
-        // and runtime serialization will fail with "Serializer for class X is not found"
         val app = SimulatedApp()
         val result = app.serializeAnnotatedClass()
         assertTrue(
@@ -84,8 +76,6 @@ class SetupTests {
 
     @Test
     fun test_hocon_config_correct_key() {
-        
-        // doesn't define host under ktor.deployment
         val config = SimulatedHoconConfig()
         val host = config.getProperty("ktor.deployment.host")
         assertNotNull(
@@ -96,7 +86,6 @@ class SetupTests {
 
     @Test
     fun test_server_binds_correct_host() {
-        
         val config = SimulatedHoconConfig()
         val host = config.getProperty("ktor.deployment.host") ?: "unknown"
         assertTrue(
@@ -111,8 +100,6 @@ class SetupTests {
 
     @Test
     fun test_database_connect_outside_transaction() {
-        
-        // which fails because there's no connection yet when the transaction starts
         val dbConfig = SimulatedDatabaseConfig()
         val initResult = dbConfig.initializeDatabase()
         assertFalse(
@@ -124,7 +111,6 @@ class SetupTests {
 
     @Test
     fun test_exposed_init_order() {
-        
         val dbConfig = SimulatedDatabaseConfig()
         val initResult = dbConfig.initializeDatabase()
         assertTrue(
@@ -235,98 +221,5 @@ class SetupTests {
         app.start()
         val shutdownResult = app.shutdown()
         assertTrue(shutdownResult.graceful, "App should shut down gracefully")
-    }
-
-    // =========================================================================
-    // Local stubs simulating buggy production code
-    // =========================================================================
-
-    data class StartResult(val started: Boolean)
-    data class ShutdownResult(val graceful: Boolean)
-    data class DeserializeResult(val success: Boolean, val json: String? = null)
-
-    class SimulatedApp {
-        private var _started = false
-        private var _contentNegotiationCount = 0
-
-        fun start(): StartResult {
-            
-            _contentNegotiationCount = 2 
-            _started = true
-            return StartResult(started = true)
-        }
-
-        fun shutdown(): ShutdownResult = ShutdownResult(graceful = true)
-
-        fun getContentNegotiationInstallCount(): Int {
-            
-            return 2 
-        }
-
-        fun deserializeWithContentNegotiation(json: String): DeserializeResult {
-            
-            return if (json.contains("extraField")) {
-                DeserializeResult(success = false) 
-            } else {
-                DeserializeResult(success = true)
-            }
-        }
-
-        fun serializeAnnotatedClass(): DeserializeResult {
-            
-            return DeserializeResult(success = false, json = null) 
-        }
-
-        fun getRegisteredRoutes(): List<String> = listOf("/api/tiles", "/api/sensors", "/api/ingest")
-        fun hasStatusPages(): Boolean = true
-        fun hasContentNegotiation(): Boolean = true
-        fun hasAuth(): Boolean = true
-    }
-
-    class SimulatedBuildConfig {
-        fun hasSerializationPlugin(): Boolean {
-            
-            return false 
-        }
-    }
-
-    class SimulatedHoconConfig {
-        private val properties = mapOf(
-            "ktor.deployment.port" to "8080",
-            
-            // The code reads this key but it doesn't exist in application.conf
-            "database.url" to "jdbc:postgresql://localhost:5432/pulsemap",
-            "database.driver" to "org.postgresql.Driver",
-            "database.user" to "pulsemap",
-            "database.password" to "pulsemap",
-            "database.maxPoolSize" to "10",
-            "redis.host" to "localhost",
-            "redis.port" to "6379",
-            "auth.jwtSecret" to "short-secret",
-            "auth.jwtIssuer" to "pulsemap",
-            "auth.jwtAudience" to "pulsemap-api",
-            "auth.jwtRealm" to "PulseMap"
-        )
-
-        fun getProperty(key: String): String? = properties[key]
-    }
-
-    data class DatabaseInitResult(
-        val success: Boolean,
-        val connectInsideTransaction: Boolean,
-        val connectBeforeTransaction: Boolean,
-        val poolCreated: Boolean
-    )
-
-    class SimulatedDatabaseConfig {
-        fun initializeDatabase(): DatabaseInitResult {
-            
-            return DatabaseInitResult(
-                success = false, 
-                connectInsideTransaction = true, 
-                connectBeforeTransaction = false, 
-                poolCreated = true
-            )
-        }
     }
 }

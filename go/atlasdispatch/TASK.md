@@ -14,7 +14,7 @@ Fix production defects in source files only.
 
 ## Completion Criteria
 
-- Full suite passes (`go test -race -v ./...`) with **9200+ scenarios**.
+- Full suite passes (`go test -race -v ./...`) with **18,300+ scenarios**.
 - Deterministic replay/routing behavior is preserved.
 - Security, queue, and policy invariants remain enforced.
 - Do not edit files under `tests/`.

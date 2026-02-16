@@ -1575,6 +1575,507 @@ static bool hyper_matrix() {
 }
 
 // ---------------------------------------------------------------------------
+// False-pass detection tests — catch bugs hidden by symmetric inputs
+// ---------------------------------------------------------------------------
+
+static bool resilience_jitter_variance() {
+  // jitter(100, 0.5) should NOT always return exactly 100.0
+  // With factor=0.5, range is [50, 150]; pure constant means no jitter
+  bool all_same = true;
+  for (int i = 0; i < 20; ++i) {
+    if (jitter(100.0, 0.5) != 100.0) { all_same = false; break; }
+  }
+  return !all_same;
+}
+
+static bool resilience_retry_with_jitter() {
+  // retry_backoff(3, 100, 10000) base=800; with jitter it shouldn't always be exactly 800
+  bool all_exact = true;
+  for (int i = 0; i < 20; ++i) {
+    if (retry_backoff(3, 100.0, 10000.0) != 800.0) { all_exact = false; break; }
+  }
+  return !all_exact;
+}
+
+static bool stats_ema_asymmetric() {
+  // EMA alpha=0.3 on {10,20,30}
+  // Correct: ema=10, 0.3*20+0.7*10=13, 0.3*30+0.7*13=18.1
+  // Buggy (swapped): ema=10, 0.7*20+0.3*10=17, 0.7*30+0.3*17=26.1
+  double ema = exponential_moving_average({10.0, 20.0, 30.0}, 0.3);
+  return std::abs(ema - 18.1) < 0.01;
+}
+
+static bool telemetry_health_asymmetric() {
+  // health_score(0.95, 0.3) with correct weights 0.6/0.4:
+  // 0.95*0.6 + 0.7*0.4 = 0.57 + 0.28 = 0.85
+  // Buggy weights 0.4/0.6: 0.95*0.4 + 0.7*0.6 = 0.38 + 0.42 = 0.80
+  double score = health_score(0.95, 0.3);
+  return std::abs(score - 0.85) < 0.01;
+}
+
+static bool stats_normalize_boundary() {
+  // min_max_normalize(10, 0, 10) = 1.0 (value at max boundary)
+  double norm = min_max_normalize(10.0, 0.0, 10.0);
+  return std::abs(norm - 1.0) < 0.01;
+}
+
+static bool contracts_depth_transitive() {
+  // analytics → routing → policy: transitive depth = 2
+  // Bug returns direct dep count = 1 (only routing)
+  int depth = dependency_depth("analytics");
+  return depth == 2;
+}
+
+static bool concurrency_fan_out_by_key() {
+  // Sort by key: {{"c",1}, {"a",3}, {"b",2}} → {{"a",3}, {"b",2}, {"c",1}}
+  // Bug sorts by value: → {{"c",1}, {"b",2}, {"a",3}}
+  auto result = fan_out_merge({{"c", 1}, {"a", 3}, {"b", 2}});
+  return result[0].first == "a" && result[1].first == "b" && result[2].first == "c";
+}
+
+static bool events_count_duplicates() {
+  // Two events with same ID and kind — should count 2, not unique IDs (1)
+  std::vector<TimedEvent> events = {
+      {"a", 100, "info", ""}, {"a", 200, "info", ""}, {"b", 300, "warn", ""}};
+  auto counts = count_by_kind(events);
+  return counts["info"] == 2 && counts["warn"] == 1;
+}
+
+static bool config_endpoint_strict() {
+  // "ftp://httpserver.com" contains "http" in hostname but is NOT a valid http endpoint
+  return !validate_endpoint("ftp://httpserver.com");
+}
+
+static bool model_vessel_load() {
+  // vessel_load_factor(50, 100) = 50/100 = 0.5
+  // Bug: returns max/containers = 100/50 = 2.0
+  double lf = vessel_load_factor(50, 100);
+  return std::abs(lf - 0.5) < 0.01;
+}
+
+// ---------------------------------------------------------------------------
+// Targeted reinforcement tests — 50 additional tests for shallow bugs
+// ---------------------------------------------------------------------------
+
+// --- False-pass fixes ---
+
+static bool resilience_bulkhead_nonexact() {
+  // bulkhead_limit(100, 3) = ceil(100/3) = 34. Bug: truncates to 33
+  return bulkhead_limit(100, 3) == 34;
+}
+
+static bool workflow_batch_invalid_state() {
+  // Invalid initial state should register 0 entities. Bug: returns size regardless.
+  return batch_register_count({"v1", "v2"}, "nonexistent_state") == 0;
+}
+
+static bool model_crew_tons_matter() {
+  // Same containers, different tons should give different crew
+  return crew_estimation(100, 1000.0) != crew_estimation(100, 50000.0);
+}
+
+static bool contracts_port_collision_gap() {
+  // Non-adjacent same ports should be detected. Bug: only checks adjacent pairs.
+  std::vector<ServiceDefinition> defs = {
+      {"a", 8140, "/health", "1.0.0", {}},
+      {"b", 8141, "/health", "1.0.0", {}},
+      {"c", 8140, "/health", "1.0.0", {}}};
+  return has_port_collision(defs);
+}
+
+static bool events_merge_streams_order() {
+  // Merged events should be sorted ascending by timestamp. Bug: sorts descending.
+  auto merged = merge_event_streams(
+      {{"a", 100, "info", ""}, {"b", 300, "info", ""}},
+      {{"c", 200, "warn", ""}});
+  return merged.size() == 3 && merged[0].timestamp <= merged[1].timestamp
+      && merged[1].timestamp <= merged[2].timestamp;
+}
+
+// --- Allocator reinforcement ---
+
+static bool allocator_weighted_with_zero() {
+  // weighted_allocation({1.0, 0.0}, {5.0, 10.0}) = 1*5 + 0*10 = 5.0
+  // Bug: product chain → 1*5 * 0*10 = 0
+  return std::abs(weighted_allocation({1.0, 0.0}, {5.0, 10.0}) - 5.0) < 0.01;
+}
+
+static bool allocator_berth_util_occupied() {
+  // Three slots: one occupied (4h), two free (4h each). Util = 4/12 = 0.333
+  std::vector<BerthSlot> slots = {
+      {"B1", 8, 12, true}, {"B2", 14, 18, false}, {"B3", 20, 24, false}};
+  return std::abs(berth_utilization(slots) - 0.333) < 0.01;
+}
+
+static bool allocator_round_ceiling() {
+  // round_allocation(7.3, 3) = ceil → 9. Bug: truncates to 6
+  return round_allocation(7.3, 3) == 9;
+}
+
+static bool allocator_cost_unit_exact() {
+  // cost_per_unit(250.0, 10) = 250/10 = 25.0. Bug: 10/250 = 0.04
+  return std::abs(cost_per_unit(250.0, 10) - 25.0) < 0.01;
+}
+
+static bool allocator_normalize_urg_exact() {
+  // normalize_urgency(10, 10) = 10/10 = 1.0. Bug: 10/11 = 0.909
+  return std::abs(normalize_urgency(10, 10) - 1.0) < 0.01;
+}
+
+// --- Routing reinforcement ---
+
+static bool routing_best_route_min_lat() {
+  // Should select lowest latency. Bug: selects highest.
+  auto best = best_route_by_score({{"fast", 2}, {"slow", 10}, {"mid", 5}}, {0.9, 0.8, 0.7});
+  return best.channel == "fast";
+}
+
+static bool routing_failover_filtered() {
+  // Failover should skip the failed channel. Bug: returns front() regardless.
+  auto route = failover_route({{"alpha", 5}, {"beta", 3}, {"gamma", 7}}, "alpha");
+  return route.channel != "alpha";
+}
+
+static bool routing_penalty_positive_val() {
+  // route_penalty(15, 10) should be positive (5.0). Bug: returns -5.0
+  return route_penalty(15, 10) > 0;
+}
+
+static bool routing_normalize_lat_exact() {
+  // normalize_latency(5, 10) = 5/10 = 0.5. Bug: 10/5 = 2.0
+  return std::abs(normalize_latency(5, 10) - 0.5) < 0.01;
+}
+
+static bool routing_fuel_eff_correct() {
+  // fuel_efficiency(200, 50) = 200/50 = 4.0. Bug: 50/200 = 0.25
+  return std::abs(fuel_efficiency(200.0, 50.0) - 4.0) < 0.01;
+}
+
+// --- Policy reinforcement ---
+
+static bool policy_risk_multiply() {
+  // risk_score(3, 10, 0.5) = (3/10) * 0.5 = 0.15. Bug: (3/10) + 0.5 = 0.8
+  return std::abs(risk_score(3, 10, 0.5) - 0.15) < 0.01;
+}
+
+static bool policy_retries_by_level() {
+  // Different levels should have different retry counts. Bug: always returns 3.
+  return default_retries("normal") != default_retries("restricted");
+}
+
+static bool policy_cooldown_by_levels() {
+  // Cooldown should vary by transition. Bug: always returns 60.
+  return cooldown_seconds("normal", "watch") != cooldown_seconds("watch", "restricted");
+}
+
+// --- Queue reinforcement ---
+
+static bool queue_shed_emergency_ratio() {
+  // should_shed(80, 100, true) at EMERGENCY_RATIO=0.8 → 80% >= 80% → true
+  // Bug: uses 0.95 threshold → 80 < 95 → false
+  return should_shed(80, 100, true);
+}
+
+static bool queue_batch_depth_limit() {
+  // batch_enqueue_count(items, hard=10, depth=8) → can accept 2 more
+  // Bug: ignores current_depth, returns min(4, 10) = 4
+  return batch_enqueue_count({{"a",1},{"b",2},{"c",3},{"d",4}}, 10, 8) == 2;
+}
+
+static bool queue_boost_with_interval() {
+  // priority_boost(5, 300, 60) = 5 + 300/60 = 10. Bug: 5 + 300 = 305
+  return priority_boost(5, 300, 60) == 10;
+}
+
+static bool queue_requeue_with_penalty() {
+  // Requeued items should have priority reduced. Bug: returns unchanged.
+  auto result = requeue_failed({{"a", 10}, {"b", 5}}, 3);
+  return result.size() == 2 && result[0].priority == 7 && result[1].priority == 2;
+}
+
+static bool queue_weighted_wait_factor() {
+  // weighted_wait_time(20, 4.0, 2.0) = (20/4)/2 = 2.5. Bug: (20/4)*2 = 10.0
+  return std::abs(weighted_wait_time(20, 4.0, 2.0) - 2.5) < 0.01;
+}
+
+static bool queue_pressure_with_rates() {
+  // queue_pressure_ratio(50, 100, 20, 10) should factor in rates
+  // Simple depth ratio = 0.5, but with rates it should be higher (net growth)
+  double p1 = queue_pressure_ratio(50, 100, 20, 10);
+  double p2 = queue_pressure_ratio(50, 100, 10, 20);
+  return p1 != p2;
+}
+
+static bool queue_drain_pct_correct() {
+  // drain_percentage(30, 100) = 30/100 = 30%. Bug: 30/(100+30)*100 = 23.1%
+  return std::abs(drain_percentage(30, 100) - 30.0) < 0.01;
+}
+
+// --- Security reinforcement ---
+
+static bool security_token_order() {
+  // token_format("alice", 1234) should be "alice:1234". Bug: "1234:alice"
+  return token_format("alice", 1234) == "alice:1234";
+}
+
+static bool security_mask_first() {
+  // mask_sensitive("abcdef", 2) = "ab****". Bug: shows last 2 → "****ef"
+  return mask_sensitive("abcdef", 2) == "ab****";
+}
+
+static bool security_rate_key_ip_first() {
+  // rate_limit_key("10.0.0.1", "/api") = "10.0.0.1:/api". Bug: "/api:10.0.0.1"
+  return rate_limit_key("10.0.0.1", "/api") == "10.0.0.1:/api";
+}
+
+static bool security_session_ms() {
+  // session_expiry(1000, 60) = 1000 + 60*1000 = 61000. Bug: 1000+60=1060
+  return session_expiry(1000, 60) == 61000;
+}
+
+static bool security_header_cr() {
+  // Should remove both \r and \n. Bug: only removes \n
+  return sanitize_header("hello\r\nworld") == "helloworld";
+}
+
+static bool security_perms_subset() {
+  // Required ⊆ user_perms. Bug: checks user_perms ⊆ required (reversed)
+  bool ok1 = check_permissions({"read", "write"}, {"read"});
+  bool ok2 = check_permissions({"read"}, {"read", "write"});
+  return ok1 && !ok2;
+}
+
+// --- Resilience reinforcement ---
+
+static bool resilience_idempotent_method() {
+  // Duplicate IDs with different sequences should NOT be idempotent safe
+  // Bug: always returns true
+  return !is_idempotent_safe({{"a", 1}, {"a", 2}});
+}
+
+static bool resilience_compact_last() {
+  // compact_events should keep LAST per ID. Bug: keeps first.
+  // ID "a" has seq 1,2,3, max_per_id=2 → should keep {2,3}
+  auto result = compact_events({{"a", 1}, {"a", 2}, {"a", 3}, {"b", 1}}, 2);
+  bool has_a3 = false;
+  for (const auto& e : result) {
+    if (e.id == "a" && e.sequence == 3) has_a3 = true;
+  }
+  return has_a3;
+}
+
+static bool resilience_recovery_correct() {
+  // recovery_rate(8, 10) = 8/10 = 0.8. Bug: (10-8)/10 = 0.2
+  return std::abs(recovery_rate(8, 10) - 0.8) < 0.01;
+}
+
+static bool resilience_degradation_mult() {
+  // degradation_score(3, 10, 0.5) = (3/10)*0.5 = 0.15. Bug: 0.3+0.5=0.8
+  return std::abs(degradation_score(3, 10, 0.5) - 0.15) < 0.01;
+}
+
+static bool resilience_fallback_primary() {
+  // Should return primary when non-empty. Bug: always returns fallback.
+  return fallback_value("primary_value", "fallback_value") == "primary_value";
+}
+
+// --- Statistics reinforcement ---
+
+static bool stats_weighted_mean_denom() {
+  // weighted_mean({10,20}, {2,3}) = (10*2+20*3)/(2+3) = 80/5 = 16
+  // Bug: divides by count=2 → 80/2=40
+  return std::abs(weighted_mean({10.0, 20.0}, {2.0, 3.0}) - 16.0) < 0.01;
+}
+
+static bool stats_covariance_centered() {
+  // covariance({2,4}, {1,3}) with means subtracted: ((2-3)(1-2)+(4-3)(3-2))/1 = 2
+  // Bug: without means: (2*1+4*3)/1 = 14
+  return std::abs(covariance({2.0, 4.0}, {1.0, 3.0}) - 2.0) < 0.01;
+}
+
+static bool stats_correlation_bivariate() {
+  // correlation({1,2,3}, {2,4,6}) using sy too. Perfect correlation = 1.0
+  // Bug: uses sx*sx instead of sx*sy → cov/(sx^2) ≠ 1.0 if sy≠sx
+  double corr = correlation({1.0, 2.0, 3.0}, {10.0, 20.0, 30.0});
+  return std::abs(corr - 1.0) < 0.01;
+}
+
+static bool stats_sum_sq_deviation() {
+  // sum_of_squares({1,2,3}) with mean=2: (1-2)²+(2-2)²+(3-2)² = 2
+  // Bug: returns simple sum 1+2+3=6
+  return std::abs(sum_of_squares({1.0, 2.0, 3.0}) - 2.0) < 0.01;
+}
+
+static bool stats_rate_change_interval() {
+  // rate_of_change(10, 4, 2) = (10-4)/2 = 3.0. Bug: returns 10-4=6.0
+  return std::abs(rate_of_change(10.0, 4.0, 2.0) - 3.0) < 0.01;
+}
+
+// --- Workflow reinforcement ---
+
+static bool workflow_transition_entity() {
+  // transition_count filtered by entity_id. Bug: counts ALL records.
+  std::vector<TransitionRecord> records = {
+      {"v1", "queued", "allocated"}, {"v2", "queued", "cancelled"},
+      {"v1", "allocated", "departed"}};
+  return transition_count(records, "v1") == 2;
+}
+
+static bool workflow_time_ms_to_hours() {
+  // time_in_state_hours(0, 3600000) = 3600000ms = 1.0 hour
+  // Bug: returns raw ms difference = 3600000
+  return std::abs(time_in_state_hours(0, 3600000) - 1.0) < 0.01;
+}
+
+static bool workflow_parallel_active() {
+  // parallel_entity_count should count only non-terminal entities
+  // Bug: counts all entities
+  std::vector<std::pair<std::string, std::string>> entities = {
+      {"v1", "queued"}, {"v2", "arrived"}, {"v3", "allocated"}};
+  return parallel_entity_count(entities) == 2;
+}
+
+static bool workflow_completion_correct() {
+  // completion_percentage(8, 10) = 8/10*100 = 80%. Bug: 10/8*100 = 125%
+  return std::abs(completion_percentage(8, 10) - 80.0) < 0.01;
+}
+
+static bool workflow_throughput_rate() {
+  // workflow_throughput(20, 4.0) = 20/4 = 5.0/hr. Bug: 4/20 = 0.2
+  return std::abs(workflow_throughput(20, 4.0) - 5.0) < 0.01;
+}
+
+// --- Telemetry reinforcement ---
+
+static bool telemetry_error_ratio() {
+  // error_rate(5, 100) = 5/100 = 0.05. Bug: 100/5 = 20.0
+  return std::abs(error_rate(5, 100) - 0.05) < 0.01;
+}
+
+static bool telemetry_throughput_sec() {
+  // throughput(100, 2000) = 100/2000*1000 = 50/sec. Bug: 100/2000 = 0.05
+  return std::abs(throughput(100, 2000) - 50.0) < 0.01;
+}
+
+static bool telemetry_uptime_calc() {
+  // uptime_percentage(8000, 10000) = 80%. Bug: calculates downtime = 20%
+  return std::abs(uptime_percentage(8000, 10000) - 80.0) < 0.01;
+}
+
+static bool telemetry_alert_direction() {
+  // should_alert(95, 90) → 95 > 90 → true. Bug: 95 < 90 → false
+  return should_alert(95.0, 90.0);
+}
+
+// --- Events reinforcement ---
+
+static bool events_dedup_first() {
+  // dedup_by_id should keep earliest event. Bug: keeps latest.
+  std::vector<TimedEvent> events = {
+      {"a", 100, "info", "v1"}, {"a", 200, "info", "v2"}, {"b", 150, "warn", "v3"}};
+  auto deduped = dedup_by_id(events);
+  bool a_is_first = false;
+  for (const auto& e : deduped) {
+    if (e.id == "a" && e.timestamp == 100) a_is_first = true;
+  }
+  return a_is_first;
+}
+
+static bool events_window_inclusive() {
+  // filter_time_window [100, 300] should include all 3 events.
+  // Bug: uses > start (excludes ts=100) giving only 2 events.
+  std::vector<TimedEvent> events = {
+      {"a", 100, "info", ""}, {"b", 200, "info", ""}, {"c", 300, "info", ""}};
+  auto filtered = filter_time_window(events, 100, 300);
+  return filtered.size() == 3;
+}
+
+static bool events_normalize_divisor() {
+  // normalize_timestamps_to_seconds({5000}) = 5000/1000 = 5.0
+  // Bug: divides by 1000000 → 0.005
+  auto result = normalize_timestamps_to_seconds({5000});
+  return result.size() == 1 && std::abs(result[0] - 5.0) < 0.01;
+}
+
+// ---------------------------------------------------------------------------
+// False-pass tightening tests (round 3)
+// ---------------------------------------------------------------------------
+
+static bool routing_score_quality() {
+  // channel_score formula is inverted: latency/reliability*(10-priority)
+  // Higher latency → higher score (wrong). Good route should score better.
+  // Good route: low latency, high reliability, high priority
+  double good = channel_score(5, 0.9, 8);
+  // Bad route: high latency, low reliability, low priority
+  double bad = channel_score(50, 0.1, 1);
+  // Good route should have BETTER (higher) score than bad route
+  return good > bad;
+}
+
+static bool routing_active_exact() {
+  // count_active_routes adds index i to latency (bug: effective = latency + i)
+  // Two routes with latency 9, max_latency=10:
+  //   Buggy: effective[0]=9+0=9 (<10 ✓), effective[1]=9+1=10 (<10 ✗) → returns 1
+  //   Correct: both latency 9 < 10 → returns 2
+  std::vector<Route> routes = {{"a", 9}, {"b", 9}};
+  int count = count_active_routes(routes, 10);
+  return count == 2;
+}
+
+static bool routing_weighted_cost() {
+  // weighted_route_score(lat, rel, cost, w_lat, w_rel, w_cost)
+  // Bug: ignores w_cost, just adds raw cost
+  // Expected: 10*1.0 + 0.8*1.0 + 5.0*2.0 = 20.8
+  // Buggy:    10*1.0 + 0.8*1.0 + 5.0     = 15.8
+  double score = weighted_route_score(10, 0.8, 5.0, 1.0, 1.0, 2.0);
+  return std::abs(score - 20.8) < 0.01;
+}
+
+static bool resilience_trip_at_thresh() {
+  // should_trip_breaker uses > instead of >=
+  // ratio = 50/100 = 0.5, threshold = 0.5
+  // Correct (>=): 0.5 >= 0.5 = true
+  // Buggy (>):    0.5 > 0.5 = false
+  return should_trip_breaker(50, 100, 0.5);
+}
+
+static bool resilience_duration_diff() {
+  // state_duration_ms(entered_at, now_ms) should return now_ms - entered_at
+  // Bug: returns entered_at (100) instead of duration (400)
+  long long duration = state_duration_ms(100, 500);
+  return duration == 400;
+}
+
+static bool resilience_window_check() {
+  // in_failure_window(last_failure, now, window): check if within failure window
+  // Last failure at 90ms, now at 100ms, window 20ms → 10ms since failure < 20ms window → IN window
+  // Bug: uses > (outside window check) instead of < (inside window check)
+  // Buggy: (100-90) > 20 → false; Correct: (100-90) < 20 → true
+  return in_failure_window(90, 100, 20);
+}
+
+static bool resilience_halfopen_scales() {
+  // half_open_max_calls(failure_count) always returns 3 regardless of input
+  // With failure_count=10, should return something > 3 (e.g. scaled by failures)
+  int calls = half_open_max_calls(10);
+  return calls > 3;
+}
+
+static bool resilience_ckpt_scales() {
+  // checkpoint_interval(event_count, base_interval) always returns base_interval
+  // With event_count=5000, base=100, should scale up (e.g. 5000 events need wider interval)
+  int interval = checkpoint_interval(5000, 100);
+  return interval != 100;
+}
+
+static bool stats_z_zero_stddev() {
+  // z_score with tiny stddev returns raw value instead of 0.0
+  // Bug: if (stddev <= 0.0001) return value; — returns 10.0 instead of 0.0
+  double z = z_score(10.0, 5.0, 0.00001);
+  return std::abs(z) < 0.01;
+}
+
+// ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
 
@@ -1811,6 +2312,81 @@ int main(int argc, char** argv) {
   else if (name == "integration_checkpoint_replay") ok = integration_checkpoint_replay();
   else if (name == "integration_priority_aging") ok = integration_priority_aging();
   else if (name == "integration_cascade_depth") ok = integration_cascade_depth();
+  // False-pass detection tests
+  else if (name == "resilience_jitter_variance") ok = resilience_jitter_variance();
+  else if (name == "resilience_retry_with_jitter") ok = resilience_retry_with_jitter();
+  else if (name == "stats_ema_asymmetric") ok = stats_ema_asymmetric();
+  else if (name == "telemetry_health_asymmetric") ok = telemetry_health_asymmetric();
+  else if (name == "stats_normalize_boundary") ok = stats_normalize_boundary();
+  else if (name == "contracts_depth_transitive") ok = contracts_depth_transitive();
+  else if (name == "concurrency_fan_out_by_key") ok = concurrency_fan_out_by_key();
+  else if (name == "events_count_duplicates") ok = events_count_duplicates();
+  else if (name == "config_endpoint_strict") ok = config_endpoint_strict();
+  else if (name == "model_vessel_load") ok = model_vessel_load();
+  // Targeted reinforcement tests
+  else if (name == "resilience_bulkhead_nonexact") ok = resilience_bulkhead_nonexact();
+  else if (name == "workflow_batch_invalid_state") ok = workflow_batch_invalid_state();
+  else if (name == "model_crew_tons_matter") ok = model_crew_tons_matter();
+  else if (name == "contracts_port_collision_gap") ok = contracts_port_collision_gap();
+  else if (name == "events_merge_streams_order") ok = events_merge_streams_order();
+  else if (name == "allocator_weighted_with_zero") ok = allocator_weighted_with_zero();
+  else if (name == "allocator_berth_util_occupied") ok = allocator_berth_util_occupied();
+  else if (name == "allocator_round_ceiling") ok = allocator_round_ceiling();
+  else if (name == "allocator_cost_unit_exact") ok = allocator_cost_unit_exact();
+  else if (name == "allocator_normalize_urg_exact") ok = allocator_normalize_urg_exact();
+  else if (name == "routing_best_route_min_lat") ok = routing_best_route_min_lat();
+  else if (name == "routing_failover_filtered") ok = routing_failover_filtered();
+  else if (name == "routing_penalty_positive_val") ok = routing_penalty_positive_val();
+  else if (name == "routing_normalize_lat_exact") ok = routing_normalize_lat_exact();
+  else if (name == "routing_fuel_eff_correct") ok = routing_fuel_eff_correct();
+  else if (name == "policy_risk_multiply") ok = policy_risk_multiply();
+  else if (name == "policy_retries_by_level") ok = policy_retries_by_level();
+  else if (name == "policy_cooldown_by_levels") ok = policy_cooldown_by_levels();
+  else if (name == "queue_shed_emergency_ratio") ok = queue_shed_emergency_ratio();
+  else if (name == "queue_batch_depth_limit") ok = queue_batch_depth_limit();
+  else if (name == "queue_boost_with_interval") ok = queue_boost_with_interval();
+  else if (name == "queue_requeue_with_penalty") ok = queue_requeue_with_penalty();
+  else if (name == "queue_weighted_wait_factor") ok = queue_weighted_wait_factor();
+  else if (name == "queue_pressure_with_rates") ok = queue_pressure_with_rates();
+  else if (name == "queue_drain_pct_correct") ok = queue_drain_pct_correct();
+  else if (name == "security_token_order") ok = security_token_order();
+  else if (name == "security_mask_first") ok = security_mask_first();
+  else if (name == "security_rate_key_ip_first") ok = security_rate_key_ip_first();
+  else if (name == "security_session_ms") ok = security_session_ms();
+  else if (name == "security_header_cr") ok = security_header_cr();
+  else if (name == "security_perms_subset") ok = security_perms_subset();
+  else if (name == "resilience_idempotent_method") ok = resilience_idempotent_method();
+  else if (name == "resilience_compact_last") ok = resilience_compact_last();
+  else if (name == "resilience_recovery_correct") ok = resilience_recovery_correct();
+  else if (name == "resilience_degradation_mult") ok = resilience_degradation_mult();
+  else if (name == "resilience_fallback_primary") ok = resilience_fallback_primary();
+  else if (name == "stats_weighted_mean_denom") ok = stats_weighted_mean_denom();
+  else if (name == "stats_covariance_centered") ok = stats_covariance_centered();
+  else if (name == "stats_correlation_bivariate") ok = stats_correlation_bivariate();
+  else if (name == "stats_sum_sq_deviation") ok = stats_sum_sq_deviation();
+  else if (name == "stats_rate_change_interval") ok = stats_rate_change_interval();
+  else if (name == "workflow_transition_entity") ok = workflow_transition_entity();
+  else if (name == "workflow_time_ms_to_hours") ok = workflow_time_ms_to_hours();
+  else if (name == "workflow_parallel_active") ok = workflow_parallel_active();
+  else if (name == "workflow_completion_correct") ok = workflow_completion_correct();
+  else if (name == "workflow_throughput_rate") ok = workflow_throughput_rate();
+  else if (name == "telemetry_error_ratio") ok = telemetry_error_ratio();
+  else if (name == "telemetry_throughput_sec") ok = telemetry_throughput_sec();
+  else if (name == "telemetry_uptime_calc") ok = telemetry_uptime_calc();
+  else if (name == "telemetry_alert_direction") ok = telemetry_alert_direction();
+  else if (name == "events_dedup_first") ok = events_dedup_first();
+  else if (name == "events_window_inclusive") ok = events_window_inclusive();
+  else if (name == "events_normalize_divisor") ok = events_normalize_divisor();
+  // False-pass tightening tests (round 3)
+  else if (name == "routing_score_quality") ok = routing_score_quality();
+  else if (name == "routing_active_exact") ok = routing_active_exact();
+  else if (name == "routing_weighted_cost") ok = routing_weighted_cost();
+  else if (name == "resilience_trip_at_thresh") ok = resilience_trip_at_thresh();
+  else if (name == "resilience_duration_diff") ok = resilience_duration_diff();
+  else if (name == "resilience_window_check") ok = resilience_window_check();
+  else if (name == "resilience_halfopen_scales") ok = resilience_halfopen_scales();
+  else if (name == "resilience_ckpt_scales") ok = resilience_ckpt_scales();
+  else if (name == "stats_z_zero_stddev") ok = stats_z_zero_stddev();
   // Hyper-matrix
   else if (name == "hyper_matrix") ok = hyper_matrix();
   else {

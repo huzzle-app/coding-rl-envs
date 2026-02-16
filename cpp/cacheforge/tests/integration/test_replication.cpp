@@ -1,5 +1,11 @@
 #include <gtest/gtest.h>
+#include <fstream>
+#include <string>
 #include "replication/replicator.h"
+
+#ifndef SOURCE_DIR
+#define SOURCE_DIR "."
+#endif
 
 using namespace cacheforge;
 
@@ -132,4 +138,25 @@ TEST(ReplicationTest, test_start_stop) {
     repl.start();
     EXPECT_TRUE(repl.is_connected());
     repl.stop();
+}
+
+// ========== Bug D1: Source check for use-after-move in enqueue ==========
+
+TEST(ReplicationTest, test_enqueue_no_use_after_move_in_log) {
+    std::string path = std::string(SOURCE_DIR) + "/src/replication/replicator.cpp";
+    std::ifstream f(path);
+    ASSERT_TRUE(f.is_open()) << "Could not read replicator.cpp";
+    std::string src(std::istreambuf_iterator<char>(f),
+                    std::istreambuf_iterator<char>());
+
+    auto pos = src.find("Replicator::enqueue");
+    ASSERT_NE(pos, std::string::npos);
+
+    std::string func_body = src.substr(pos, 400);
+    auto move_pos = func_body.find("std::move(event)");
+    if (move_pos != std::string::npos) {
+        std::string after_move = func_body.substr(move_pos + 16);
+        EXPECT_EQ(after_move.find("event.key"), std::string::npos)
+            << "enqueue() reads event.key after std::move(event) — use-after-move";
+    }
 }

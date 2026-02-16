@@ -4,6 +4,7 @@ version = "1.0"
 name = "obsidianmesh"
 description = "Resolve critical defects in a cpp apex-principal reliability platform"
 difficulty = "hard"
+tier = "apex-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "cpp"

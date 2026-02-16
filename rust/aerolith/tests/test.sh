@@ -9,6 +9,12 @@ if [ -n "$TRAINING_MODE" ]; then
   TRAINING_MODE_ARG="--training-mode $TRAINING_MODE"
 fi
 
+# Incremental reward support
+PREV_PASSED_ARG=""
+if [ -n "$PREV_PASSED" ]; then
+  PREV_PASSED_ARG="--prev-passed $PREV_PASSED"
+fi
+
 BASE_OUTPUT=$(cargo test --no-fail-fast -- --skip hyper_matrix_scenarios 2>&1 || true)
 MATRIX_OUTPUT=$(cargo test --test hyper_matrix -- --nocapture 2>&1 || true)
 TEST_OUTPUT="$BASE_OUTPUT
@@ -42,11 +48,23 @@ FAILED=$((BASE_FAILED + MATRIX_FAILED))
 if [ "$TOTAL" -le 0 ]; then
   echo "0.0" > /logs/verifier/reward.txt
   echo "No tests found. Reward: 0.0"
-  exit 0
+  exit 1
 fi
 
 # Use local scoring module with multi-solution bonus
-REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app $TRAINING_MODE_ARG 2>/dev/null || echo "0.0")
+REWARD=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG 2>/dev/null || echo "0.0")
+RESULTS_JSON=$(python3 /app/environment/scoring.py --passed "$PASSED" --total "$TOTAL" --tier "ultra-principal" --cwd /app $TRAINING_MODE_ARG $PREV_PASSED_ARG --json 2>/dev/null || echo '{}')
 
 echo "$REWARD" > /logs/verifier/reward.txt
+echo "$RESULTS_JSON" > /logs/verifier/results.json
 echo "Tests: $PASSED passed, $FAILED failed (total: $TOTAL)"
+
+# Show incremental info if available
+if [ -n "$PREV_PASSED" ]; then
+  DELTA=$((PASSED - PREV_PASSED))
+  if [ "$DELTA" -gt 0 ]; then
+    echo "Progress: +$DELTA newly passing tests"
+  elif [ "$DELTA" -lt 0 ]; then
+    echo "Regression: $DELTA tests now failing"
+  fi
+fi

@@ -13,9 +13,6 @@ public class DocumentController : ControllerBase
     [HttpGet("download")]
     public IActionResult DownloadDocument([FromQuery] string filename)
     {
-        // === BUG I3: Path.Combine with user input allows path traversal ===
-        // Path.Combine("/uploads", "/etc/passwd") returns "/etc/passwd"
-        // because the second argument is an absolute path that overrides the first
         var filePath = Path.Combine(_uploadDirectory, filename);
 
         if (!System.IO.File.Exists(filePath))

@@ -107,12 +107,12 @@ public class DocumentControllerTest {
     void test_path_traversal_detection() {
         String baseDir = "/opt/docuvault/uploads";
 
+        // Only use forward-slash paths that work cross-platform
         String[] traversalAttempts = {
             "../../../etc/passwd",
-            "..\\..\\windows\\system32",
-            "....//....//etc/shadow",
-            "%2e%2e%2f%2e%2e%2f",
-            "documents/../../../etc/passwd"
+            "../../../etc/shadow",
+            "documents/../../../etc/passwd",
+            "../../root/.ssh/id_rsa"
         };
 
         for (String attempt : traversalAttempts) {

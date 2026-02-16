@@ -112,19 +112,15 @@ Setup and configuration issues:
 
 ## Scoring
 
-Your score is based on the percentage of tests passing:
+Your score is based on the percentage of tests passing (5-threshold, Senior tier):
 
 | Pass Rate | Reward |
 |-----------|--------|
-| < 10% | 0.00 |
-| 10-24% | 0.00 |
-| 25-39% | 0.05 |
-| 40-54% | 0.12 |
-| 55-69% | 0.22 |
-| 70-84% | 0.38 |
-| 85-94% | 0.55 |
-| 95-99% | 0.78 |
-| 100% | 1.00 |
+| >= 100% | 1.00 |
+| >= 90% | 0.65 |
+| >= 75% | 0.35 |
+| >= 50% | 0.15 |
+| < 50% | 0.00 |
 
 ### Bonuses
 - +0.05 for fixing race conditions (detected by -race flag)

@@ -571,6 +571,13 @@ Examples:
         help="Previous total count (defaults to current total)",
     )
     parser.add_argument(
+        "--module-data",
+        type=str,
+        default=None,
+        metavar="JSON",
+        help='Per-module pass/fail JSON, e.g. {"config":{"passed":893,"total":893},...}',
+    )
+    parser.add_argument(
         "--parse-errors",
         type=str,
         default=None,
@@ -608,6 +615,18 @@ Examples:
         prev_passed=args.prev_passed,
         prev_total=args.prev_total,
     )
+
+    # Include per-module breakdown if provided
+    if args.module_data:
+        try:
+            modules = json.loads(args.module_data)
+            result["modules"] = modules
+            # Compute modules_fixed count (modules where passed == total)
+            fixed = sum(1 for m in modules.values() if m.get("passed", 0) == m.get("total", 1) and m.get("total", 0) > 0)
+            result["modules_fixed"] = fixed
+            result["modules_total"] = len(modules)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     if args.json:
         print(json.dumps(result, indent=2))

@@ -6,7 +6,7 @@ using namespace cacheforge;
 // ========== Bug C2: LRU splice invalidation ==========
 
 TEST(EvictionTest, test_lru_access_order_preserved) {
-    
+
     // After fix with splice(), access order should be correctly maintained
     EvictionManager em(10);
 
@@ -15,6 +15,11 @@ TEST(EvictionTest, test_lru_access_order_preserved) {
     em.record_insert("key3", 100);
 
     // Access key1 to move it to front (most recently used)
+    em.record_access("key1");
+
+    // Access key1 again - with the bug, the lookup map still holds a dangling
+    // iterator from the first touch(), so this second access dereferences freed memory.
+    // After fix, repeated access should work without crashing.
     em.record_access("key1");
 
     // Evict should remove key2 (least recently used after key1 was touched)

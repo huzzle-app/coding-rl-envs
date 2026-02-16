@@ -167,11 +167,18 @@ class TestSpotPreemption:
 
     def test_spot_preemption_graceful(self):
         """E5: Spot preemption should send notification before termination."""
-        assert True, "Spot preemption notification check"
+        from services.compute import main as compute_main
+        assert hasattr(compute_main, 'handle_spot_preemption'), \
+            "Compute module must have handle_spot_preemption function for graceful spot termination"
 
     def test_preemption_notification(self):
         """E5: Preemption notification should be delivered to application."""
-        assert True, "Preemption notification delivery check"
+        from services.compute import main as compute_main
+        handler = getattr(compute_main, 'handle_spot_preemption', None)
+        assert handler is not None, \
+            "handle_spot_preemption function must exist to deliver preemption notifications"
+        assert callable(handler), \
+            "handle_spot_preemption must be callable"
 
 
 class TestPlacementGroup:

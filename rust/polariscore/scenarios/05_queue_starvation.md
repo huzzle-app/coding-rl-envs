@@ -39,20 +39,19 @@ Wait... severity 4 item should be FIRST (weight 40), not last!
 
 **@support-lead**: The queue is sorted ascending by weight instead of descending. Low priority items are being processed first.
 
-**@platform-ops**: And the pressure metric is way off too. Expected ~27.2, getting ~2.7. It's 10x too low.
+**@platform-ops**: And the pressure metric is off too. The severity coefficient is wrong — getting roughly 2.5x less pressure than expected.
 
-**@analytics-eng**: Found more issues. The percentile calculations are backwards and the SLA calculation has an off-by-one at the boundary:
+**@analytics-eng**: Found more issues. The percentile calculations are backwards and the SLA calculation has a divisor error:
 
 ```
 Latencies: [90, 110, 160]
 Objective: 120ms
 
-Expected: 110 is at boundary, should count as within SLA
-Expected SLA: 66.67% (2 of 3 within)
-Actual SLA: 33.33% (only counting strictly less than)
+Expected: 2 of 3 within objective → 66.67%
+Actual:   divides by (count - 1) instead of count → 2/2 = 100%
 ```
 
-**@platform-ops**: So customers are seeing WORSE SLA numbers in their dashboards than reality, while we're showing BETTER numbers. No wonder they're confused.
+**@platform-ops**: So we're showing BETTER SLA numbers in dashboards than reality. Customers see 100% compliance when it's really 66.67%. No wonder their internal tracking disagrees with ours.
 
 ---
 
@@ -66,8 +65,8 @@ MedLogix Customer View (their internal tracking):
 
 PolarisCore Dashboard (what we show):
 - P95 Latency: 45ms (WRONG - inverted percentile)
-- SLA Compliance: 99.8% (WRONG - boundary not counted)
-- Queue Pressure: 2.7 (should be ~27)
+- SLA Compliance: 99.8% (WRONG - divisor off-by-one inflates result)
+- Queue Pressure: 2.1 (should be ~5.3, severity coefficient too low)
 ```
 
 ---
@@ -85,10 +84,10 @@ PolarisCore Dashboard (what we show):
 ## Observed Symptoms
 
 1. Queue ordering is ascending by weight (low priority first, high priority last)
-2. Queue pressure calculation is 10x lower than expected
+2. Queue pressure severity coefficient too low (0.24 instead of 0.6, ~2.5x undercount)
 3. Percentile calculations are inverted (P95 returning low values, P5 returning high)
-4. SLA boundary using `<` instead of `<=` (latency exactly at objective not counted)
-5. Trimmed mean calculations are slightly off due to divisor error
+4. SLA divisor uses `len - 1` instead of `len` (inflates compliance percentage)
+5. Trimmed mean divides by original count instead of kept count after trimming
 
 ---
 
@@ -131,8 +130,8 @@ The surge multiplier is being ADDED instead of MULTIPLIED!
 1. What sort order is being used for queue priority?
 2. What multiplier is used in the pressure calculation?
 3. Is percentile sorting ascending or descending?
-4. What comparison operator is used for SLA boundary?
-5. What divisor is used in trimmed mean?
+4. What divisor is used in rolling SLA (count vs count-1)?
+5. What divisor is used in trimmed mean (kept count vs original count)?
 6. How is the surge multiplier being applied to cost projections?
 
 ---
@@ -140,10 +139,10 @@ The surge multiplier is being ADDED instead of MULTIPLIED!
 ## Resolution Criteria
 
 - Queue must order by weight descending (highest priority first)
-- Pressure calculation must use correct multiplier
-- Percentile must sort ascending (low to high)
-- SLA must count values at or below objective (`<=`)
-- Trimmed mean must divide by actual kept count
+- Pressure calculation must use correct severity coefficient (0.6, not 0.24)
+- Percentile must sort ascending and use rank directly (not complement)
+- SLA must divide by total count, not count minus one
+- Trimmed mean must divide by kept count after trimming, not original count
 - Cost projection must multiply by surge (not add)
 - Margin calculation boundary must be correct
 - All queue, statistics, and economics tests must pass

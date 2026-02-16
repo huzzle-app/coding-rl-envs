@@ -32,7 +32,13 @@ npm test
 | Service tests (8 x 4) | 32 |
 | Stress: hyper-matrix | 7,000 |
 | Stress: service-mesh-matrix | 2,168 |
-| **Total** | **9,213** |
+| Stress: state-machine-matrix | 620 |
+| Stress: integration-domain-matrix | 480 |
+| Stress: concurrency-matrix | 540 |
+| Stress: latent-multistep-matrix | 360 |
+| Stress: async-pipeline-matrix | 360 |
+| Stress: cross-module-pipeline-matrix | 320 |
+| **Total** | **11,893** |
 
 ## Reward Tiers (10-threshold Apex)
 
@@ -55,7 +61,7 @@ npm test
 - Preserve deterministic replay and scheduling behavior.
 - Keep security checks, policy gates, and audit invariants intact.
 
-Primary objective: make the full suite pass (`npm test`) with production-safe changes for an Apex-Principal environment.
+Primary objective: make the full suite pass (`npm test`) — all 11,893 tests green — with production-safe changes for an Apex-Principal environment.
 
 ---
 

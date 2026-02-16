@@ -13,7 +13,7 @@ RSpec.describe OrderSaga do
       allow(saga).to receive(:process_payment).and_return({ success: false, error: 'declined' })
 
       # Fixed version should call compensate! which releases inventory
-      expect(saga).to receive(:release_inventory) rescue nil
+      expect(saga).to receive(:release_inventory)
 
       saga.execute!
 
@@ -26,8 +26,8 @@ RSpec.describe OrderSaga do
       allow(saga).to receive(:create_shipment).and_return({ success: false, error: 'unavailable' })
 
       # Fixed version compensates both payment and inventory
-      expect(saga).to receive(:refund_payment) rescue nil
-      expect(saga).to receive(:release_inventory) rescue nil
+      expect(saga).to receive(:refund_payment)
+      expect(saga).to receive(:release_inventory)
 
       saga.execute!
     end

@@ -63,9 +63,12 @@ func TestHyperMatrix(t *testing.T) {
 				}
 				overdrawn := ledger.DetectOverdraft(map[string]int64{"a": 100}, entries)
 				_ = overdrawn
-				merged := ledger.MergeBalances(map[string]int64{"x": 100}, map[string]int64{"x": int64(i % 50), "y": 200})
+				merged := ledger.MergeBalances(map[string]int64{"x": 100}, map[string]int64{"x": int64(i%50 + 1), "y": 200})
 				if merged["y"] != 200 {
-					t.Fatalf("merge failed")
+					t.Fatalf("merge y failed")
+				}
+				if merged["x"] != 100+int64(i%50+1) {
+					t.Fatalf("merge x should sum: expected %d, got %d", 100+int64(i%50+1), merged["x"])
 				}
 
 			case 2:
@@ -242,8 +245,8 @@ func TestHyperMatrix(t *testing.T) {
 					t.Fatalf("invalid level: %d", level)
 				}
 				next := policy.NextEscalation(models.PolicyNormal)
-				if next < models.PolicyNormal || next > models.PolicyHalted {
-					t.Fatalf("invalid next escalation: %d", next)
+				if next != models.PolicyWatch {
+					t.Fatalf("NextEscalation(Normal) should be Watch (1), got %d", next)
 				}
 				hold := policy.ShouldHoldTransaction(int64(i*1000), models.PolicyHalted)
 				if !hold {

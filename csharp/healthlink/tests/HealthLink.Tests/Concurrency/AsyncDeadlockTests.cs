@@ -12,22 +12,15 @@ namespace HealthLink.Tests.Concurrency;
 public class AsyncDeadlockTests
 {
     [Fact]
-    public async Task test_no_task_result_deadlock_concurrent()
+    public void test_no_task_result_deadlock_concurrent()
     {
-        
-        var mockService = new Mock<IAppointmentService>();
-        mockService.Setup(s => s.GetByIdAsync(It.IsAny<int>()))
-            .ReturnsAsync(new Appointment { Id = 1 });
-
-        var mockScheduling = new Mock<ISchedulingService>();
-        var controller = new AppointmentController(mockService.Object, mockScheduling.Object);
-
-        // Multiple concurrent calls should not deadlock
-        var tasks = Enumerable.Range(1, 5).Select(i =>
-            Task.Run(() => controller.GetAppointment(i)));
-
-        var act = () => Task.WhenAll(tasks);
-        await act.Should().CompleteWithinAsync(TimeSpan.FromSeconds(10));
+        // Verify that GetAppointment doesn't block with .Result or .Wait()
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Controllers", "AppointmentController.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // .Result causes deadlocks under SynchronizationContext (ASP.NET Core, WPF, etc.)
+        source.Should().NotContain(".Result",
+            "using .Result on async tasks causes deadlocks under SynchronizationContext");
     }
 
     [Fact]
@@ -55,19 +48,11 @@ public class AsyncDeadlockTests
     [Fact]
     public async Task test_async_void_does_not_crash()
     {
-        
-        var options = new DbContextOptionsBuilder<HealthLinkDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var context = new HealthLinkDbContext(options);
-        var schedulingMock = new Mock<ISchedulingService>();
-        var smtpOpts = Microsoft.Extensions.Options.Options.Create(new SmtpSettings { Host = "test" });
-        var logger = new Mock<Microsoft.Extensions.Logging.ILogger<NotificationService>>();
-        var service = new NotificationService(context, schedulingMock.Object, smtpOpts, logger.Object);
-
-        // async void should not crash the process
-        service.OnAppointmentChanged(null, new AppointmentScheduledEventArgs { AppointmentId = 1 });
-        await Task.Delay(200);
+        // OnAppointmentChanged should return Task, not be async void
+        var method = typeof(NotificationService).GetMethod("OnAppointmentChanged");
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(Task),
+            "async void event handlers crash the process on exception; should return Task instead");
     }
 
     [Fact]
@@ -104,21 +89,14 @@ public class AsyncDeadlockTests
     [Fact]
     public async Task test_fire_and_forget_concurrent()
     {
-        
-        var options = new DbContextOptionsBuilder<HealthLinkDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var context = new HealthLinkDbContext(options);
-        var schedulingMock = new Mock<ISchedulingService>();
-        var smtpOpts = Microsoft.Extensions.Options.Options.Create(new SmtpSettings { Host = "test" });
-        var logger = new Mock<Microsoft.Extensions.Logging.ILogger<NotificationService>>();
-        var service = new NotificationService(context, schedulingMock.Object, smtpOpts, logger.Object);
-
-        var tasks = Enumerable.Range(1, 5).Select(i =>
-            service.SendReminderAsync(i, $"Reminder {i}"));
-
-        await Task.WhenAll(tasks);
-        await Task.Delay(500); // Wait for fire-and-forget tasks
+        // Verify SendReminderAsync does not use fire-and-forget Task.Run
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "NotificationService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // Unawaited Task.Run is a fire-and-forget that loses exceptions
+        var hasUnawaitedTaskRun = source.Contains("Task.Run(") && !source.Contains("await Task.Run(");
+        hasUnawaitedTaskRun.Should().BeFalse(
+            "Task.Run should be awaited; fire-and-forget loses exceptions silently");
     }
 
     [Fact]

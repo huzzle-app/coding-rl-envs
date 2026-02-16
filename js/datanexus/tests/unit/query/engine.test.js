@@ -4,7 +4,7 @@
  * Tests for BUG C1-C8 query engine bugs
  */
 
-const { QueryEngine } = require('../../../services/query/src/services/engine');
+const { QueryEngine, MaterializedViewManager, QueryOptimizer } = require('../../../services/query/src/services/engine');
 
 describe('QueryEngine', () => {
   let engine;
@@ -378,6 +378,67 @@ describe('QueryEngine', () => {
       const data = [{ id: 1 }, { id: 2 }];
       const result = engine._applyLimit(data, 10, -5);
       expect(result.length).toBe(2);
+    });
+  });
+
+  describe('QueryOptimizer limit+offset cost (C3)', () => {
+    test('queries with large offset should have higher estimated cost', () => {
+      const optimizer = new QueryOptimizer();
+      optimizer.recordTableStats('users', { rowCount: 10000, avgRowSize: 100 });
+      const engine = new QueryEngine(null);
+      const plan1 = engine.plan(engine.parse('SELECT * FROM users LIMIT 10'), {});
+      const plan2 = engine.plan(engine.parse('SELECT * FROM users LIMIT 10 OFFSET 9000'), {});
+      const cost1 = optimizer.estimateCost(plan1);
+      const cost2 = optimizer.estimateCost(plan2);
+      expect(cost2.cost).toBeGreaterThan(cost1.cost);
+    });
+  });
+
+  describe('QueryEngine HAVING order (C2)', () => {
+    test('HAVING should be applied after GROUP BY, not before', () => {
+      const engine = new QueryEngine(null);
+      const parsed = engine.parse('SELECT status FROM orders GROUP BY status HAVING count > 5');
+      const plan = engine.plan(parsed, {});
+      const stepTypes = plan.steps.map(s => s.type);
+      const groupIdx = stepTypes.indexOf('group');
+      const havingIdx = stepTypes.indexOf('having');
+      expect(groupIdx).toBeGreaterThanOrEqual(0);
+      expect(havingIdx).toBeGreaterThan(groupIdx);
+    });
+  });
+
+  describe('QueryOptimizer join strategy (C4)', () => {
+    test('join strategy should consider data size not just row count', () => {
+      const optimizer = new QueryOptimizer();
+      optimizer.recordTableStats('small_rows', { rowCount: 5000, avgRowSize: 10 });
+      optimizer.recordTableStats('large_rows', { rowCount: 5000, avgRowSize: 10000 });
+      const strategy = optimizer.chooseJoinStrategy('small_rows', 'large_rows');
+      expect(strategy).not.toBe('nested-loop');
+    });
+  });
+
+  describe('MaterializedViewManager invalidation cascade', () => {
+    test('invalidating parent should cascade to child views', () => {
+      const engine = new QueryEngine(null);
+      const manager = new MaterializedViewManager(engine);
+      manager.createView('parent', 'SELECT * FROM base', {});
+      manager.createView('child', 'SELECT * FROM parent_view', {
+        dependencies: ['parent'],
+      });
+      manager.invalidateView('child');
+      const child = manager.getView('child');
+      expect(child.state).toBe('stale');
+      expect(child.data).toBeNull();
+    });
+
+    test('cache invalidation should reset plan cache', () => {
+      const engine = new QueryEngine(null);
+      const parsed = engine.parse('SELECT id FROM users');
+      engine.plan(parsed, {});
+      expect(engine.getCacheStats().size).toBe(1);
+      engine.invalidateCache();
+      expect(engine.getCacheStats().size).toBe(0);
+      expect(engine.getCacheStats().schemaVersion).toBeGreaterThan(0);
     });
   });
 });

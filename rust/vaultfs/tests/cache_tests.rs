@@ -10,6 +10,63 @@
 use vaultfs::services::cache::CacheService;
 use serde::{Deserialize, Serialize};
 
+// ===== Source-verification anti-tampering tests =====
+
+/// Verify cache.rs get_with_fallback returns owned T, not &'a T (B1).
+#[test]
+fn test_cache_source_get_with_fallback_returns_owned() {
+    let src = include_str!("../src/services/cache.rs");
+
+    // Find the get_with_fallback signature
+    let sig_area = src.split("get_with_fallback")
+        .nth(1)
+        .unwrap_or("");
+
+    // After fix: return type should be anyhow::Result<T>, not anyhow::Result<&'a T>
+    // Check the first ~200 chars which should contain the signature
+    let sig_snippet = &sig_area[..sig_area.len().min(200)];
+
+    assert!(
+        !sig_snippet.contains("&'a T"),
+        "get_with_fallback must return owned T, not &'a T (B1). \
+         Returning a reference to a local variable causes use-after-free. \
+         Found signature containing &'a T in cache.rs"
+    );
+}
+
+/// Verify cache.rs get_config_value returns owned String, not &'a str (B1).
+#[test]
+fn test_cache_source_get_config_value_returns_owned() {
+    let src = include_str!("../src/services/cache.rs");
+
+    // Find the get_config_value signature
+    let sig_area = src.split("get_config_value")
+        .nth(1)
+        .unwrap_or("");
+
+    let sig_snippet = &sig_area[..sig_area.len().min(200)];
+
+    // After fix: should return Option<String>, not Option<&'a str>
+    assert!(
+        !sig_snippet.contains("&'a str"),
+        "get_config_value must return Option<String>, not Option<&'a str> (B1). \
+         Returning &str to a format!() temporary causes a dangling reference."
+    );
+
+    // Also verify the function body doesn't return .as_str() on a local
+    let body_area = src.split("get_config_value")
+        .nth(1)
+        .unwrap_or("");
+    let fn_end = body_area.find("\n    pub ").or_else(|| body_area.find("\n}")).unwrap_or(body_area.len());
+    let fn_body = &body_area[..fn_end];
+
+    assert!(
+        !fn_body.contains("value.as_str()") || !fn_body.contains("Some(value.as_str())"),
+        "get_config_value must not return Some(local_string.as_str()) (B1). \
+         The local String is dropped, leaving a dangling &str."
+    );
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct TestData {
     id: String,

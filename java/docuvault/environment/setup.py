@@ -43,7 +43,7 @@ class DocuVaultEnvironment:
                 OptimisticLockException)
       - E1-E2: Generics/Types (type erasure ClassCastException, wildcard capture)
       - I1-I4: Security (SQL injection, deserialization, path traversal, JWT none)
-    - 125+ JUnit/Spring tests that verify bug fixes
+    - 163 JUnit/Spring tests that verify bug fixes
     - Sparse reward function with thresholds and regression penalties
     - Setup bugs that prevent the application from starting initially
 
@@ -325,6 +325,10 @@ class DocuVaultEnvironment:
         # Reject edits to test files
         if action_type == 'edit' and (file_path.startswith('src/test/') or '/src/test/' in file_path):
             return {'success': False, 'error': 'Editing test files is not allowed'}
+        # Reject edits to environment/scoring infrastructure
+        protected_prefixes = ('environment/', 'tests/test.sh', 'tests/', 'solution/')
+        if action_type == 'edit' and any(file_path.startswith(p) or file_path == p for p in protected_prefixes):
+            return {'success': False, 'error': 'Editing environment/scoring files is not allowed'}
 
         content = action.get('content', '')
         if len(content) > 100_000:
@@ -581,12 +585,16 @@ class DocuVaultEnvironment:
 
     def get_success_criteria(self) -> str:
         """Get success criteria for the environment."""
-        return "All 125+ JUnit/Spring tests must pass to complete the challenge."
+        return "All 163 JUnit/Spring tests must pass to complete the challenge."
 
     def get_setup_bugs(self) -> Dict[str, str]:
         """Get setup-specific bug IDs."""
-        from .reward import BUG_CATEGORIES
-        return {bug_id: bug_id for bug_id in BUG_CATEGORIES.get('setup_config', [])}
+        return {
+            'L1': 'Circular bean dependency',
+            'L2': '@Profile mismatch',
+            'L3': '@Value parsing error',
+            'L4': 'Jackson version conflict',
+        }
 
     def gym_step(self, action: Dict[str, Any]) -> Tuple[Dict, float, bool, bool, Dict]:
         """Gymnasium-compatible step returning (obs, reward, done, truncated, info)."""

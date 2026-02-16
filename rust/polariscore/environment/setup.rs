@@ -164,11 +164,17 @@ impl PolarisCoreEnvironment {
         if rel.starts_with("src/security.rs") {
             return vec!["security_tests"];
         }
-        if rel.starts_with("src/queue.rs") || rel.starts_with("src/statistics.rs") {
-            return vec!["queue_statistics_tests"];
+        if rel.starts_with("src/queue.rs") {
+            return vec!["queue_statistics_tests", "queue_targeted_tests"];
         }
-        if rel.starts_with("src/workflow.rs") || rel.starts_with("src/economics.rs") {
-            return vec!["workflow_integration_tests"];
+        if rel.starts_with("src/statistics.rs") {
+            return vec!["queue_statistics_tests", "statistics_targeted_tests"];
+        }
+        if rel.starts_with("src/workflow.rs") {
+            return vec!["workflow_integration_tests", "workflow_targeted_tests"];
+        }
+        if rel.starts_with("src/economics.rs") {
+            return vec!["workflow_integration_tests", "economics_targeted_tests"];
         }
         if rel.starts_with("services/") || rel.starts_with("shared/") {
             return vec!["services_contracts"];
@@ -355,8 +361,9 @@ fn extract_count(line: &str, marker: &str) -> usize {
 }
 
 fn sparse_reward(pass_rate: f64) -> f64 {
-    const THRESHOLDS: [f64; 9] = [0.20, 0.36, 0.50, 0.64, 0.76, 0.87, 0.94, 0.98, 1.0];
-    const REWARDS: [f64; 9] = [0.0, 0.02, 0.07, 0.14, 0.25, 0.40, 0.60, 0.82, 1.0];
+    // 8-threshold table matching reward.py for hyper-principal tier
+    const THRESHOLDS: [f64; 7] = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0];
+    const REWARDS: [f64; 7] = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0];
     for idx in (0..THRESHOLDS.len()).rev() {
         if pass_rate >= THRESHOLDS[idx] {
             return REWARDS[idx];

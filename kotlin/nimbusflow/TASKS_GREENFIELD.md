@@ -2,7 +2,7 @@
 
 This document defines greenfield implementation tasks for extending NimbusFlow's cloud workflow platform. Each task requires implementing a new module from scratch while following existing architectural patterns.
 
-**Test Command:** `./gradlew test`
+**Test Command:** `mvn test`
 
 ---
 

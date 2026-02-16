@@ -168,7 +168,11 @@ public:
 // Variant types (for K5 bug)
 // ---------------------------------------------------------------------------
 
-using ConfigValue = std::variant<int, double, std::string, bool>;
+struct ThrowingConfig {
+    ThrowingConfig(int) { throw std::runtime_error("throw"); }
+};
+
+using ConfigValue = std::variant<int, double, std::string, bool, ThrowingConfig>;
 
 struct ConfigEntry {
     std::string key;
@@ -446,12 +450,13 @@ std::string_view extract_field(const std::string& json, const std::string& field
 template<typename T>
 class DataWrapper {
 public:
-    explicit DataWrapper(T value) : value_(std::move(value)) {}
+    // Bug: std::type_identity_t puts T in non-deduced context, so CTAD fails
+    // FIX: Add deduction guide: template<typename T> DataWrapper(T) -> DataWrapper<T>;
+    explicit DataWrapper(std::type_identity_t<T> value) : value_(std::move(value)) {}
     const T& get() const { return value_; }
 private:
     T value_;
 };
-// Missing: template<typename T> DataWrapper(T) -> DataWrapper<T>;
 
 // ---------------------------------------------------------------------------
 // Router (A6, C4, E1, E2, E3, E6 bugs)

@@ -82,7 +82,7 @@ docker compose -f docker-compose.test.yml up --build
 
 ## Success Criteria
 
-Your goal is to fix bugs . The reward function uses 8 sparse thresholds:
+Your goal is to fix all 80 bugs so that all 536 tests pass. The reward function uses 8 sparse thresholds:
 
 | Test Pass Rate | Reward |
 |----------------|--------|

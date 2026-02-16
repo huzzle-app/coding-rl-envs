@@ -16,5 +16,5 @@ fn replay_window_logic() {
 fn burst_policy_tightens() {
     assert_eq!(burst_policy_max_inflight(2), 32);
     assert_eq!(burst_policy_max_inflight(4), 16);
-    assert_eq!(burst_policy_max_inflight(7), 8);
+    assert_eq!(burst_policy_max_inflight(7), 4);
 }

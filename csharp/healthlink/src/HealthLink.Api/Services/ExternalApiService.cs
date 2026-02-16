@@ -17,9 +17,6 @@ public class ExternalApiService : IExternalApiService
 
     public async Task<string?> GetInsuranceVerificationAsync(string patientId)
     {
-        // === BUG D3: new HttpClient() per request causes socket exhaustion ===
-        // Each HttpClient instance holds sockets that won't be released immediately
-        // due to TIME_WAIT state. Should use IHttpClientFactory instead.
         using var client = new HttpClient();
         client.BaseAddress = new Uri("https://insurance-api.example.com");
 
@@ -37,7 +34,6 @@ public class ExternalApiService : IExternalApiService
 
     public async Task<string?> GetLabResultsAsync(string orderId)
     {
-        // Same bug - new HttpClient per request
         using var client = new HttpClient();
         client.BaseAddress = new Uri("https://lab-api.example.com");
 

@@ -479,6 +479,15 @@ def calculate_reward(
     else:
         base_reward = sparse_reward(pass_rate, tier)
 
+    # Blend in code correctness score (30% code checks, 70% test pass rate)
+    code_correctness = 0.0
+    try:
+        from environment.code_checks import code_correctness_score
+        code_correctness = code_correctness_score(cwd) if cwd else 0.0
+        base_reward = 0.70 * base_reward + 0.30 * code_correctness
+    except ImportError:
+        pass
+
     solution_bonus = 0.0
     if enable_solution_bonus and not training_mode:
         # Solution bonus only applies in evaluation mode
@@ -497,6 +506,7 @@ def calculate_reward(
         "reward": round(final_reward, 4),
         "pass_rate": round(pass_rate, 6),
         "base_reward": round(base_reward, 4),
+        "code_correctness": round(code_correctness, 4),
         "solution_bonus": round(solution_bonus, 4),
         "incremental_bonus": round(incremental_bonus, 6),
         "passed": passed,

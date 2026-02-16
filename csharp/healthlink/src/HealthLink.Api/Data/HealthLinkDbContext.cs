@@ -22,17 +22,9 @@ public class HealthLinkDbContext : DbContext
         modelBuilder.Entity<Patient>(entity =>
         {
             entity.HasKey(e => e.Id);
-            // === BUG E4: No HasMaxLength - defaults to nvarchar(max) ===
-            // String columns without explicit length default to unbounded,
-            // which is inefficient for indexing and can waste storage
             entity.Property(e => e.Name);
             entity.Property(e => e.Email);
             entity.Property(e => e.NormalizedName);
-
-            // === BUG E2: Missing OwnsOne for Address value object ===
-            // Without OwnsOne(), EF Core doesn't know how to map the
-            // Address complex type. It will be silently ignored.
-            // entity.OwnsOne(e => e.Address); // MISSING!
 
             entity.HasMany(e => e.Appointments)
                 .WithOne(a => a.Patient)

@@ -1,344 +1,405 @@
 /**
  * Webhook Delivery Tests
  *
- * Tests outgoing webhook delivery, retry logic, signature generation
+ * Tests WebhookDeliveryEngine, SignatureVerifier, RetryScheduler, EventFilter from actual source code.
+ * Exercises bugs: delivery retry logic, signature verification, event filtering patterns.
  */
 
-describe('Webhook Delivery', () => {
-  describe('webhook registration', () => {
-    it('should register webhook URL', () => {
-      const webhooks = new Map();
+// Mock express to prevent service index files from starting HTTP servers
+jest.mock('express', () => {
+  const router = { use: jest.fn(), get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn(), patch: jest.fn() };
+  const app = { use: jest.fn().mockReturnThis(), get: jest.fn().mockReturnThis(), post: jest.fn().mockReturnThis(), put: jest.fn().mockReturnThis(), delete: jest.fn().mockReturnThis(), patch: jest.fn().mockReturnThis(), listen: jest.fn((port, cb) => cb && cb()), set: jest.fn().mockReturnThis() };
+  const express = jest.fn(() => app);
+  express.json = jest.fn(() => jest.fn());
+  express.urlencoded = jest.fn(() => jest.fn());
+  express.static = jest.fn(() => jest.fn());
+  express.Router = jest.fn(() => router);
+  return express;
+});
 
-      const register = (userId, url, events) => {
-        const id = `wh-${webhooks.size + 1}`;
-        webhooks.set(id, { userId, url, events, active: true, createdAt: Date.now() });
-        return id;
-      };
+const { WebhookDeliveryEngine, SignatureVerifier, RetryScheduler, EventFilter } = require('../../../services/webhooks/src/index');
 
-      const id = register('user-1', 'https://example.com/webhook', ['document.created', 'document.updated']);
-      expect(webhooks.has(id)).toBe(true);
-      expect(webhooks.get(id).events).toContain('document.created');
+describe('WebhookDeliveryEngine', () => {
+  let engine;
+
+  beforeEach(() => {
+    engine = new WebhookDeliveryEngine({ maxRetries: 3, timeoutMs: 5000, batchSize: 5 });
+  });
+
+  describe('enqueue', () => {
+    it('should enqueue a delivery', () => {
+      const delivery = engine.enqueue('wh-1', 'document.created', { docId: 'doc-1' });
+      expect(delivery).toBeDefined();
+      expect(delivery.webhookId).toBe('wh-1');
+      expect(delivery.event).toBe('document.created');
+      expect(delivery.status).toBe('pending');
+      expect(delivery.attempts).toBe(0);
     });
 
-    it('should validate webhook URL', () => {
-      const isValidUrl = (url) => {
-        try {
-          const parsed = new URL(url);
-          return parsed.protocol === 'https:';
-        } catch {
-          return false;
-        }
-      };
-
-      expect(isValidUrl('https://example.com/webhook')).toBe(true);
-      expect(isValidUrl('http://example.com/webhook')).toBe(false);
-      expect(isValidUrl('not-a-url')).toBe(false);
+    it('should assign unique ids to deliveries', () => {
+      const d1 = engine.enqueue('wh-1', 'a', {});
+      const d2 = engine.enqueue('wh-1', 'b', {});
+      expect(d1.id).not.toBe(d2.id);
     });
 
-    it('should filter events by subscription', () => {
-      const webhook = {
-        events: ['document.created', 'document.updated'],
-      };
-
-      const shouldDeliver = (eventType) => webhook.events.includes(eventType);
-
-      expect(shouldDeliver('document.created')).toBe(true);
-      expect(shouldDeliver('document.deleted')).toBe(false);
+    it('should track pending count', () => {
+      engine.enqueue('wh-1', 'a', {});
+      engine.enqueue('wh-2', 'b', {});
+      expect(engine.getPendingCount()).toBe(2);
     });
   });
 
-  describe('payload signing', () => {
-    it('should sign webhook payload', () => {
-      const crypto = require('crypto');
-      const secret = 'webhook-secret-123';
-      const payload = JSON.stringify({ type: 'document.created', docId: 'doc-1' });
-
-      const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-
-      expect(signature).toBeDefined();
-      expect(signature.length).toBe(64);
+  describe('processDeliveries', () => {
+    it('should process pending deliveries successfully', async () => {
+      engine.enqueue('wh-1', 'document.created', { docId: 'doc-1' });
+      const results = await engine.processDeliveries();
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe('delivered');
+      expect(results[0].attempts).toBe(1);
     });
 
-    it('should include timestamp in signature', () => {
-      const crypto = require('crypto');
-      const timestamp = Math.floor(Date.now() / 1000);
-      const payload = '{"data":"test"}';
-      const sigContent = `${timestamp}.${payload}`;
-
-      const signature = crypto.createHmac('sha256', 'secret').update(sigContent).digest('hex');
-      expect(signature).toBeDefined();
+    it('should move delivered items to log and remove from pending', async () => {
+      engine.enqueue('wh-1', 'a', {});
+      await engine.processDeliveries();
+      expect(engine.getPendingCount()).toBe(0);
+      expect(engine.deliveryLog).toHaveLength(1);
     });
 
-    it('should reject replayed webhooks', () => {
-      const maxAge = 300;
-      const now = Math.floor(Date.now() / 1000);
-
-      const isValid = (timestamp) => Math.abs(now - timestamp) <= maxAge;
-
-      expect(isValid(now)).toBe(true);
-      expect(isValid(now - 100)).toBe(true);
-      expect(isValid(now - 600)).toBe(false);
-    });
-  });
-
-  describe('delivery retry', () => {
-    it('should retry on failure', async () => {
-      let attempts = 0;
-      const maxRetries = 5;
-
-      const deliver = async () => {
-        attempts++;
-        if (attempts < 3) throw new Error('Connection refused');
-        return { status: 200 };
-      };
-
-      let result;
-      for (let i = 0; i < maxRetries; i++) {
-        try {
-          result = await deliver();
-          break;
-        } catch (e) {
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
-      }
-
-      expect(result.status).toBe(200);
-      expect(attempts).toBe(3);
-    });
-
-    it('should use exponential backoff', () => {
-      const baseDelay = 1000;
-      const maxDelay = 60000;
-
-      const getDelay = (attempt) => {
-        const delay = baseDelay * Math.pow(2, attempt);
-        return Math.min(delay, maxDelay);
-      };
-
-      expect(getDelay(0)).toBe(1000);
-      expect(getDelay(1)).toBe(2000);
-      expect(getDelay(2)).toBe(4000);
-      expect(getDelay(10)).toBe(60000);
-    });
-
-    it('should track delivery attempts', () => {
-      const deliveryLog = [];
-
-      const logAttempt = (webhookId, status, error) => {
-        deliveryLog.push({
-          webhookId,
-          status,
-          error,
-          timestamp: Date.now(),
-        });
-      };
-
-      logAttempt('wh-1', 'failed', 'Connection timeout');
-      logAttempt('wh-1', 'failed', 'Connection refused');
-      logAttempt('wh-1', 'success', null);
-
-      expect(deliveryLog).toHaveLength(3);
-      expect(deliveryLog[2].status).toBe('success');
-    });
-
-    it('should disable webhook after max failures', () => {
-      const webhook = { id: 'wh-1', active: true, consecutiveFailures: 0 };
-      const maxFailures = 10;
-
-      const recordFailure = (wh) => {
-        wh.consecutiveFailures++;
-        if (wh.consecutiveFailures >= maxFailures) {
-          wh.active = false;
-        }
-      };
-
+    it('should respect batch size', async () => {
       for (let i = 0; i < 10; i++) {
-        recordFailure(webhook);
+        engine.enqueue(`wh-${i}`, 'event', {});
       }
+      const results = await engine.processDeliveries();
+      expect(results.length).toBeLessThanOrEqual(5);
+    });
 
-      expect(webhook.active).toBe(false);
+    it('should retry failed deliveries up to maxRetries', async () => {
+      engine.enqueue('wh-1', 'a', {});
+      engine._deliver = jest.fn().mockRejectedValue(new Error('timeout'));
+
+      // First attempt fails
+      let results = await engine.processDeliveries();
+      expect(results[0].status).toBe('pending');
+      expect(results[0].attempts).toBe(1);
+
+      // Force nextAttemptAt to now for immediate retry
+      engine.pendingDeliveries[0].nextAttemptAt = Date.now();
+      results = await engine.processDeliveries();
+      expect(results[0].attempts).toBe(2);
+
+      // Third attempt -> should fail permanently (maxRetries=3)
+      engine.pendingDeliveries[0].nextAttemptAt = Date.now();
+      results = await engine.processDeliveries();
+      expect(results[0].status).toBe('failed');
+      expect(engine.getPendingCount()).toBe(0);
     });
   });
 
-  describe('payload formatting', () => {
-    it('should format event payload', () => {
-      const formatPayload = (event) => ({
-        id: event.id,
-        type: event.type,
-        created: new Date().toISOString(),
-        data: event.data,
-        api_version: '2024-01-01',
-      });
-
-      const payload = formatPayload({
-        id: 'evt-123',
-        type: 'document.created',
-        data: { docId: 'doc-1', title: 'Test' },
-      });
-
-      expect(payload.api_version).toBe('2024-01-01');
-      expect(payload.type).toBe('document.created');
+  describe('delivery status and history', () => {
+    it('should retrieve delivery status by id', async () => {
+      const delivery = engine.enqueue('wh-1', 'a', {});
+      const status = engine.getDeliveryStatus(delivery.id);
+      expect(status).toBeDefined();
+      expect(status.status).toBe('pending');
     });
 
-    it('should limit payload size', () => {
-      const maxPayloadSize = 65536;
+    it('should retrieve delivery history for a webhook', async () => {
+      engine.enqueue('wh-1', 'a', {});
+      engine.enqueue('wh-1', 'b', {});
+      engine.enqueue('wh-2', 'c', {});
+      await engine.processDeliveries();
 
-      const isValidSize = (payload) => {
-        return JSON.stringify(payload).length <= maxPayloadSize;
-      };
-
-      expect(isValidSize({ small: 'data' })).toBe(true);
-      expect(isValidSize({ large: 'x'.repeat(100000) })).toBe(false);
+      const history = engine.getDeliveryHistory('wh-1');
+      expect(history).toHaveLength(2);
     });
 
-    it('should exclude sensitive fields', () => {
-      const sanitize = (data) => {
-        const { password, secret, token, apiKey, ...safe } = data;
-        return safe;
-      };
-
-      const sanitized = sanitize({
-        userId: 'user-1',
-        email: 'test@test.com',
-        password: 'secret',
-        apiKey: 'key-123',
-      });
-
-      expect(sanitized.password).toBeUndefined();
-      expect(sanitized.apiKey).toBeUndefined();
-      expect(sanitized.userId).toBe('user-1');
-    });
-
-    it('should include delivery headers', () => {
-      const buildHeaders = (webhookId, signature, timestamp) => ({
-        'Content-Type': 'application/json',
-        'X-Webhook-Id': webhookId,
-        'X-Webhook-Signature': `sha256=${signature}`,
-        'X-Webhook-Timestamp': String(timestamp),
-        'User-Agent': 'CloudMatrix-Webhook/1.0',
-      });
-
-      const headers = buildHeaders('wh-1', 'abc123', 1700000000);
-      expect(headers['Content-Type']).toBe('application/json');
-      expect(headers['X-Webhook-Id']).toBe('wh-1');
-      expect(headers['X-Webhook-Signature']).toContain('sha256=');
+    it('should return null for unknown delivery id', () => {
+      expect(engine.getDeliveryStatus('nonexistent')).toBeNull();
     });
   });
 
-  describe('delivery queue', () => {
-    it('should queue webhook deliveries', () => {
-      const queue = [];
+  describe('failure rate', () => {
+    it('should calculate failure rate', async () => {
+      engine.enqueue('wh-1', 'a', {});
+      engine.enqueue('wh-1', 'b', {});
+      await engine.processDeliveries();
 
-      const enqueue = (webhookId, event) => {
-        queue.push({
-          webhookId,
-          event,
-          attempts: 0,
-          nextAttempt: Date.now(),
-          status: 'pending',
-        });
-      };
-
-      enqueue('wh-1', { type: 'document.created', docId: 'doc-1' });
-      enqueue('wh-2', { type: 'document.updated', docId: 'doc-2' });
-
-      expect(queue).toHaveLength(2);
-      expect(queue[0].status).toBe('pending');
+      // All succeeded
+      expect(engine.getFailureRate('wh-1')).toBe(0);
     });
 
-    it('should prioritize by next attempt time', () => {
-      const queue = [
-        { webhookId: 'wh-1', nextAttempt: Date.now() + 5000 },
-        { webhookId: 'wh-2', nextAttempt: Date.now() - 1000 },
-        { webhookId: 'wh-3', nextAttempt: Date.now() + 1000 },
-      ];
+    it('should return 0 for unknown webhook', () => {
+      expect(engine.getFailureRate('nonexistent')).toBe(0);
+    });
+  });
 
-      const sorted = [...queue].sort((a, b) => a.nextAttempt - b.nextAttempt);
-      expect(sorted[0].webhookId).toBe('wh-2');
+  describe('log cleanup', () => {
+    it('should clear old log entries', async () => {
+      engine.enqueue('wh-1', 'a', {});
+      await engine.processDeliveries();
+
+      // Hack: set createdAt to old time
+      engine.deliveryLog[0].createdAt = Date.now() - 100000000;
+      engine.clearLog(86400000);
+      expect(engine.deliveryLog).toHaveLength(0);
+    });
+  });
+});
+
+describe('SignatureVerifier', () => {
+  let verifier;
+
+  beforeEach(() => {
+    verifier = new SignatureVerifier({ timestampTolerance: 300 });
+  });
+
+  describe('sign', () => {
+    it('should generate a signature with timestamp', () => {
+      const result = verifier.sign({ test: 'data' }, 'secret-key');
+      expect(result.signature).toContain('t=');
+      expect(result.signature).toContain('v1=');
+      expect(result.timestamp).toBeDefined();
     });
 
-    it('should skip inactive webhooks', () => {
-      const webhooks = new Map();
-      webhooks.set('wh-1', { active: true, url: 'https://example.com/wh1' });
-      webhooks.set('wh-2', { active: false, url: 'https://example.com/wh2' });
-      webhooks.set('wh-3', { active: true, url: 'https://example.com/wh3' });
+    it('should produce different signatures for different secrets', () => {
+      const sig1 = verifier.sign('payload', 'secret-1');
+      const sig2 = verifier.sign('payload', 'secret-2');
+      expect(sig1.signature).not.toBe(sig2.signature);
+    });
+  });
 
-      const activeWebhooks = [...webhooks.entries()]
-        .filter(([, wh]) => wh.active)
-        .map(([id]) => id);
-
-      expect(activeWebhooks).toHaveLength(2);
-      expect(activeWebhooks).not.toContain('wh-2');
+  describe('verify', () => {
+    it('should verify a valid signature', () => {
+      const payload = { event: 'test' };
+      const secret = 'my-secret';
+      const { signature } = verifier.sign(payload, secret);
+      expect(verifier.verify(payload, signature, secret)).toBe(true);
     });
 
-    it('should deduplicate delivery events', () => {
-      const delivered = new Set();
-
-      const shouldDeliver = (eventId, webhookId) => {
-        const key = `${eventId}:${webhookId}`;
-        if (delivered.has(key)) return false;
-        delivered.add(key);
-        return true;
-      };
-
-      expect(shouldDeliver('evt-1', 'wh-1')).toBe(true);
-      expect(shouldDeliver('evt-1', 'wh-1')).toBe(false);
-      expect(shouldDeliver('evt-1', 'wh-2')).toBe(true);
+    it('should reject an invalid signature', () => {
+      const payload = { event: 'test' };
+      const { signature } = verifier.sign(payload, 'correct-secret');
+      expect(verifier.verify(payload, signature, 'wrong-secret')).toBe(false);
     });
 
-    it('should calculate delivery success rate', () => {
-      const stats = {
-        total: 100,
-        success: 85,
-        failed: 10,
-        pending: 5,
-      };
+    it('should reject replayed signatures beyond tolerance', () => {
+      const payload = 'test-data';
+      const secret = 'secret';
+      const { signature } = verifier.sign(payload, secret);
 
-      const successRate = stats.success / stats.total;
-      expect(successRate).toBe(0.85);
-
-      const failureRate = stats.failed / stats.total;
-      expect(failureRate).toBe(0.1);
+      // Tamper the timestamp to be old
+      const oldTimestamp = Math.floor(Date.now() / 1000) - 600;
+      const tamperedSig = signature.replace(/t=\d+/, `t=${oldTimestamp}`);
+      expect(verifier.verify(payload, tamperedSig, secret)).toBe(false);
     });
 
-    it('should batch webhook deliveries', () => {
-      const events = Array.from({ length: 25 }, (_, i) => ({
-        id: `evt-${i}`,
-        type: 'document.updated',
-      }));
+    it('should reject malformed signature strings', () => {
+      expect(verifier.verify('payload', 'garbage', 'secret')).toBe(false);
+    });
+  });
 
-      const batchSize = 10;
-      const batches = [];
-
-      for (let i = 0; i < events.length; i += batchSize) {
-        batches.push(events.slice(i, i + batchSize));
-      }
-
-      expect(batches).toHaveLength(3);
-      expect(batches[0]).toHaveLength(10);
-      expect(batches[2]).toHaveLength(5);
+  describe('getTimestamp', () => {
+    it('should extract timestamp from signature', () => {
+      const { signature, timestamp } = verifier.sign('data', 'key');
+      expect(verifier.getTimestamp(signature)).toBe(timestamp);
     });
 
-    it('should respect webhook timeout', async () => {
-      const timeout = 30000;
-      let timedOut = false;
+    it('should return null for invalid signature', () => {
+      expect(verifier.getTimestamp('invalid')).toBeNull();
+    });
+  });
+});
 
-      const deliverWithTimeout = async (url, payload, timeoutMs) => {
-        return new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            timedOut = true;
-            reject(new Error('Webhook delivery timed out'));
-          }, 10);
+describe('RetryScheduler', () => {
+  let scheduler;
 
-          setTimeout(() => {
-            clearTimeout(timer);
-            resolve({ status: 200 });
-          }, 5);
-        });
-      };
+  beforeEach(() => {
+    scheduler = new RetryScheduler({ maxRetries: 5, baseDelay: 1000, maxDelay: 60000, jitterFactor: 0 });
+  });
 
-      const result = await deliverWithTimeout('https://example.com/wh', {}, timeout);
-      expect(result.status).toBe(200);
+  describe('calculateNextRetry', () => {
+    it('should use exponential backoff', () => {
+      const d0 = scheduler.calculateNextRetry(0);
+      const d1 = scheduler.calculateNextRetry(1);
+      const d2 = scheduler.calculateNextRetry(2);
+
+      expect(d0).toBe(1000);
+      expect(d1).toBe(2000);
+      expect(d2).toBe(4000);
+    });
+
+    it('should cap at maxDelay', () => {
+      const d10 = scheduler.calculateNextRetry(10);
+      expect(d10).toBeLessThanOrEqual(60000);
+    });
+  });
+
+  describe('scheduleRetry', () => {
+    it('should schedule a retry', () => {
+      const result = scheduler.scheduleRetry('del-1', 0);
+      expect(result).not.toBeNull();
+      expect(result.deliveryId).toBe('del-1');
+      expect(result.delay).toBe(1000);
+    });
+
+    it('should return null when maxRetries exceeded', () => {
+      const result = scheduler.scheduleRetry('del-1', 5);
+      expect(result).toBeNull();
+    });
+
+    it('should store in schedules map', () => {
+      scheduler.scheduleRetry('del-1', 0);
+      expect(scheduler.getNextRetry('del-1')).not.toBeNull();
+    });
+  });
+
+  describe('cancelRetry', () => {
+    it('should cancel a scheduled retry', () => {
+      scheduler.scheduleRetry('del-1', 0);
+      expect(scheduler.cancelRetry('del-1')).toBe(true);
+      expect(scheduler.getNextRetry('del-1')).toBeNull();
+    });
+  });
+
+  describe('pending count', () => {
+    it('should track pending retries', () => {
+      scheduler.scheduleRetry('del-1', 0);
+      scheduler.scheduleRetry('del-2', 1);
+      expect(scheduler.getPendingCount()).toBe(2);
+    });
+  });
+
+  describe('cleanupCompleted', () => {
+    it('should remove completed deliveries from schedule', () => {
+      scheduler.scheduleRetry('del-1', 0);
+      scheduler.scheduleRetry('del-2', 0);
+      scheduler.cleanupCompleted(['del-1']);
+      expect(scheduler.getPendingCount()).toBe(1);
+    });
+  });
+});
+
+describe('TenantIsolation - checkQuota', () => {
+  let TenantIsolation;
+
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../services/admin/src/index');
+    TenantIsolation = mod.TenantIsolation;
+  });
+
+  it('checkQuota should allow usage at exactly limit-1', () => {
+    const isolation = new TenantIsolation();
+    isolation.createTenant('t1', { maxDocuments: 10 });
+    isolation.recordUsage('t1', 'documents', 9);
+
+    const result = isolation.checkQuota('t1', 'documents', 1);
+    // usage=9, amount=1, limit=10: total=10 which is AT the limit
+    // BUG: uses >= instead of >, blocking at exactly the limit
+    expect(result.allowed).toBe(true);
+  });
+
+  it('checkQuota should deny when usage would exceed limit', () => {
+    const isolation = new TenantIsolation();
+    isolation.createTenant('t1', { maxDocuments: 10 });
+    isolation.recordUsage('t1', 'documents', 10);
+
+    const result = isolation.checkQuota('t1', 'documents', 1);
+    // usage=10 + amount=1 = 11 > 10, should be denied
+    expect(result.allowed).toBe(false);
+  });
+
+  it('checkQuota off-by-one: usage + amount == limit should be allowed', () => {
+    const isolation = new TenantIsolation();
+    isolation.createTenant('t1', { maxUsers: 5 });
+    isolation.recordUsage('t1', 'users', 4);
+
+    // 4 + 1 = 5, exactly at limit, should be allowed (filling to capacity)
+    // BUG: >= makes 5 >= 5 true, so it's denied
+    const result = isolation.checkQuota('t1', 'users', 1);
+    expect(result.allowed).toBe(true);
+  });
+
+  it('checkQuota at exactly the quota boundary should permit usage', () => {
+    const isolation = new TenantIsolation();
+    isolation.createTenant('t1', { maxApiCalls: 100 });
+    isolation.recordUsage('t1', 'apiCalls', 99);
+
+    // 99 + 1 = 100, at limit, should be allowed
+    const result = isolation.checkQuota('t1', 'apiCalls', 1);
+    expect(result.allowed).toBe(true);
+  });
+
+  it('checkQuota remaining should be 0 when at capacity, not negative', () => {
+    const isolation = new TenantIsolation();
+    isolation.createTenant('t1', { maxDocuments: 5 });
+    isolation.recordUsage('t1', 'documents', 4);
+
+    const result = isolation.checkQuota('t1', 'documents', 1);
+    // At capacity: remaining should be 0
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(0);
+  });
+});
+
+describe('EventFilter', () => {
+  let filter;
+
+  beforeEach(() => {
+    filter = new EventFilter();
+  });
+
+  describe('exact matching', () => {
+    it('should match exact event names', () => {
+      filter.setFilter('wh-1', ['document.created']);
+      expect(filter.matchesFilter('wh-1', 'document.created')).toBe(true);
+      expect(filter.matchesFilter('wh-1', 'document.updated')).toBe(false);
+    });
+  });
+
+  describe('wildcard matching', () => {
+    it('should match wildcard patterns with .*', () => {
+      filter.setFilter('wh-1', ['document.*']);
+      expect(filter.matchesFilter('wh-1', 'document.created')).toBe(true);
+      expect(filter.matchesFilter('wh-1', 'document.updated')).toBe(true);
+      expect(filter.matchesFilter('wh-1', 'user.created')).toBe(false);
+    });
+
+    it('should match global wildcard *', () => {
+      filter.setFilter('wh-1', ['*']);
+      expect(filter.matchesFilter('wh-1', 'anything.here')).toBe(true);
+    });
+  });
+
+  describe('no filter', () => {
+    it('should allow all events when no filter set', () => {
+      expect(filter.matchesFilter('wh-1', 'anything')).toBe(true);
+    });
+
+    it('should allow all events when empty filter', () => {
+      filter.setFilter('wh-1', []);
+      expect(filter.matchesFilter('wh-1', 'anything')).toBe(true);
+    });
+  });
+
+  describe('getMatchingWebhooks', () => {
+    it('should return webhooks matching an event', () => {
+      filter.setFilter('wh-1', ['document.*']);
+      filter.setFilter('wh-2', ['user.*']);
+      filter.setFilter('wh-3', ['document.created']);
+
+      const matches = filter.getMatchingWebhooks('document.created', ['wh-1', 'wh-2', 'wh-3']);
+      expect(matches).toContain('wh-1');
+      expect(matches).toContain('wh-3');
+      expect(matches).not.toContain('wh-2');
+    });
+  });
+
+  describe('removeFilter', () => {
+    it('should remove filter for a webhook', () => {
+      filter.setFilter('wh-1', ['document.*']);
+      filter.removeFilter('wh-1');
+      expect(filter.getFilter('wh-1')).toEqual([]);
     });
   });
 });

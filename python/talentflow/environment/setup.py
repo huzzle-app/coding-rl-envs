@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .reward import RewardCalculator, TestResult, parse_pytest_output
+from .reward import RewardCalculator, TestResult, parse_pytest_output, BUG_CATEGORIES
 
 
 @dataclass
@@ -30,10 +30,10 @@ class TalentFlowEnvironment:
     RL Environment for Django debugging challenge (Terminal Bench v2).
 
     This environment provides:
-    - A buggy Django codebase with 25 interconnected bugs:
+    - A buggy Django codebase with 31 interconnected bugs:
       - 12 original bugs (A1-E2): Database, Celery, OAuth, Config, Business logic
-      - 13 additional bugs (F1-I2, S5-S10): Heisenbugs, environmental, concurrency, security, setup
-    - 250+ pytest tests that verify bug fixes
+      - 19 additional bugs (F1-I2, S5-S10): Heisenbugs, environmental, concurrency, security, setup
+    - 320+ pytest tests that verify bug fixes
     - Sparse reward function with thresholds and regression penalties
     - Setup bugs that prevent the project from even running initially
 
@@ -280,6 +280,11 @@ class TalentFlowEnvironment:
             if (file_path.startswith('tests/') or '/tests/' in file_path
                     or basename.startswith('test_') or basename == 'conftest.py'):
                 return {'success': False, 'error': 'Editing test files is not allowed'}
+
+        # Reject edits to environment/reward infrastructure
+        if action_type == 'edit' and file_path:
+            if (file_path.startswith('environment/') or '/environment/' in file_path):
+                return {'success': False, 'error': 'Editing environment files is not allowed'}
 
         content = action.get('content', '')
         if len(content) > 100_000:

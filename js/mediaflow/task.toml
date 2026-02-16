@@ -4,8 +4,9 @@ version = "1.0"
 name = "mediaflow"
 description = "Debug a distributed Node.js video streaming platform with microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
-tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
+tags = ["debug", "feature", "refactor", "optimize", "api", "migration", "greenfield"]
 language = "javascript"
 
 [agent]

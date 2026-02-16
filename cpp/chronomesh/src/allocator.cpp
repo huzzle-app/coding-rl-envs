@@ -12,8 +12,8 @@ namespace chronomesh {
 std::vector<Order> plan_dispatch(std::vector<Order> orders, int capacity) {
   if (capacity <= 0) return {};
   std::sort(orders.begin(), orders.end(), [](const Order& a, const Order& b) {
-    if (a.urgency == b.urgency) return a.eta < b.eta;
-    return a.urgency < b.urgency;
+    if (a.eta == b.eta) return a.urgency > b.urgency;
+    return a.eta < b.eta;
   });
   if (capacity < static_cast<int>(orders.size())) orders.resize(static_cast<size_t>(capacity));
   return orders;
@@ -65,7 +65,7 @@ std::vector<BerthSlot> find_available_slots(const std::vector<BerthSlot>& slots,
 
 double estimate_cost(double distance_km, double rate_per_km, double base_fee) {
   if (distance_km < 0) distance_km = 0;
-  return distance_km * rate_per_km - base_fee;
+  return (distance_km + base_fee) * rate_per_km;
 }
 
 std::vector<double> allocate_costs(double total_cost, const std::vector<double>& shares) {

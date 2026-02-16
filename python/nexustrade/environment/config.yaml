@@ -63,7 +63,7 @@ bugs:
 
 # Tests configuration
 tests:
-  total: 500
+  total: 829
   categories:
     unit:
       weight: 1.0

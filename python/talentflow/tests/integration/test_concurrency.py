@@ -193,7 +193,10 @@ class TestRaceConditions:
             t.join()
 
         final = _score_update_counter['value']
-        assert final >= initial
+        # With 3 threads each processing candidates, the counter should increment
+        # With proper locking, increments should be exact (initial + 3)
+        assert final == initial + 3, \
+            f"Counter should be {initial + 3} with thread-safe updates, got {final}"
 
 
 class TestPhantomReads:
@@ -321,7 +324,10 @@ class TestCeleryTaskConcurrency:
     @pytest.mark.bug_b2
     def test_chord_result_collection(self, db):
         """Test chord callback result collection."""
-        pass
+        from apps.jobs.tasks import score_single_candidate
+
+        assert score_single_candidate.ignore_result is False, \
+            "score_single_candidate must not have ignore_result=True for chord pattern"
 
     def test_task_retry_idempotency(self, candidate, db):
         """Test task retries are idempotent."""

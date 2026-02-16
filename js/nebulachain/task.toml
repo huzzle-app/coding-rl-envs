@@ -4,6 +4,7 @@ version = "1.0"
 name = "nebulachain"
 description = "Resolve critical defects in a javascript apex-principal reliability platform"
 difficulty = "hard"
+tier = "apex-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "javascript"

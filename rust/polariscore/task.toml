@@ -4,6 +4,7 @@ version = "1.0"
 name = "polariscore"
 description = "Debug a Rust logistics orchestration platform with services"
 difficulty = "hard"
+tier = "hyper-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "rust"

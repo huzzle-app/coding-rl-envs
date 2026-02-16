@@ -27,12 +27,13 @@ TEST(HashTableTest, test_size_after_remove) {
 // ========== Bug A2 (probe table variant): Hash probe chain broken by deletion ==========
 
 TEST(HashTableTest, test_probe_table_find_after_delete) {
-    
-    // the second key should still be findable via linear probing.
-    // With the bug, the deleted slot breaks the probe chain.
+
+    // When two keys collide and the first is deleted, the second key should
+    // still be findable via linear probing. With the bug, the deleted slot
+    // (tombstone) stops the probe chain, making the second key unfindable.
     HashTable ht(16);  // small capacity to force collisions
 
-    // Insert several keys that might collide
+    // Insert several keys that will be in a probe chain
     ht.set_with_probe("key_a", Value("value_a"));
     ht.set_with_probe("key_b", Value("value_b"));
     ht.set_with_probe("key_c", Value("value_c"));
@@ -42,24 +43,47 @@ TEST(HashTableTest, test_probe_table_find_after_delete) {
     EXPECT_TRUE(ht.get_with_probe("key_b").has_value());
     EXPECT_TRUE(ht.get_with_probe("key_c").has_value());
 
-    // Delete middle key
-    // (We need a custom remove_with_probe - for this test, simulate by internal state)
-    // The point is: after deletion, tombstone should allow continued probing
+    // Delete the first key - creates a tombstone
+    EXPECT_TRUE(ht.remove_with_probe("key_a"));
+
+    // With the bug, the tombstone breaks the probe chain. Keys that were
+    // placed after key_a in the probe sequence become unreachable.
+    // After fix, the tombstone should be skipped during probing.
+    EXPECT_TRUE(ht.get_with_probe("key_b").has_value())
+        << "Probe chain broken by tombstone - key_b unfindable after key_a deleted";
+    EXPECT_TRUE(ht.get_with_probe("key_c").has_value())
+        << "Probe chain broken by tombstone - key_c unfindable after key_a deleted";
+
+    // The deleted key should no longer be findable
+    EXPECT_FALSE(ht.get_with_probe("key_a").has_value());
 }
 
 TEST(HashTableTest, test_probe_table_tombstone_handling) {
-    
-    // Empty stops the probe, tombstone allows it to continue
+
+    // Tombstones (deleted=true) must be treated as "continue probing",
+    // while truly empty slots (occupied=false, deleted=false) stop the probe.
     HashTable ht(4);  // very small to guarantee collisions
 
     ht.set_with_probe("a", Value("1"));
     ht.set_with_probe("b", Value("2"));
+    ht.set_with_probe("c", Value("3"));
 
-    // Both should be retrievable
-    auto val_a = ht.get_with_probe("a");
-    auto val_b = ht.get_with_probe("b");
-    EXPECT_TRUE(val_a.has_value());
-    EXPECT_TRUE(val_b.has_value());
+    // Delete "a" and "b" to create tombstones
+    ht.remove_with_probe("a");
+    ht.remove_with_probe("b");
+
+    // "c" was placed after "a" and "b" in the probe chain.
+    // With the bug, the tombstones stop the probe and "c" is lost.
+    auto val_c = ht.get_with_probe("c");
+    EXPECT_TRUE(val_c.has_value())
+        << "Tombstone handling broken: get_with_probe stops at deleted slots";
+    if (val_c.has_value()) {
+        EXPECT_EQ(val_c->as_string(), "3");
+    }
+
+    // Deleted keys should not be found
+    EXPECT_FALSE(ht.get_with_probe("a").has_value());
+    EXPECT_FALSE(ht.get_with_probe("b").has_value());
 }
 
 // ========== Basic hashtable operations ==========

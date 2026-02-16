@@ -6,9 +6,14 @@ import (
 
 	"gridweaver/services/audit"
 	"gridweaver/services/auth"
+	svcdr "gridweaver/services/demandresponse"
 	"gridweaver/services/dispatch"
+	svcest "gridweaver/services/estimator"
+	"gridweaver/services/forecast"
 	"gridweaver/services/gateway"
+	svcoutage "gridweaver/services/outage"
 	"gridweaver/services/settlement"
+	svctopo "gridweaver/services/topology"
 	"gridweaver/shared/contracts"
 )
 
@@ -35,12 +40,16 @@ func TestServicesExtended(t *testing.T) {
 		{"GatewayRouteCommand", func(t *testing.T) {
 			cmd := contracts.GridCommand{Type: "dispatch.plan"}
 			route := gateway.RouteCommand(cmd)
-			_ = route 
+			if route != "dispatch" {
+				t.Fatalf("dispatch.plan should route to dispatch, got %s", route)
+			}
 		}},
 		{"GatewayValidateHeaders", func(t *testing.T) {
 			headers := map[string]string{"X-Request-ID": "r1", "X-Region": "west"}
 			result := gateway.ValidateHeaders(headers)
-			_ = result 
+			if !result {
+				t.Fatalf("expected valid headers with X-Request-ID and X-Region")
+			}
 		}},
 		{"GatewayNormalizeRegion", func(t *testing.T) {
 			if gateway.NormalizeRegion(" WEST ") != "west" {
@@ -57,7 +66,9 @@ func TestServicesExtended(t *testing.T) {
 			start := time.Now()
 			end := start.Add(100 * time.Millisecond)
 			metrics := gateway.RequestMetrics(start, end)
-			_ = metrics 
+			if metrics["latency_ms"] <= 0 {
+				t.Fatalf("expected positive latency for 100ms duration, got %d", metrics["latency_ms"])
+			}
 		}},
 		{"AuthHandle", func(t *testing.T) {
 			cmd := contracts.GridCommand{CommandID: "a1", Region: "west", Type: "auth"}
@@ -71,10 +82,21 @@ func TestServicesExtended(t *testing.T) {
 			if len(roles) != 3 {
 				t.Fatalf("expected 3 roles")
 			}
+			found := false
+			for _, r := range roles {
+				if r == "grid_admin" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("expected grid_admin in default roles, got %v", roles)
+			}
 		}},
 		{"AuthValidateCredentials", func(t *testing.T) {
 			result := auth.ValidateCredentials("hash123", "hash123")
-			_ = result 
+			if !result {
+				t.Fatalf("matching credentials should validate")
+			}
 		}},
 		{"AuthRoleExists", func(t *testing.T) {
 			if !auth.RoleExists("observer") {
@@ -130,15 +152,21 @@ func TestServicesExtended(t *testing.T) {
 		}},
 		{"SettlementCalculateTotal", func(t *testing.T) {
 			total := settlement.CalculateTotal(10.5, 100)
-			_ = total 
+			if total != 1050 {
+				t.Fatalf("expected 1050 (10.5 * 100), got %d", total)
+			}
 		}},
 		{"SettlementApplyDiscount", func(t *testing.T) {
 			result := settlement.ApplyDiscount(10000, 10)
-			_ = result 
+			if result != 9000 {
+				t.Fatalf("expected 9000 (10%% discount on 10000), got %d", result)
+			}
 		}},
 		{"SettlementAggregateSettlements", func(t *testing.T) {
 			total := settlement.AggregateSettlements([]int64{100, 200, -50, 300})
-			_ = total 
+			if total != 550 {
+				t.Fatalf("expected sum 550, got %d", total)
+			}
 		}},
 		{"SettlementFormatCents", func(t *testing.T) {
 			str := settlement.FormatCents(1234)
@@ -163,8 +191,12 @@ func TestServicesExtended(t *testing.T) {
 		{"AuditRecordEntry", func(t *testing.T) {
 			svc := audit.New()
 			svc.RecordEntry("admin", "dispatch", "grid-west", "success", 1000)
-			if len(svc.AllEntries()) != 1 {
+			entries := svc.AllEntries()
+			if len(entries) != 1 {
 				t.Fatalf("expected 1 entry")
+			}
+			if entries[0].Timestamp != 1000 {
+				t.Fatalf("expected timestamp 1000, got %d", entries[0].Timestamp)
 			}
 		}},
 		{"AuditQueryByActor", func(t *testing.T) {
@@ -172,13 +204,17 @@ func TestServicesExtended(t *testing.T) {
 			svc.RecordEntry("admin", "dispatch", "grid", "ok", 1000)
 			svc.RecordEntry("user", "read", "grid", "ok", 1001)
 			results := svc.QueryByActor("admin")
-			_ = results 
+			if len(results) != 1 {
+				t.Fatalf("expected 1 admin entry, got %d", len(results))
+			}
 		}},
 		{"AuditEntryCount", func(t *testing.T) {
 			svc := audit.New()
 			svc.RecordEntry("admin", "dispatch", "grid", "ok", 1000)
 			count := svc.EntryCount()
-			_ = count 
+			if count != 1 {
+				t.Fatalf("expected count 1, got %d", count)
+			}
 		}},
 		{"AuditHasEntry", func(t *testing.T) {
 			svc := audit.New()
@@ -205,6 +241,53 @@ func TestServicesExtended(t *testing.T) {
 			svc.ClearEntries()
 			if len(svc.AllEntries()) != 0 {
 				t.Fatalf("expected empty after clear")
+			}
+		}},
+		{"OutageResolveNonExistent", func(t *testing.T) {
+			svc := svcoutage.New()
+			svc.ReportOutage("o1")
+			if !svc.ResolveOutage("o1") {
+				t.Fatalf("expected true when resolving existing outage")
+			}
+			if svc.ResolveOutage("nonexistent") {
+				t.Fatalf("expected false when resolving non-existent outage")
+			}
+		}},
+		{"TopologyDefaultRegionsUnique", func(t *testing.T) {
+			regions := svctopo.DefaultRegions()
+			seen := map[string]bool{}
+			for _, r := range regions {
+				if seen[r] {
+					t.Fatalf("duplicate region %q in DefaultRegions", r)
+				}
+				seen[r] = true
+			}
+		}},
+		{"ForecastTemperatureImpact", func(t *testing.T) {
+			// At 22°C (comfortable), impact on 1000MW should be near baseline
+			result := forecast.TemperatureImpact(22, 1000)
+			if result < 900 || result > 1100 {
+				t.Fatalf("expected ~1000 for 22C baseline, got %f (using Fahrenheit reference?)", result)
+			}
+		}},
+		{"EstimatorCacheLoadPersists", func(t *testing.T) {
+			svc := svcest.New()
+			svc.CacheLoad("west", 500.0)
+			svc.CacheLoad("east", 300.0)
+			svc.ClearCache()
+			_, ok := svc.GetCachedLoad("west")
+			if ok {
+				t.Fatalf("expected cache cleared after ClearCache")
+			}
+		}},
+		{"DRDispatchCount", func(t *testing.T) {
+			svc := svcdr.New()
+			svc.RecordDispatch("d1")
+			svc.RecordDispatch("d2")
+			svc.RecordDispatch("d3")
+			count := svc.DispatchCount()
+			if count != 3 {
+				t.Fatalf("expected dispatch count 3 after 3 dispatches, got %d", count)
 			}
 		}},
 		{"ContractValidation", func(t *testing.T) {

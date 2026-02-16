@@ -4,6 +4,7 @@ version = "1.0"
 name = "synapsenet"
 description = "Debug a distributed Python AI/ML platform with microservices"
 difficulty = "hard"
+tier = "distinguished"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "python"

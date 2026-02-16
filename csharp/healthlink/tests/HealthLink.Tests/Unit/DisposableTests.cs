@@ -9,39 +9,36 @@ namespace HealthLink.Tests.Unit;
 public class DisposableTests
 {
     [Fact]
-    public async Task test_httpclient_factory_used()
+    public void test_httpclient_factory_used()
     {
-        
-        var logger = new Mock<ILogger<ExternalApiService>>();
-        var service = new ExternalApiService(logger.Object);
-
-        // This creates a new HttpClient per call - socket exhaustion
-        var result = await service.GetInsuranceVerificationAsync("test-123");
-        // After fix, should use factory
+        // ExternalApiService should accept IHttpClientFactory, not create HttpClient directly
+        var ctors = typeof(ExternalApiService).GetConstructors();
+        var hasFactoryParam = ctors.Any(c =>
+            c.GetParameters().Any(p => p.ParameterType == typeof(IHttpClientFactory)));
+        hasFactoryParam.Should().BeTrue(
+            "ExternalApiService should accept IHttpClientFactory to avoid socket exhaustion");
     }
 
     [Fact]
-    public async Task test_no_socket_exhaustion()
+    public void test_no_socket_exhaustion()
     {
-        
-        var logger = new Mock<ILogger<ExternalApiService>>();
-        var service = new ExternalApiService(logger.Object);
-
-        // Making multiple calls shouldn't exhaust sockets
-        for (int i = 0; i < 5; i++)
-        {
-            await service.GetLabResultsAsync($"order-{i}");
-        }
+        // Verify that ExternalApiService does not directly instantiate HttpClient
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "ExternalApiService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().NotContain("new HttpClient()",
+            "should use IHttpClientFactory instead of new HttpClient()");
     }
 
     [Fact]
-    public async Task test_async_disposable_awaited()
+    public void test_async_disposable_awaited()
     {
-        
-        var service = new ExportService();
-        var data = new List<object> { "item1", "item2", "item3" };
-        var result = await service.ExportToCsvAsync(data);
-        result.Should().NotBeEmpty();
+        // ExportService should use 'await using' for IAsyncDisposable resources
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Services", "ExportService.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().Contain("await using",
+            "CsvWriter implements IAsyncDisposable; must use 'await using' not 'using'");
     }
 
     [Fact]
@@ -80,19 +77,18 @@ public class DisposableTests
         var writer = new CsvWriter(stream);
         await writer.WriteLineAsync("test");
         await writer.DisposeAsync();
-        // After disposal, writing should fail or be no-op
+        // After disposal, stream should have been flushed with content
+        stream.ToArray().Length.Should().BeGreaterThan(0,
+            "CsvWriter should flush content to stream before disposal");
     }
 
     [Fact]
     public void test_event_handler_unsubscribed()
     {
-        
-        var scheduler = new SchedulingService();
-        var handler = new EventHandler((s, e) => { });
-        scheduler.SlotAvailable += handler;
-        
-        // After fix, should call scheduler.SlotAvailable -= handler in Dispose
-        scheduler.SlotAvailable -= handler;
+        // SchedulingService should implement IDisposable to clean up event subscriptions
+        typeof(SchedulingService).GetInterfaces()
+            .Should().Contain(typeof(IDisposable),
+                "SchedulingService should implement IDisposable to unsubscribe event handlers");
     }
 
     [Fact]

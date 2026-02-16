@@ -13,9 +13,6 @@ public interface IJwtTokenService
 
 public class JwtTokenService : IJwtTokenService
 {
-    // === BUG I2: JWT signing key too short ===
-    // HMAC-SHA256 requires a key of at least 256 bits (32 bytes).
-    // This key is only 10 bytes, making it trivially brute-forceable.
     private readonly string _secretKey = "short-key!";
     private readonly string _issuer = "HealthLink";
 

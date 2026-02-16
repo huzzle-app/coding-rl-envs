@@ -22,7 +22,7 @@ Each scenario describes symptoms, business impact, and failing tests to guide in
 ## Completion Criteria
 
 - Full suite passes: `ruby -Ilib -Itests tests/run_all.rb`
-- **9,263+ tests** pass deterministically
+- **10,855 tests** pass deterministically
 - Replay, scheduling, routing, and policy behavior remains stable
 - Security, workflow, and compliance invariants remain enforced
 - Do **not** edit files under `tests/`

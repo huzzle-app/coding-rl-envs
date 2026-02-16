@@ -46,14 +46,14 @@ RSpec.describe PaymentConsumer do
       consumer = described_class.new
       event = { 'order_id' => order.id, 'payment_id' => 'pay_456' }
 
-      expect { consumer.send(:handle_payment_processed, event) }.not_to raise_error rescue nil
+      expect { consumer.send(:handle_payment_processed, event) }.not_to raise_error
     end
 
     it 'handles events with symbol keys' do
       consumer = described_class.new
       event = { order_id: order.id, payment_id: 'pay_789' }
 
-      expect { consumer.send(:handle_payment_processed, event) }.not_to raise_error rescue nil
+      expect { consumer.send(:handle_payment_processed, event) }.not_to raise_error
     end
   end
 

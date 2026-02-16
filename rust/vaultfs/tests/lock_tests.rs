@@ -10,6 +10,48 @@ use vaultfs::services::lock_manager::LockManager;
 use std::sync::Arc;
 use std::time::Duration;
 
+// ===== Source-verification anti-tampering tests =====
+
+/// Verify lock_manager.rs uses consistent lock ordering (C1).
+/// The deadlock occurs because lock_file_for_user acquires file_lock then user_lock,
+/// while lock_user_files acquires user_lock then file_lock.
+#[test]
+fn test_lock_manager_source_consistent_ordering() {
+    let src = include_str!("../src/services/lock_manager.rs");
+
+    // Extract both function bodies
+    let lock_file_fn = src.split("fn lock_file_for_user")
+        .nth(1)
+        .unwrap_or("");
+    let lock_file_end = lock_file_fn.find("\n    pub ").unwrap_or(lock_file_fn.len());
+    let lock_file_body = &lock_file_fn[..lock_file_end];
+
+    let lock_user_fn = src.split("fn lock_user_files")
+        .nth(1)
+        .unwrap_or("");
+    let lock_user_end = lock_user_fn.find("\n    pub ").unwrap_or(lock_user_fn.len());
+    let lock_user_body = &lock_user_fn[..lock_user_end];
+
+    // After fix, both functions should acquire locks in the SAME order.
+    // One common fix: always acquire file_locks before user_locks (or vice versa).
+    // Another fix: use sorted key ordering or a single unified lock map.
+    //
+    // Detect the bug pattern: lock_file_for_user has file_locks before user_locks,
+    // but lock_user_files has user_locks before file_locks.
+    let file_first_in_lock_file = lock_file_body.find("file_lock")
+        .unwrap_or(usize::MAX) < lock_file_body.find("user_lock").unwrap_or(usize::MAX);
+    let user_first_in_lock_user = lock_user_body.find("user_lock")
+        .unwrap_or(usize::MAX) < lock_user_body.find("file_lock").unwrap_or(usize::MAX);
+
+    // If one acquires file first and the other acquires user first, that's inconsistent = deadlock
+    assert!(
+        !(file_first_in_lock_file && user_first_in_lock_user),
+        "lock_file_for_user and lock_user_files must use consistent lock ordering (C1). \
+         Currently lock_file_for_user acquires file_locks first, but lock_user_files acquires \
+         user_locks first. This causes deadlock when called concurrently."
+    );
+}
+
 #[tokio::test]
 async fn test_file_lock_acquire_release() {
     let manager = LockManager::new();

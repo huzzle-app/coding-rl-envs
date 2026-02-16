@@ -3,7 +3,9 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -196,9 +198,9 @@ func TestTradeExecutionFlow(t *testing.T) {
 		sellerBalance := getLedgerBalance("seller-1")
 
 		assert.Greater(t, buyerBalance, 0.0,
-			"BUG C2: Buyer's balance should be tracked after trade")
+			"Buyer's balance should be tracked after trade")
 		assert.Greater(t, sellerBalance, 0.0,
-			"BUG C2: Seller's balance should be tracked after trade")
+			"Seller's balance should be tracked after trade")
 	})
 }
 
@@ -241,19 +243,23 @@ func TestConcurrentOrderFlow(t *testing.T) {
 	t.Run("should handle concurrent matching", func(t *testing.T) {
 		// Submit many orders that will match
 		var wg sync.WaitGroup
+		matchCount := int32(0)
 
 		// Buyers
 		for i := 0; i < 25; i++ {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				submitOrder(map[string]interface{}{
-					"user_id":  "buyer-" + string(rune(idx)),
+				err := submitOrder(map[string]interface{}{
+					"user_id":  fmt.Sprintf("buyer-%d", idx),
 					"symbol":   "BTC-USD",
 					"side":     "buy",
 					"price":    50000.0,
 					"quantity": 0.1,
 				})
+				if err == nil {
+					atomic.AddInt32(&matchCount, 1)
+				}
 			}(i)
 		}
 
@@ -262,17 +268,25 @@ func TestConcurrentOrderFlow(t *testing.T) {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				submitOrder(map[string]interface{}{
-					"user_id":  "seller-" + string(rune(idx)),
+				err := submitOrder(map[string]interface{}{
+					"user_id":  fmt.Sprintf("seller-%d", idx),
 					"symbol":   "BTC-USD",
 					"side":     "sell",
 					"price":    50000.0,
 					"quantity": 0.1,
 				})
+				if err == nil {
+					atomic.AddInt32(&matchCount, 1)
+				}
 			}(i)
 		}
 
 		wg.Wait()
+
+		// 25 buys + 25 sells at same price should produce 25 matches
+		trades := getTradeCount("BTC-USD")
+		assert.Equal(t, 25, trades,
+			"25 crossing buy/sell pairs should produce 25 trades")
 	})
 }
 
@@ -308,7 +322,7 @@ func TestEventSourcingFlow(t *testing.T) {
 		// When C1 is fixed, replayEvents should reorder by sequence before processing
 		state := replayEvents(events)
 		assert.Equal(t, "filled", state.Status,
-			"BUG C1: Even with out-of-order events, final state should be 'filled' after reordering")
+			"Even with out-of-order events, final state should be 'filled' after reordering")
 	})
 
 	t.Run("should snapshot for fast recovery", func(t *testing.T) {
@@ -337,8 +351,14 @@ func performRiskCheck(ctx context.Context, order map[string]interface{}) RiskRes
 	return RiskResult{Allowed: true}
 }
 
+var cancelledOrders sync.Map
+
 func cancelOrder(orderID, userID string) error {
-	// Simulated cancel
+	// Bug D3: no atomic check-and-update — filled orders can be "cancelled"
+	if orderID == "filled-order-123" {
+		return fmt.Errorf("cannot cancel filled order")
+	}
+	cancelledOrders.Store(orderID, true)
 	return nil
 }
 
@@ -389,4 +409,10 @@ type Snapshot struct {
 
 func createSnapshot(userID string) *Snapshot {
 	return &Snapshot{Timestamp: time.Now()}
+}
+
+// getTradeCount returns the number of trades for a symbol.
+// Bug: no actual matching happens in stubs, always returns 0.
+func getTradeCount(symbol string) int {
+	return 0
 }

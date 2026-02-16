@@ -163,5 +163,20 @@ add_test(NAME resilience_replay_no_gap COMMAND chronomesh_tests resilience_repla
 add_test(NAME stats_ema_increasing COMMAND chronomesh_tests stats_ema_increasing)
 add_test(NAME stats_ema_constant COMMAND chronomesh_tests stats_ema_constant)
 
+# Cross-module integration tests
+add_test(NAME routing_score_priority_ordering COMMAND chronomesh_tests routing_score_priority_ordering)
+add_test(NAME policy_deescalate_restricted COMMAND chronomesh_tests policy_deescalate_restricted)
+add_test(NAME dispatch_cost_pipeline COMMAND chronomesh_tests dispatch_cost_pipeline)
+add_test(NAME policy_full_cycle COMMAND chronomesh_tests policy_full_cycle)
+add_test(NAME security_contracts_integration COMMAND chronomesh_tests security_contracts_integration)
+add_test(NAME stats_percentile_consistency COMMAND chronomesh_tests stats_percentile_consistency)
+add_test(NAME resilience_checkpoint_gap COMMAND chronomesh_tests resilience_checkpoint_gap)
+add_test(NAME workflow_force_complete_and_count COMMAND chronomesh_tests workflow_force_complete_and_count)
+
+# Cross-module interaction tests (pass-rate lowering)
+add_test(NAME classify_breach_pipeline COMMAND chronomesh_tests classify_breach_pipeline)
+add_test(NAME stats_sample_variance COMMAND chronomesh_tests stats_sample_variance)
+add_test(NAME urgency_dispatch_chain COMMAND chronomesh_tests urgency_dispatch_chain)
+
 # Hyper-matrix parametric test (9200 scenarios)
 add_test(NAME hyper_matrix COMMAND chronomesh_tests hyper_matrix)

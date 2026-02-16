@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests for Vehicle model entity focusing on:
  *   B1 - Mutable HashMap key: equals/hashCode uses mutable licensePlate field.
  *         After mutation, HashMap and HashSet lookups fail.
- *         Fix: Use only id (immutable after persist) for equals/hashCode.
+ *         Lookups and removals break after the key field is mutated.
  */
 @Tag("unit")
 public class VehicleModelTest {
@@ -36,7 +36,6 @@ public class VehicleModelTest {
         v2.setVin("VIN0002");
 
         // Two different vehicles with same plate considered equal (problematic)
-        // Fixed version should use id-based equality
         assertEquals(v1, v2, "Buggy: equals uses licensePlate, so same plate = equal");
     }
 
@@ -57,8 +56,6 @@ public class VehicleModelTest {
         // Mutate the licensePlate (which is used in hashCode)
         vehicle.setLicensePlate("CHANGED-001");
 
-        
-        // Fixed version using id-based hashCode would still find it
         String retrieved = map.get(vehicle);
         assertNotNull(retrieved,
             "HashMap lookup should succeed after mutation if equals/hashCode uses immutable id");
@@ -82,7 +79,7 @@ public class VehicleModelTest {
 
         
         assertTrue(set.contains(vehicle),
-            "HashSet should still contain vehicle after licensePlate mutation (fix: use id)");
+            "HashSet should still contain vehicle after licensePlate mutation");
     }
 
     @Test
@@ -100,12 +97,12 @@ public class VehicleModelTest {
         
         map.remove(vehicle);
         assertEquals(0, map.size(),
-            "Should be able to remove vehicle from map even after licensePlate change (fix: id-based hashCode)");
+            "Should be able to remove vehicle from map even after licensePlate change");
     }
 
     @Test
     void test_equals_shouldUseId_notLicensePlate() {
-        // Fixed version: two vehicles with same id are equal regardless of licensePlate
+        // Two vehicles with same id should be equal regardless of licensePlate
         Vehicle v1 = new Vehicle();
         v1.setId(1L);
         v1.setLicensePlate("AAA-111");
@@ -121,7 +118,7 @@ public class VehicleModelTest {
 
     @Test
     void test_hashCode_consistent_after_mutation() {
-        // Fixed version: hashCode should not change when mutable fields change
+        // hashCode should not change when mutable fields change
         Vehicle vehicle = new Vehicle();
         vehicle.setId(42L);
         vehicle.setLicensePlate("CONS-001");
@@ -131,7 +128,7 @@ public class VehicleModelTest {
         int hash2 = vehicle.hashCode();
 
         assertEquals(hash1, hash2,
-            "hashCode should remain stable after mutable field changes (fix: use id-based)");
+            "hashCode should remain stable after mutable field changes");
     }
 
     // --- JPA relationship tests ---

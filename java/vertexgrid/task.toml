@@ -2,8 +2,9 @@ version = "1.0"
 
 [metadata]
 name = "vertexgrid"
-description = "Resolve critical defects in a java apex-principal reliability platform"
+description = "Fix 1250 bugs across 11 Java microservice modules with 15000+ tests"
 difficulty = "hard"
+tier = "apex-principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "java"

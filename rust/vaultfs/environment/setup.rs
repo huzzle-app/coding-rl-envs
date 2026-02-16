@@ -32,14 +32,17 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
     m.insert("A1", vec![
         "test_upload_file_no_use_after_move",
         "test_upload_preserves_metadata_size",
+        "test_upload_source_no_use_after_move",
     ]);
     m.insert("A2", vec![
         "test_get_changes_returns_owned_values",
         "test_changes_since_does_not_hold_lock",
+        "test_sync_source_returns_owned",
     ]);
     m.insert("A3", vec![
         "test_versioning_create_no_double_borrow",
         "test_versioning_prune_no_double_borrow",
+        "test_versioning_source_immutable_ref",
     ]);
     m.insert("A4", vec![
         "test_list_files_no_use_after_move",
@@ -54,6 +57,9 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
     m.insert("B1", vec![
         "test_cache_get_with_fallback_returns_owned",
         "test_cache_config_value_returns_owned",
+        "test_cache_source_get_with_fallback_returns_owned",
+        "test_cache_source_get_config_value_returns_owned",
+        "test_cache_fallback_idempotent",
     ]);
     m.insert("B2", vec![
         "test_file_repo_lifetime_annotation",
@@ -73,6 +79,8 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
         "test_no_deadlock_consistent_lock_order",
         "test_lock_file_for_user_completes",
         "test_lock_user_files_completes",
+        "test_lock_manager_source_consistent_ordering",
+        "test_concurrent_interleaved_locks_no_deadlock",
     ]);
     m.insert("C2", vec![
         "test_save_to_disk_uses_async_io",
@@ -81,6 +89,7 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
     m.insert("C3", vec![
         "test_record_change_atomic_version",
         "test_concurrent_record_no_duplicate_version",
+        "test_sync_source_atomic_version",
     ]);
     m.insert("C4", vec![
         "test_upload_multipart_future_is_send",
@@ -89,6 +98,7 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
     m.insert("C5", vec![
         "test_notification_send_with_receiver_alive",
         "test_notification_subscribe_before_send",
+        "test_notification_source_keeps_receiver",
     ]);
 
     // D: Error Handling (4 bugs)
@@ -108,12 +118,14 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
         "test_temp_file_drop_no_panic",
         "test_temp_dir_drop_no_panic",
         "test_temp_file_missing_no_panic",
+        "test_temp_file_source_no_unwrap_in_drop",
     ]);
 
     // E: Memory / Resource (3 bugs)
     m.insert("E1", vec![
         "test_folder_no_rc_cycle_leak",
         "test_folder_uses_weak_parent",
+        "test_folder_source_uses_weak",
     ]);
     m.insert("E2", vec![
         "test_chunker_file_handle_closed_on_error",
@@ -122,6 +134,7 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
     m.insert("E3", vec![
         "test_sync_bounded_channel",
         "test_sync_backpressure",
+        "test_sync_source_bounded_channel",
     ]);
 
     // F: Security (4 bugs)
@@ -136,6 +149,7 @@ pub fn bug_test_mapping() -> HashMap<&'static str, Vec<&'static str>> {
         "test_sql_injection_sort_column_validated",
     ]);
     m.insert("F3", vec![
+        "test_api_key_verification_correct",
         "test_api_key_constant_time_comparison",
         "test_signature_constant_time_comparison",
         "test_hash_constant_time_comparison",

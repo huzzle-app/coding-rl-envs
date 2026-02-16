@@ -29,11 +29,11 @@ SERVICE_TEST_GROUPS = {
 # Constants
 # ============================================================================
 
-TOTAL_TESTS = 350  # Approximate based on 2 tests per bug
+TOTAL_TESTS = 9468  # 9200 hyper-matrix + 234 advanced + 27 unit + 4 integration + 2 chaos + 1 contracts
 
-# 8-tier hyper-principal thresholds
-THRESHOLDS = [0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
-REWARDS = [0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
+# 9-tier hyper-principal thresholds (with 10% smoke tier for early signal)
+THRESHOLDS = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85, 0.95, 1.0]
+REWARDS = [0.02, 0.05, 0.12, 0.22, 0.38, 0.55, 0.78, 1.0]
 
 # ============================================================================
 # Reward Functions

@@ -222,11 +222,19 @@ class TestRouteTablePropagation:
 
     def test_route_propagation_complete(self):
         """D7: Route changes should propagate to all route tables."""
-        assert True, "Route propagation completeness check"
+        # The network views module should have a route propagation function
+        from services.network import views
+        assert hasattr(views, 'propagate_route_tables') or hasattr(views, 'propagate_routes'), \
+            "Network views module must have a route propagation function (propagate_route_tables or propagate_routes)"
 
     def test_route_table_convergence(self):
         """D7: All route tables should converge to consistent state."""
-        assert True, "Route table convergence check"
+        from services.network import views
+        # Route propagation should handle multiple route tables
+        propagate_fn = getattr(views, 'propagate_route_tables', None) or \
+                       getattr(views, 'propagate_routes', None)
+        assert propagate_fn is not None, \
+            "Route propagation function must exist to ensure route table convergence"
 
 
 class TestNATPortAllocation:
@@ -281,8 +289,14 @@ class TestHealthCheckFlap:
         for _ in range(5):
             hc.record_check(success=True)
             hc.record_check(success=False)
-        # Should be stable in one state
-        assert True, "Flap detection check"
+        # With default thresholds of 1, alternating checks cause flapping
+        # Proper implementation should dampen rapid transitions
+        # Check that default thresholds require multiple consecutive checks
+        default_hc = HealthCheckState(target_id="t2")
+        assert default_hc.healthy_threshold >= 3, \
+            f"Default healthy_threshold should be >= 3 to prevent flapping, got {default_hc.healthy_threshold}"
+        assert default_hc.unhealthy_threshold >= 3, \
+            f"Default unhealthy_threshold should be >= 3 to prevent flapping, got {default_hc.unhealthy_threshold}"
 
     def test_consecutive_failures_marks_unhealthy(self):
         """D9: Multiple consecutive failures should mark unhealthy."""

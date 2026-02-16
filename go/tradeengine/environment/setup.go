@@ -170,6 +170,17 @@ func (e *Environment) ValidateAction(action string) *ValidationError {
 				Hint:   "fix the source code, not the tests",
 			}
 		}
+		// Reject edits to environment/reward infrastructure
+		if strings.HasPrefix(editParts[0], "environment/") ||
+			editParts[0] == "go.mod" || editParts[0] == "go.sum" ||
+			editParts[0] == "task.toml" || editParts[0] == "instruction.md" ||
+			strings.HasPrefix(editParts[0], "solution/") {
+			return &ValidationError{
+				Action: action,
+				Reason: "editing environment infrastructure files is not allowed",
+				Hint:   "fix bugs in internal/, pkg/, or cmd/ source code only",
+			}
+		}
 
 	case ActionRun:
 		if content == "" {
@@ -191,6 +202,41 @@ func (e *Environment) ValidateAction(action string) *ValidationError {
 					Action: action,
 					Reason: fmt.Sprintf("command not allowed: %s", runParts[0]),
 					Hint:   "allowed commands: go, docker, cat, ls, grep, find, head, tail, wc",
+				}
+			}
+			// Restrict docker to safe compose operations only
+			if runParts[0] == "docker" {
+				if len(runParts) < 2 || runParts[1] != "compose" {
+					return &ValidationError{
+						Action: action,
+						Reason: "only 'docker compose' commands are allowed",
+						Hint:   "use 'docker compose up -d', 'docker compose down', or 'docker compose restart'",
+					}
+				}
+				if len(runParts) >= 3 {
+					safeDockerOps := map[string]bool{
+						"up": true, "down": true, "restart": true,
+						"ps": true, "logs": true, "start": true, "stop": true,
+					}
+					if !safeDockerOps[runParts[2]] {
+						return &ValidationError{
+							Action: action,
+							Reason: fmt.Sprintf("docker compose operation not allowed: %s", runParts[2]),
+							Hint:   "allowed: up, down, restart, ps, logs, start, stop",
+						}
+					}
+				}
+			}
+			// Prevent go run/build of environment package
+			if runParts[0] == "go" && len(runParts) >= 3 {
+				for _, arg := range runParts[2:] {
+					if strings.Contains(arg, "environment") || strings.Contains(arg, "scoring") {
+						return &ValidationError{
+							Action: action,
+							Reason: "running environment infrastructure code is not allowed",
+							Hint:   "use TEST: action to run tests instead",
+						}
+					}
 				}
 			}
 		}

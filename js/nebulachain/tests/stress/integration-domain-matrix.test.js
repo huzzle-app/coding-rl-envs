@@ -145,6 +145,11 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       const t2 = notifications.shouldThrottle({ recentCount: 20, maxPerWindow: 10, severity: 1 });
       assert.equal(t2, true, 'severity 1 at 2x limit must be throttled');
       assert.equal(t1, t2, 'throttle must not vary by severity when over limit');
+
+      // Severity must not grant exemption between limit and 2x limit
+      const t3 = notifications.shouldThrottle({ recentCount: 15, maxPerWindow: 10, severity: 7 });
+      assert.equal(t3, true,
+        'severity 7 at 1.5x limit must be throttled — no severity exemptions');
     }
 
     if (bucket === 10) {
@@ -156,6 +161,9 @@ for (let idx = 0; idx < TOTAL_CASES; idx += 1) {
       // dequeue into scheduling
       const batch = [];
       while (!pq.isEmpty()) batch.push(pq.dequeue());
+      // dequeue must return items in priority order (highest urgency first)
+      assert.equal(batch[0].id, 'high',
+        'dequeue must return highest urgency item first, not lowest');
       const planned = planWindow(batch, 2);
       assert.equal(planned[0].id, 'high');
       assert.equal(planned[1].id, 'med');

@@ -4,6 +4,7 @@ version = "1.0"
 name = "taskforge"
 description = "Debug a Rails project management platform"
 difficulty = "medium"
+tier = "senior"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "ruby"

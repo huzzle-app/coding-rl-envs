@@ -1,190 +1,231 @@
 /**
  * WebSocket Security Tests
+ *
+ * Tests WebSocket authentication and authorization using actual source services.
+ * Tests bugs D1 (JWT secret validation), D4 (timing), A4 (stale closure)
  */
 
+// Set JWT_SECRET before requiring JwtService so the config module picks it up
+process.env.JWT_SECRET = 'test-secret-key-that-is-long-enough-for-signing';
+const JwtService = require('../../src/services/auth/jwt.service');
+const BroadcastService = require('../../src/services/collaboration/broadcast.service');
+const PresenceService = require('../../src/services/collaboration/presence.service');
+
 describe('WebSocket Security', () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    process.env.JWT_SECRET = 'test-secret-key-that-is-long-enough-for-signing';
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    jest.clearAllMocks();
+  });
+
   describe('connection authentication', () => {
-    it('should require authentication for connection', () => {
-      const authenticate = (socket) => {
-        const token = socket.handshake?.auth?.token;
-        if (!token) {
-          throw new Error('Authentication required');
-        }
-        return { userId: 'user-1' };
-      };
+    it('should generate valid token for socket auth', () => {
+      const jwtService = new JwtService();
 
-      const validSocket = { handshake: { auth: { token: 'valid-token' } } };
-      const invalidSocket = { handshake: { auth: {} } };
+      const payload = { userId: 'user-1', socketId: 'socket-123' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
 
-      expect(() => authenticate(validSocket)).not.toThrow();
-      expect(() => authenticate(invalidSocket)).toThrow('Authentication required');
+      expect(token).toBeDefined();
+      expect(typeof token).toBe('string');
+
+      const decoded = jwtService.verifyToken(token);
+      expect(decoded.userId).toBe('user-1');
     });
 
-    it('should validate token on each message', () => {
-      const sessions = new Map();
-      sessions.set('socket-1', { userId: 'user-1', expiresAt: Date.now() + 3600000 });
+    it('should reject connection with expired token', async () => {
+      const jwtService = new JwtService();
 
-      const validateSession = (socketId) => {
-        const session = sessions.get(socketId);
-        if (!session || Date.now() > session.expiresAt) {
-          return false;
-        }
-        return true;
-      };
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1ms' });
 
-      expect(validateSession('socket-1')).toBe(true);
-      expect(validateSession('unknown')).toBe(false);
+      // Wait for expiry
+      await new Promise(r => setTimeout(r, 50));
+
+      // BUG D1: verifyToken returns null instead of throwing on expired tokens
+      // When fixed, this should throw an error
+      expect(() => jwtService.verifyToken(token)).toThrow();
+    });
+
+    it('should reject tampered socket auth tokens', () => {
+      const jwtService = new JwtService();
+
+      const token = jwtService.generateToken({ userId: 'user-1' });
+      const parts = token.split('.');
+      parts[1] = Buffer.from(JSON.stringify({ userId: 'hacked' })).toString('base64url');
+      const tamperedToken = parts.join('.');
+
+      // BUG D1: verifyToken returns null instead of throwing
+      expect(() => jwtService.verifyToken(tamperedToken)).toThrow();
+    });
+
+    it('should not accept tokens signed with wrong secret', () => {
+      const jwtService = new JwtService();
+      const token = jwtService.generateToken({ userId: 'user-1' });
+
+      process.env.JWT_SECRET = 'different-secret-key-32-chars-long!!';
+      const otherService = new JwtService();
+
+      // BUG D1: verifyToken returns null instead of throwing
+      expect(() => otherService.verifyToken(token)).toThrow();
     });
   });
 
   describe('message validation', () => {
-    it('should validate message format', () => {
-      const validateMessage = (message) => {
-        if (typeof message !== 'object') return false;
-        if (!message.type || typeof message.type !== 'string') return false;
-        return true;
+    it('should validate broadcast message format via BroadcastService', async () => {
+      const mockIo = {
+        to: jest.fn().mockReturnThis(),
+        emit: jest.fn(),
+      };
+      const mockRedis = {
+        publish: jest.fn().mockResolvedValue(1),
       };
 
-      expect(validateMessage({ type: 'cursor-move', x: 100 })).toBe(true);
-      expect(validateMessage('invalid')).toBe(false);
-      expect(validateMessage({ x: 100 })).toBe(false);
+      const broadcastService = new BroadcastService(mockIo, mockRedis);
+
+      await broadcastService.broadcastToBoard('board-1', 'element:update', {
+        elementId: 'elem-1',
+        changes: { x: 100 },
+      });
+
+      expect(mockIo.to).toHaveBeenCalledWith('board:board-1');
+      expect(mockIo.emit).toHaveBeenCalledWith('element:update', expect.objectContaining({
+        elementId: 'elem-1',
+      }));
     });
 
-    it('should sanitize message content', () => {
-      const sanitize = (content) => {
-        if (typeof content === 'string') {
-          return content.replace(/<script>/gi, '').replace(/<\/script>/gi, '');
-        }
-        return content;
+    it('should limit broadcast to correct room only', async () => {
+      const mockIo = {
+        to: jest.fn().mockReturnThis(),
+        except: jest.fn().mockReturnThis(),
+        emit: jest.fn(),
+      };
+      const mockRedis = {
+        publish: jest.fn().mockResolvedValue(1),
       };
 
-      const malicious = '<script>alert("xss")</script>';
-      expect(sanitize(malicious)).not.toContain('<script>');
-    });
+      const broadcastService = new BroadcastService(mockIo, mockRedis);
 
-    it('should limit message size', () => {
-      const maxSize = 65536; // 64KB
+      await broadcastService.broadcastToBoard('board-1', 'update', { data: 'test' }, 'socket-exclude');
 
-      const validateSize = (message) => {
-        const size = JSON.stringify(message).length;
-        return size <= maxSize;
-      };
-
-      const smallMessage = { type: 'update', data: 'small' };
-      const largeMessage = { type: 'update', data: 'x'.repeat(100000) };
-
-      expect(validateSize(smallMessage)).toBe(true);
-      expect(validateSize(largeMessage)).toBe(false);
-    });
-  });
-
-  describe('room authorization', () => {
-    it('should verify board access before joining room', () => {
-      const boardPermissions = new Map();
-      boardPermissions.set('board-1', new Set(['user-1', 'user-2']));
-
-      const canJoinRoom = (userId, boardId) => {
-        const members = boardPermissions.get(boardId);
-        return members?.has(userId) || false;
-      };
-
-      expect(canJoinRoom('user-1', 'board-1')).toBe(true);
-      expect(canJoinRoom('user-3', 'board-1')).toBe(false);
-    });
-
-    it('should prevent room enumeration', () => {
-      const rooms = new Map();
-      rooms.set('board-abc123', { name: 'Secret Board' });
-
-      const getRoom = (roomId, userId) => {
-        const room = rooms.get(roomId);
-        if (!room) {
-          // Same response for not found and unauthorized
-          return { error: 'Room not available' };
-        }
-        return room;
-      };
-
-      // Both should return same error to prevent enumeration
-      const notFound = getRoom('board-xyz', 'user-1');
-      expect(notFound.error).toBe('Room not available');
+      // Should target the correct room
+      expect(mockIo.to).toHaveBeenCalledWith('board:board-1');
+      // Should not broadcast to unrelated rooms
+      expect(mockIo.to).not.toHaveBeenCalledWith('board:board-2');
     });
   });
 
-  describe('rate limiting', () => {
-    it('should limit messages per second', () => {
-      const messageCount = new Map();
-      const maxPerSecond = 50;
-
-      const checkRateLimit = (socketId) => {
-        const now = Math.floor(Date.now() / 1000);
-        const key = `${socketId}:${now}`;
-
-        const count = (messageCount.get(key) || 0) + 1;
-        messageCount.set(key, count);
-
-        return count <= maxPerSecond;
+  describe('presence security', () => {
+    it('should track user presence via PresenceService', async () => {
+      const mockRedis = {
+        hset: jest.fn().mockResolvedValue(1),
+        hdel: jest.fn().mockResolvedValue(1),
+        hgetall: jest.fn().mockResolvedValue({}),
+        expire: jest.fn().mockResolvedValue(1),
       };
 
-      // Simulate 60 messages
-      let allowed = 0;
-      for (let i = 0; i < 60; i++) {
-        if (checkRateLimit('socket-1')) allowed++;
+      const presenceService = new PresenceService(mockRedis);
+      const mockSocket = { id: 'socket-1', on: jest.fn(), off: jest.fn() };
+      const user = { id: 'user-1', firstName: 'Test', lastName: 'User' };
+
+      const presence = await presenceService.trackUser(mockSocket, 'board-1', user);
+
+      expect(mockRedis.hset).toHaveBeenCalledWith(
+        'presence:board-1',
+        'user-1',
+        expect.any(String)
+      );
+    });
+
+    it('should clean up presence on disconnect', async () => {
+      const mockRedis = {
+        hset: jest.fn().mockResolvedValue(1),
+        hdel: jest.fn().mockResolvedValue(1),
+        hgetall: jest.fn().mockResolvedValue({}),
+        expire: jest.fn().mockResolvedValue(1),
+      };
+
+      const presenceService = new PresenceService(mockRedis);
+      const mockSocket = { id: 'socket-1', on: jest.fn(), off: jest.fn() };
+      const user = { id: 'user-1', firstName: 'Test', lastName: 'User' };
+
+      await presenceService.trackUser(mockSocket, 'board-1', user);
+      await presenceService.removeUser(mockSocket, 'board-1', 'user-1');
+
+      expect(mockRedis.hdel).toHaveBeenCalledWith('presence:board-1', 'user-1');
+    });
+
+    /**
+     * BUG A3: Heartbeat listener not removed on disconnect — memory leak
+     */
+    it('should remove heartbeat listener on user removal', async () => {
+      const mockRedis = {
+        hset: jest.fn().mockResolvedValue(1),
+        hdel: jest.fn().mockResolvedValue(1),
+        hgetall: jest.fn().mockResolvedValue({}),
+        expire: jest.fn().mockResolvedValue(1),
+      };
+
+      const presenceService = new PresenceService(mockRedis);
+      const mockSocket = { id: 'socket-1', on: jest.fn(), off: jest.fn() };
+      const user = { id: 'user-1', firstName: 'Test', lastName: 'User' };
+
+      await presenceService.trackUser(mockSocket, 'board-1', user);
+      await presenceService.removeUser(mockSocket, 'board-1', 'user-1');
+
+      // BUG A3: socket.off('heartbeat', ...) is never called
+      expect(mockSocket.off).toHaveBeenCalledWith('heartbeat', expect.any(Function));
+    });
+  });
+
+  describe('rate limiting and DoS protection', () => {
+    it('should handle rapid cursor updates without crashing', async () => {
+      const mockRedis = {
+        hset: jest.fn().mockResolvedValue(1),
+        hgetall: jest.fn().mockResolvedValue({}),
+        expire: jest.fn().mockResolvedValue(1),
+      };
+
+      const presenceService = new PresenceService(mockRedis);
+      const mockSocket = { id: 'socket-1', on: jest.fn(), off: jest.fn() };
+      const user = { id: 'user-1', firstName: 'Test', lastName: 'User' };
+
+      await presenceService.trackUser(mockSocket, 'board-1', user);
+
+      // Rapid cursor updates should not crash
+      const updates = [];
+      for (let i = 0; i < 100; i++) {
+        updates.push(presenceService.updateCursor('board-1', 'user-1', { x: i, y: i }));
       }
 
-      expect(allowed).toBe(50);
+      await expect(Promise.all(updates)).resolves.toBeDefined();
     });
 
-    it('should disconnect on excessive violations', () => {
-      const violations = new Map();
-      const maxViolations = 3;
-
-      const recordViolation = (socketId) => {
-        const count = (violations.get(socketId) || 0) + 1;
-        violations.set(socketId, count);
-        return count >= maxViolations;
+    it('should handle concurrent user tracking', async () => {
+      const mockRedis = {
+        hset: jest.fn().mockResolvedValue(1),
+        hdel: jest.fn().mockResolvedValue(1),
+        hgetall: jest.fn().mockResolvedValue({}),
+        expire: jest.fn().mockResolvedValue(1),
       };
 
-      expect(recordViolation('socket-1')).toBe(false);
-      expect(recordViolation('socket-1')).toBe(false);
-      expect(recordViolation('socket-1')).toBe(true); // Should disconnect
-    });
-  });
+      const presenceService = new PresenceService(mockRedis);
 
-  describe('DoS protection', () => {
-    it('should limit concurrent connections per user', () => {
-      const connections = new Map();
-      const maxConnections = 5;
+      // Track 10 users concurrently
+      const promises = Array(10).fill(null).map((_, i) => {
+        const socket = { id: `socket-${i}`, on: jest.fn(), off: jest.fn() };
+        const user = { id: `user-${i}`, firstName: `User`, lastName: `${i}` };
+        return presenceService.trackUser(socket, 'board-1', user);
+      });
 
-      const canConnect = (userId) => {
-        const count = connections.get(userId) || 0;
-        if (count >= maxConnections) return false;
-        connections.set(userId, count + 1);
-        return true;
-      };
+      await Promise.all(promises);
 
-      // Try to connect 7 times
-      let connected = 0;
-      for (let i = 0; i < 7; i++) {
-        if (canConnect('user-1')) connected++;
-      }
-
-      expect(connected).toBe(5);
-    });
-
-    it('should handle malformed messages gracefully', () => {
-      const handleMessage = (raw) => {
-        try {
-          const message = typeof raw === 'string' ? JSON.parse(raw) : raw;
-          return { success: true, message };
-        } catch (error) {
-          return { success: false, error: 'Invalid message format' };
-        }
-      };
-
-      expect(handleMessage('{"valid": true}').success).toBe(true);
-      expect(handleMessage('not json').success).toBe(false);
-      expect(handleMessage(null).success).toBe(true); // null is valid JSON
+      expect(presenceService.getUserCount('board-1')).toBe(10);
     });
   });
 });

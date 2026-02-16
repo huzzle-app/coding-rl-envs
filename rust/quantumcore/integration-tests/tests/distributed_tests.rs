@@ -2,12 +2,28 @@
 //!
 //! Tests cover: G1-G8 distributed systems bugs, L1-L8 setup/config bugs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::path::PathBuf;
 use parking_lot::{Mutex, RwLock};
+
+// =============================================================================
+// Source-code verification helpers
+// =============================================================================
+
+fn workspace_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir.parent().unwrap().to_path_buf()
+}
+
+fn read_source(relative_path: &str) -> String {
+    let path = workspace_root().join(relative_path);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
+}
 
 // =============================================================================
 // G1: Event Ordering Tests
@@ -15,7 +31,7 @@ use parking_lot::{Mutex, RwLock};
 
 #[test]
 fn test_g1_event_ordering_guaranteed() {
-    
+
     let events: Vec<u64> = (0..100).collect();
     let processed = Arc::new(Mutex::new(Vec::new()));
 
@@ -32,7 +48,7 @@ fn test_g1_event_ordering_guaranteed() {
 
 #[test]
 fn test_g1_nats_sequence_order() {
-    
+
     let sequences: Vec<u64> = vec![1, 2, 3, 5, 4, 6]; // Out of order
 
     let mut last_seq = 0;
@@ -69,12 +85,26 @@ fn test_g1_causal_ordering() {
 }
 
 // =============================================================================
+// G1: Event Ordering Source Verification
+// =============================================================================
+
+#[test]
+fn test_g1_event_ordering_preserved() {
+    // BUG G1: NATS publish doesn't use JetStream for ordered delivery
+    let src = read_source("shared/src/nats.rs");
+    // Should use JetStream for ordered, persistent messaging
+    let has_jetstream = src.contains("jetstream") || src.contains("JetStream");
+    assert!(has_jetstream,
+        "NATS client should use JetStream for guaranteed event ordering");
+}
+
+// =============================================================================
 // G2: Distributed Lock Tests
 // =============================================================================
 
 #[test]
 fn test_g2_distributed_lock_released() {
-    
+
     let lock = Arc::new(Mutex::new(()));
 
     // Acquire and release
@@ -91,7 +121,7 @@ fn test_g2_distributed_lock_released() {
 
 #[test]
 fn test_g2_position_lock_cleanup() {
-    
+
     let locks: Arc<RwLock<HashMap<String, bool>>> = Arc::new(RwLock::new(HashMap::new()));
 
     // Acquire lock
@@ -108,14 +138,16 @@ fn test_g2_position_lock_cleanup() {
 
 #[test]
 fn test_g2_lock_timeout() {
-    // Distributed locks should have timeout
-    let lock_acquired_at = Instant::now();
-    let lock_ttl = Duration::from_secs(30);
-
-    thread::sleep(Duration::from_millis(10));
-
-    let elapsed = lock_acquired_at.elapsed();
-    assert!(elapsed < lock_ttl, "Lock should not have expired yet");
+    // BUG G2: Distributed locks should have TTL/timeout to prevent deadlocks
+    let src = read_source("services/positions/src/tracker.rs");
+    // Position tracker should implement lock timeouts or TTL on position locks
+    let has_timeout = src.contains("ttl") || src.contains("timeout")
+        || src.contains("expire") || src.contains("lease")
+        || src.contains("Duration");
+    // Also check for version-based optimistic locking with expected_version
+    let has_optimistic = src.contains("expected_version") || src.contains("compare_and_swap");
+    assert!(has_timeout || has_optimistic,
+        "Distributed locks should have TTL/timeout or optimistic locking to prevent deadlocks");
 }
 
 // =============================================================================
@@ -124,16 +156,18 @@ fn test_g2_lock_timeout() {
 
 #[test]
 fn test_g3_split_brain_prevented() {
-    
-    let leaders: Vec<bool> = vec![true, false, false];
-    let active_count: usize = leaders.iter().filter(|&&x| x).count();
-
-    assert_eq!(active_count, 1, "Only one leader should be active");
+    // BUG G3: Matching engine should have fencing tokens to prevent split-brain
+    let src = read_source("services/matching/src/engine.rs");
+    let has_fencing = src.contains("epoch") || src.contains("fence")
+        || src.contains("generation") || src.contains("term")
+        || src.contains("leader_id");
+    assert!(has_fencing,
+        "Matching engine should have fencing tokens or epoch numbers to prevent split-brain");
 }
 
 #[test]
 fn test_g3_matching_failover_safe() {
-    
+
     let primary_active = Arc::new(AtomicBool::new(true));
     let secondary_active = Arc::new(AtomicBool::new(false));
 
@@ -159,7 +193,7 @@ fn test_g3_matching_failover_safe() {
 
 #[test]
 fn test_g4_idempotency_key_unique() {
-    
+
     use std::collections::HashSet;
 
     let mut keys: HashSet<String> = HashSet::new();
@@ -172,7 +206,7 @@ fn test_g4_idempotency_key_unique() {
 
 #[test]
 fn test_g4_order_idempotent() {
-    
+
     let processed_keys: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
     let idempotency_key = "order_123";
@@ -188,14 +222,13 @@ fn test_g4_order_idempotent() {
 
 #[test]
 fn test_g4_idempotency_key_format() {
-    // Keys should be meaningful and traceable
-    let client_id = "client_123";
-    let request_id = "req_456";
-    let timestamp = 1234567890u64;
-
-    let key = format!("{}_{}_{}", client_id, request_id, timestamp);
-    assert!(key.contains(client_id));
-    assert!(key.contains(request_id));
+    // BUG G4: Order service should use proper idempotency keys (hash-based or UUID)
+    let src = read_source("services/orders/src/service.rs");
+    // The create_order function should check for duplicate client_order_id
+    let has_dedup = src.contains("client_order_id")
+        && (src.contains("contains_key") || src.contains("exists") || src.contains("duplicate"));
+    assert!(has_dedup,
+        "Order service should check for duplicate client_order_id to ensure idempotency");
 }
 
 // =============================================================================
@@ -204,7 +237,7 @@ fn test_g4_idempotency_key_format() {
 
 #[test]
 fn test_g5_saga_compensation_correct() {
-    
+
     let mut steps_completed: Vec<&str> = Vec::new();
     let mut compensations_run: Vec<&str> = Vec::new();
 
@@ -228,7 +261,7 @@ fn test_g5_saga_compensation_correct() {
 
 #[test]
 fn test_g5_ledger_rollback_complete() {
-    
+
     let mut ledger_entries: Vec<i64> = Vec::new();
 
     // Record debits and credits
@@ -246,7 +279,7 @@ fn test_g5_ledger_rollback_complete() {
 
 #[test]
 fn test_g6_circuit_breaker_correct() {
-    
+
     let failure_count = Arc::new(AtomicU64::new(0));
     let circuit_open = Arc::new(AtomicBool::new(false));
     let failure_threshold = 5u64;
@@ -264,7 +297,7 @@ fn test_g6_circuit_breaker_correct() {
 
 #[test]
 fn test_g6_gateway_circuit_state() {
-    
+
     #[derive(Debug, Clone, Copy, PartialEq)]
     enum CircuitState {
         Closed,
@@ -306,55 +339,57 @@ fn test_g6_circuit_breaker_reset() {
     assert_eq!(failure_count.load(Ordering::SeqCst), 0, "Circuit should be reset");
 }
 
+#[test]
+fn test_g6_circuit_breaker_per_service() {
+    // BUG G6: Circuit breaker state should be per-service, not shared
+    let src = read_source("services/gateway/src/middleware.rs");
+    // Rate limit state should identify clients properly
+    // The bug is using X-Forwarded-For which is spoofable
+    let has_per_service = src.contains("service") || src.contains("endpoint")
+        || src.contains("target");
+    // At minimum, state should not be globally shared across services
+    assert!(has_per_service || src.contains("HashMap"),
+        "Circuit breaker should maintain per-service state");
+}
+
 // =============================================================================
-// G7: Retry with Backoff Tests
+// G7: Retry with Backoff Tests (source-verifying)
 // =============================================================================
 
 #[test]
 fn test_g7_retry_with_backoff() {
-    
-    let base_delay_ms = 100u64;
-    let max_retries = 5;
-
-    let mut delays: Vec<u64> = Vec::new();
-    for attempt in 0..max_retries {
-        let delay = base_delay_ms * 2u64.pow(attempt);
-        delays.push(delay);
-    }
-
-    // Delays should increase exponentially
-    assert_eq!(delays, vec![100, 200, 400, 800, 1600]);
+    // BUG G7: HTTP client retries immediately without backoff
+    let src = read_source("shared/src/http.rs");
+    // Retry logic MUST include a delay/sleep between attempts
+    let has_backoff = src.contains("sleep") || src.contains("delay")
+        || src.contains("backoff") || src.contains("Duration");
+    // Check that there's actual waiting between retries (not just timeout config)
+    let retry_section = src.split("for attempt").nth(1).unwrap_or("");
+    let has_wait_in_retry = retry_section.contains("sleep") || retry_section.contains("delay");
+    assert!(has_backoff && has_wait_in_retry,
+        "HTTP retry logic must include exponential backoff (sleep/delay between retries)");
 }
 
 #[test]
 fn test_g7_no_retry_storm() {
-    
-    let base_delay = 100u64;
-    let jitter_range = 50u64;
-
-    // Simulate jittered delays
-    let delays: Vec<u64> = (0..10).map(|i| {
-        let jitter = (i * 7) % jitter_range; // Pseudo-random jitter
-        base_delay + jitter
-    }).collect();
-
-    // Delays should not all be the same
-    let unique: std::collections::HashSet<_> = delays.iter().collect();
-    assert!(unique.len() > 1, "Jitter should create varied delays");
+    // BUG G7: Retries should include jitter to prevent thundering herd
+    let src = read_source("shared/src/http.rs");
+    let has_jitter = src.contains("jitter") || src.contains("rand")
+        || src.contains("random") || src.contains("thread_rng");
+    assert!(has_jitter,
+        "Retry logic should include jitter to prevent retry storms / thundering herd");
 }
 
 #[test]
 fn test_g7_max_retry_limit() {
-    // Retries should be bounded
-    let max_retries = 5;
-    let mut attempts = 0;
-
-    while attempts < max_retries {
-        attempts += 1;
-        // Simulate failure
-    }
-
-    assert_eq!(attempts, max_retries, "Should stop after max retries");
+    // G7: Retries should be bounded and use exponential backoff
+    let src = read_source("shared/src/http.rs");
+    assert!(src.contains("max_retries"), "Should have a max retry limit");
+    // Verify exponential pattern: delay should grow with each attempt
+    let has_exponential = src.contains("pow") || src.contains("* 2")
+        || src.contains("exponential") || src.contains("<< attempt");
+    assert!(has_exponential,
+        "Retry delay should grow exponentially (not fixed interval)");
 }
 
 // =============================================================================
@@ -363,8 +398,8 @@ fn test_g7_max_retry_limit() {
 
 #[test]
 fn test_g8_leader_election_safe() {
-    
-    let candidates = vec!["node_1", "node_2", "node_3"];
+
+    let _candidates = vec!["node_1", "node_2", "node_3"];
     let votes: HashMap<&str, u32> = vec![
         ("node_1", 2),
         ("node_2", 1),
@@ -377,7 +412,7 @@ fn test_g8_leader_election_safe() {
 
 #[test]
 fn test_g8_matching_leader_consistent() {
-    
+
     let leader_view: HashMap<&str, &str> = vec![
         ("node_1", "node_1"), // Each node's view of who is leader
         ("node_2", "node_1"),
@@ -388,13 +423,24 @@ fn test_g8_matching_leader_consistent() {
     assert_eq!(unique_leaders.len(), 1, "All nodes should agree on leader");
 }
 
+#[test]
+fn test_g8_leader_election_stable() {
+    // BUG G8: Leader election should use proper consensus
+    let src = read_source("services/matching/src/engine.rs");
+    // Matching engine should have leader election or consensus mechanism
+    let has_election = src.contains("leader") || src.contains("election")
+        || src.contains("consensus") || src.contains("raft");
+    assert!(has_election,
+        "Matching engine should implement leader election for safe failover");
+}
+
 // =============================================================================
 // L1: NATS Connection Tests
 // =============================================================================
 
 #[test]
 fn test_l1_nats_reconnection() {
-    
+
     let connected = Arc::new(AtomicBool::new(true));
     let reconnect_attempts = Arc::new(AtomicU64::new(0));
 
@@ -416,18 +462,13 @@ fn test_l1_nats_reconnection() {
 
 #[test]
 fn test_l1_nats_connection_recovery() {
-    // Connection should be recovered gracefully
-    let connection_state = Arc::new(RwLock::new("connected"));
-
-    // Disconnect
-    *connection_state.write() = "disconnected";
-
-    // Recover
-    *connection_state.write() = "reconnecting";
-    thread::sleep(Duration::from_millis(10));
-    *connection_state.write() = "connected";
-
-    assert_eq!(*connection_state.read(), "connected");
+    // BUG L1: NATS client should use ConnectOptions with reconnect callbacks
+    let src = read_source("shared/src/nats.rs");
+    // Should use ConnectOptions for resilient connection
+    let has_reconnect = src.contains("ConnectOptions")
+        && (src.contains("reconnect") || src.contains("retry_on_initial"));
+    assert!(has_reconnect,
+        "NATS client should use ConnectOptions with reconnection handling, not bare connect()");
 }
 
 // =============================================================================
@@ -436,7 +477,7 @@ fn test_l1_nats_connection_recovery() {
 
 #[test]
 fn test_l3_db_pool_under_load() {
-    
+
     let pool_size = 10;
     let active_connections = Arc::new(AtomicU64::new(0));
     let max_active = Arc::new(AtomicU64::new(0));
@@ -470,21 +511,16 @@ fn test_l3_db_pool_under_load() {
 
 #[test]
 fn test_l3_connection_pool_exhaustion() {
-    // Pool exhaustion should be handled gracefully
-    let pool_size = 5;
-    let mut active = 0;
-    let mut queued = 0;
-
-    for _ in 0..10 {
-        if active < pool_size {
-            active += 1;
-        } else {
-            queued += 1;
-        }
-    }
-
-    assert_eq!(active, 5);
-    assert_eq!(queued, 5, "Overflow requests should queue");
+    // BUG L3: Orders service should handle pool exhaustion gracefully
+    let src = read_source("services/orders/src/service.rs");
+    // Should have bounded resources — check for capacity limits or pool configuration
+    let has_bounds = src.contains("capacity") || src.contains("max_size")
+        || src.contains("pool_size") || src.contains("Semaphore")
+        || src.contains("bounded");
+    // At minimum, the event sequence counter should use proper ordering
+    let uses_relaxed_for_sequence = src.contains("Ordering::Relaxed");
+    assert!(has_bounds || !uses_relaxed_for_sequence,
+        "Orders service should have bounded resource management and proper atomic ordering");
 }
 
 // =============================================================================
@@ -493,7 +529,7 @@ fn test_l3_connection_pool_exhaustion() {
 
 #[test]
 fn test_l4_graceful_shutdown() {
-    
+
     let in_flight = Arc::new(AtomicU64::new(5));
     let shutting_down = Arc::new(AtomicBool::new(false));
 
@@ -510,15 +546,16 @@ fn test_l4_graceful_shutdown() {
 
 #[test]
 fn test_l4_shutdown_drains_connections() {
-    // All connections should be closed on shutdown
-    let connections = Arc::new(AtomicU64::new(10));
-
-    // Drain all
-    while connections.load(Ordering::SeqCst) > 0 {
-        connections.fetch_sub(1, Ordering::SeqCst);
-    }
-
-    assert_eq!(connections.load(Ordering::SeqCst), 0);
+    // BUG L4: Gateway should implement graceful shutdown
+    let gateway_src = read_source("services/gateway/src/middleware.rs");
+    let ws_src = read_source("services/gateway/src/websocket.rs");
+    let combined = format!("{}\n{}", gateway_src, ws_src);
+    // Gateway should handle shutdown signals and drain connections
+    let has_shutdown = combined.contains("shutdown") || combined.contains("graceful")
+        || combined.contains("signal") || combined.contains("ctrl_c")
+        || combined.contains("SIGTERM");
+    assert!(has_shutdown,
+        "Gateway should implement graceful shutdown to drain connections before stopping");
 }
 
 // =============================================================================
@@ -527,7 +564,7 @@ fn test_l4_shutdown_drains_connections() {
 
 #[test]
 fn test_l5_service_discovery_consistency() {
-    
+
     let services: Arc<RwLock<Vec<&str>>> = Arc::new(RwLock::new(vec!["svc1", "svc2"]));
 
     let mut views: Vec<Vec<&str>> = Vec::new();
@@ -543,7 +580,7 @@ fn test_l5_service_discovery_consistency() {
 
 #[test]
 fn test_l5_discovery_race_condition() {
-    
+
     let services = Arc::new(RwLock::new(vec!["a", "b"]));
 
     let s = services.clone();
@@ -568,7 +605,7 @@ fn test_l5_discovery_race_condition() {
 
 #[test]
 fn test_l6_config_hot_reload_safe() {
-    
+
     let config = Arc::new(RwLock::new(HashMap::new()));
     config.write().insert("key", "value");
 
@@ -602,58 +639,67 @@ fn test_l6_config_reload_no_crash() {
 }
 
 // =============================================================================
-// L7: Timezone Handling Tests
+// L7: Timezone Handling Tests (source-verifying)
 // =============================================================================
 
 #[test]
-fn test_l7_timestamp_timezone_handling() {
-    
-    let now_utc = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // Should be a reasonable Unix timestamp
-    assert!(now_utc > 1_000_000_000);
-    assert!(now_utc < 3_000_000_000);
+fn test_l7_timestamp_timezone_utc() {
+    // BUG L7: Market service must use UTC for all timestamps
+    let src = read_source("services/market/src/aggregator.rs");
+    // Should use chrono::Utc, not chrono::Local
+    assert!(src.contains("Utc"),
+        "Market service must use chrono::Utc for timestamps");
+    assert!(!src.contains("Local::now") && !src.contains("chrono::Local"),
+        "Market service must not use local timezone — all timestamps should be UTC");
 }
 
 #[test]
-fn test_l7_utc_consistency() {
-    // All services should use UTC
-    let timestamps: Vec<u64> = vec![
-        1234567890,
-        1234567891,
-        1234567892,
-    ];
-
-    // Timestamps should be in order
-    for i in 0..timestamps.len() - 1 {
-        assert!(timestamps[i] < timestamps[i + 1]);
-    }
+fn test_l7_market_hours_timezone() {
+    // L7: Day-level aggregation should account for market hours, not just UTC midnight
+    let src = read_source("services/market/src/aggregator.rs");
+    // The Day1 aggregation uses duration_trunc(Duration::days(1)) which truncates to UTC midnight
+    // This may not align with market trading hours
+    // Check that there's some awareness of market hours or timezone offset for daily bars
+    let day1_section = src.split("Day1").nth(1).unwrap_or("");
+    let has_market_hours = day1_section.contains("market_open")
+        || day1_section.contains("trading_hours")
+        || day1_section.contains("exchange_tz")
+        || day1_section.contains("offset");
+    // Also acceptable: using a configurable timezone for daily aggregation
+    let has_tz_config = src.contains("timezone") || src.contains("tz_offset");
+    assert!(has_market_hours || has_tz_config,
+        "Daily aggregation should account for market hours/timezone, not just UTC midnight truncation");
 }
 
 // =============================================================================
-// L8: TLS Certificate Validation Tests
+// L8: TLS Certificate Validation Tests (source-verifying)
 // =============================================================================
 
 #[test]
 fn test_l8_tls_certificate_validation() {
-    
-    let tls_enabled = true;
-    let cert_validated = true;
-
-    assert!(tls_enabled, "TLS should be enabled");
-    assert!(cert_validated, "Certificates should be validated");
+    // BUG L8: TLS/SSL verification is disabled in ApiKeyManager
+    let src = read_source("services/auth/src/api_key.rs");
+    // The default for verify_ssl should be true, not false
+    let new_fn_body = src.split("fn new").nth(1).unwrap_or("");
+    let constructor = new_fn_body.split('}').next().unwrap_or("");
+    assert!(!constructor.contains("verify_ssl: false"),
+        "TLS/SSL verification should be enabled by default (verify_ssl must not default to false)");
 }
 
 #[test]
 fn test_l8_tls_not_disabled() {
-    // TLS should not be disabled in production
-    let environment = "production";
-    let tls_disabled = false;
-
-    if environment == "production" {
-        assert!(!tls_disabled, "TLS must not be disabled in production");
+    // BUG L8: Auth service should validate TLS certificates
+    let src = read_source("services/auth/src/api_key.rs");
+    // Should not have patterns that disable certificate validation
+    assert!(!src.contains("danger_accept_invalid_certs"),
+        "Should not accept invalid TLS certificates");
+    // verify_ssl should exist and be initialized to true
+    assert!(src.contains("verify_ssl"), "Should have SSL verification field");
+    // Check the actual initialization value
+    let lines: Vec<&str> = src.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if line.contains("verify_ssl") && line.contains("false") && !line.trim().starts_with("//") {
+            panic!("Line {}: verify_ssl is set to false — TLS validation is disabled (bug L8)", i + 1);
+        }
     }
 }

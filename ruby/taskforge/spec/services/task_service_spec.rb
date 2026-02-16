@@ -44,15 +44,20 @@ RSpec.describe TaskService do
       end
     end
 
-    
+
     # should happen after the transaction commits, not inside it
-    it 'sends notification only after transaction commits' do
+    it 'does not send notification when transaction rolls back' do
       assignee = create(:user)
 
-      # Fixed behavior: notification should fire via after_commit, not inside transaction
-      expect(NotificationService).to receive(:notify).once
+      # Simulate failure in log_creation (after save! but before transaction commits)
+      allow_any_instance_of(TaskService).to receive(:log_creation)
+        .and_raise(ActiveRecord::RecordInvalid.new(Task.new))
 
-      service.create(project, valid_params.merge(assignee_id: assignee.id))
+      # Fixed: notification should NOT fire if transaction rolls back
+      # Buggy: notification fires inside transaction before the rollback
+      expect(NotificationService).not_to receive(:notify)
+
+      service.create(project, valid_params.merge(assignee_id: assignee.id)) rescue nil
     end
   end
 

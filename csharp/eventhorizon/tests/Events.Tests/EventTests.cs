@@ -89,7 +89,7 @@ public class EventTests
         // Should materialize once: var list = query.ToList(); then use list
         enumerationCount = 2;
 
-        Assert.Equal(1, enumerationCount, "Query should be materialized once with ToList(), not enumerated multiple times");
+        Assert.Equal(1, enumerationCount);
     }
 
     

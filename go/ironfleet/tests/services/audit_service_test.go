@@ -44,10 +44,14 @@ func TestIsCompliantChecksRequiredServices(t *testing.T) {
 func TestFilterByServiceReturnsMatches(t *testing.T) {
 	trail := audit.AuditTrail{Entries: []audit.AuditEntry{
 		{Service: "gateway", Action: "a", UserID: "u1", Timestamp: time.Now()},
-		{Service: "routing", Action: "b", UserID: "u1", Timestamp: time.Now()},
+		{Service: "gateway-v2", Action: "b", UserID: "u1", Timestamp: time.Now()},
+		{Service: "routing", Action: "c", UserID: "u1", Timestamp: time.Now()},
 	}}
 	filtered := audit.FilterByService(trail, "gateway")
-	if len(filtered) == 0 {
-		t.Fatal("expected gateway entries")
+	if len(filtered) != 1 {
+		t.Fatalf("expected exactly 1 gateway entry (not gateway-v2), got %d", len(filtered))
+	}
+	if filtered[0].Service != "gateway" {
+		t.Fatalf("expected service 'gateway', got %q", filtered[0].Service)
 	}
 }

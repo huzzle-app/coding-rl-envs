@@ -417,3 +417,61 @@ class TestAlertingSystem:
         fired_alerts.append(301)
 
         assert len(fired_alerts) == 2, "Only 2 alerts should have fired"
+
+
+# ===================================================================
+# Source-code-verifying tests for observability bugs
+# ===================================================================
+
+
+class TestEventEnvelopeTraceContext:
+    """Tests that EventEnvelope propagates trace context (BUG J1)."""
+
+    def test_envelope_default_headers_include_trace_id(self):
+        """EventEnvelope headers field should auto-populate trace context."""
+        import inspect
+        from shared.events.base import EventEnvelope
+        src = inspect.getsource(EventEnvelope)
+        # Headers should include trace propagation by default
+        has_trace_in_headers = ("trace" in src.lower() and "header" in src.lower()) or \
+                               "X-Trace-Id" in src or "traceparent" in src.lower()
+        assert has_trace_in_headers, \
+            "EventEnvelope should auto-populate trace context in headers"
+
+    def test_envelope_headers_not_empty_default(self):
+        """EventEnvelope default headers should not be empty dict."""
+        import inspect
+        from shared.events.base import EventEnvelope
+        src = inspect.getsource(EventEnvelope)
+        # BUG: headers: Dict[str, str] = Field(default_factory=dict)
+        # This creates empty headers, losing trace context
+        has_empty_default = "default_factory=dict" in src and "headers" in src
+        if has_empty_default:
+            # Check if there's logic to populate headers before sending
+            has_populate_logic = "trace" in src.lower() or "propagat" in src.lower()
+            assert has_populate_logic, \
+                "EventEnvelope with empty default headers must have trace context population logic"
+
+
+class TestBaseEventTimezoneInObservability:
+    """Tests that events have timezone-aware timestamps for log correlation (BUG B8)."""
+
+    def test_event_timestamps_are_utc(self):
+        """All events must use UTC timestamps for cross-service log correlation."""
+        from shared.events.base import BaseEvent
+        event = BaseEvent(
+            event_type="test",
+            aggregate_id="agg-1",
+            aggregate_type="test",
+        )
+        # Timestamp must be timezone-aware for correct log correlation
+        assert event.timestamp.tzinfo is not None, \
+            "Event timestamps must be timezone-aware for cross-service correlation"
+
+    def test_event_timestamp_factory_uses_utc(self):
+        """BaseEvent timestamp default_factory must use timezone.utc."""
+        import inspect
+        from shared.events.base import BaseEvent
+        src = inspect.getsource(BaseEvent)
+        assert "timezone.utc" in src or "utc_now" in src, \
+            "BaseEvent timestamp must use UTC-aware factory"

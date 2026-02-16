@@ -26,7 +26,7 @@ RSpec.describe 'Callback Lifecycle Bugs' do
       order.valid?
 
       # Validation should not create audit log entries
-      expect(AuditLog.count).to eq(initial_count) rescue nil
+      expect(AuditLog.count).to eq(initial_count)
     end
   end
 

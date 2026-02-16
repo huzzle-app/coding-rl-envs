@@ -134,6 +134,68 @@ function serviceHealthRollup(healthStatuses) {
   return rollup;
 }
 
+// ---------------------------------------------------------------------------
+// Dependency depth — recursive maximum chain depth from a given service
+// ---------------------------------------------------------------------------
+
+function dependencyDepth(serviceId) {
+  const svc = SERVICE_DEFINITIONS[serviceId];
+  if (!svc) return -1;
+  if (svc.dependencies.length === 0) return 0;
+  // BUG: returns direct dependency count instead of recursive max depth
+  return svc.dependencies.length;
+}
+
+// ---------------------------------------------------------------------------
+// Impacted services — BFS transitive dependents of a given service
+// ---------------------------------------------------------------------------
+
+function impactedServices(serviceId) {
+  if (!SERVICE_DEFINITIONS[serviceId]) return [];
+  const result = [];
+  // BUG: only returns direct dependents, not transitive
+  for (const [id, svc] of Object.entries(SERVICE_DEFINITIONS)) {
+    if (svc.dependencies.includes(serviceId)) {
+      result.push(id);
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Version compatibility — semantic version comparison
+// ---------------------------------------------------------------------------
+
+function isVersionCompatible(currentVersion, requiredVersion) {
+  if (!currentVersion || !requiredVersion) return false;
+  // BUG: lexicographic string comparison instead of numeric semver
+  return currentVersion >= requiredVersion;
+}
+
+// ---------------------------------------------------------------------------
+// Deployment wave — level-order grouping for safe deployment
+// ---------------------------------------------------------------------------
+
+function deploymentWave() {
+  const waves = [];
+  const assigned = new Set();
+
+  // BUG: flattens to only 2 waves (no deps = wave 0, any deps = wave 1)
+  // instead of proper level-order (wave N = max(wave of deps) + 1)
+  const noDeps = [];
+  const hasDeps = [];
+  for (const [id, svc] of Object.entries(SERVICE_DEFINITIONS)) {
+    if (svc.dependencies.length === 0) {
+      noDeps.push(id);
+    } else {
+      hasDeps.push(id);
+    }
+  }
+  waves.push(noDeps);
+  if (hasDeps.length > 0) waves.push(hasDeps);
+  return waves;
+}
+
 // Backwards-compatible flat export for existing tests
 module.exports = {
   gateway: { id: 'gateway', port: 8090 },
@@ -146,4 +208,8 @@ module.exports = {
   topologicalOrder,
   buildDependencyMatrix,
   serviceHealthRollup,
+  dependencyDepth,
+  impactedServices,
+  isVersionCompatible,
+  deploymentWave,
 };

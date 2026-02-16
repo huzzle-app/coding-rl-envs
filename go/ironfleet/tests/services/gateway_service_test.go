@@ -33,14 +33,20 @@ func TestBuildRouteChainLimitsHops(t *testing.T) {
 		{ID: "d", Healthy: true},
 	}
 	chain := gateway.BuildRouteChain(nodes, 2)
-	if len(chain) > 3 {
-		t.Fatalf("expected at most 3 entries, got %d", len(chain))
+	if len(chain) != 2 {
+		t.Fatalf("expected exactly 2 entries for maxHops=2, got %d", len(chain))
 	}
 }
 
 func TestAdmissionControlRejectsWhenAtCapacity(t *testing.T) {
+	// Under capacity should be admitted
+	admitted := gateway.AdmissionControl(50.0, 100.0, 1)
+	if !admitted {
+		t.Fatal("expected admission when under capacity")
+	}
+	// At capacity should be rejected
 	rejected := gateway.AdmissionControl(100.0, 100.0, 1)
 	if rejected {
-		t.Fatal("expected admission when at exact capacity")
+		t.Fatal("expected rejection when at exact capacity")
 	}
 }

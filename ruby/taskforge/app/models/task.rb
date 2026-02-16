@@ -92,9 +92,9 @@ class Task < ApplicationRecord
     end
   end
 
-  
-  def add_tag(tag, options = [])
-    
+  DEFAULT_TAG_OPTIONS = []
+
+  def add_tag(tag, options = DEFAULT_TAG_OPTIONS)
     options << :validated
     self.tags = (tags || []) + [tag]
     save
@@ -105,11 +105,11 @@ class Task < ApplicationRecord
     previous_assignee = assignee
 
     self.assignee = user
-    save!
 
-    
     NotificationService.notify(user, :task_assigned, self)
     NotificationService.notify(previous_assignee, :task_unassigned, self) if previous_assignee
+
+    save!
   end
 
   def blocked?

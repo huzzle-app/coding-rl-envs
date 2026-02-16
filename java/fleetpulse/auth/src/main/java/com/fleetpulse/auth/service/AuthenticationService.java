@@ -9,21 +9,25 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Authentication service handling login, token management, and audit logging.
+ *
+ * Bugs: A5, D2
+ * Categories: Concurrency, Spring/DI
+ */
 @Service
 public class AuthenticationService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthenticationService.class);
 
-    
-    // Instance field not volatile → partially constructed object visible to other threads
-    // Fix: Add volatile modifier
-    private static AuthenticationService instance; // Missing volatile
+    // Bug A5: Double-checked locking without volatile on the instance field.
+    // Category: Concurrency
+    private static AuthenticationService instance;
 
     private final Map<String, TokenInfo> tokenCache = new ConcurrentHashMap<>();
 
     public static AuthenticationService getInstance() {
         if (instance == null) {
-            
             synchronized (AuthenticationService.class) {
                 if (instance == null) {
                     instance = new AuthenticationService();
@@ -33,9 +37,8 @@ public class AuthenticationService {
         return instance;
     }
 
-    
-    // Spring AOP proxy is bypassed on self-invocation
-    // Fix: Move to separate bean or use @Lazy self-injection
+    // Bug D2: Spring AOP proxy is bypassed on self-invocation of @Async method.
+    // Category: Spring/DI
     @Async
     public CompletableFuture<Void> auditLoginAttempt(String username, boolean success) {
         try {
@@ -51,7 +54,6 @@ public class AuthenticationService {
         // Simplified authentication
         boolean valid = password != null && password.length() >= 8;
 
-        
         this.auditLoginAttempt(username, valid);
 
         if (valid) {

@@ -15,10 +15,12 @@ class AnalyticsServiceTest < Minitest::Test
     assert_operator health, :<=, 1.0
   end
 
-  def test_trend_analysis_returns_slopes
-    values = [1, 2, 3, 4, 5, 6]
-    trends = MercuryLedger::Services::Analytics.trend_analysis(values, 4)
-    refute_empty trends
+  def test_moving_metric_returns_averages_not_sums
+    values = [10.0, 20.0, 30.0, 40.0, 50.0]
+    metric = MercuryLedger::Services::Analytics.moving_metric(values, 3)
+    refute_empty metric
+    assert_in_delta 20.0, metric[0], 0.01,
+      'moving_metric should return averages (20.0), not sums (60.0)'
   end
 
   def test_anomaly_report_detects_outliers

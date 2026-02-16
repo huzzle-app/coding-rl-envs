@@ -20,27 +20,27 @@ public class LinqTests : IDisposable
     }
 
     [Fact]
-    public async Task test_no_client_side_evaluation()
+    public void test_no_client_side_evaluation()
     {
-        
-        var repo = new AppointmentRepository(_context);
-        var patient = new Patient { Name = "Eval", Email = "e@t.com" };
-        _context.Patients.Add(patient);
-        await _context.SaveChangesAsync();
-
-        var start = DateTime.UtcNow.Date;
-        var end = start.AddDays(7);
-        var act = () => repo.GetByDateRangeAsync(start, end);
-        await act.Should().NotThrowAsync();
+        // GetByDateRangeAsync should not use custom C# methods in LINQ-to-SQL expressions
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "AppointmentRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().NotContain("FormatDate(",
+            "FormatDate is a C# method that cannot be translated to SQL; use DateTime comparison directly");
     }
 
     [Fact]
-    public async Task test_query_translates_to_sql()
+    public void test_query_translates_to_sql()
     {
-        
-        var repo = new AppointmentRepository(_context);
-        var result = await repo.GetByDateRangeAsync(DateTime.UtcNow, DateTime.UtcNow.AddDays(1));
-        result.Should().NotBeNull();
+        // Verify that the query in GetByDateRangeAsync uses only SQL-translatable expressions
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "AppointmentRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        // The Where clause should not call any private helper methods
+        var hasCustomMethodInWhere = source.Contains(".Where(a => FormatDate(");
+        hasCustomMethodInWhere.Should().BeFalse(
+            "LINQ Where clauses must use only expressions translatable to SQL");
     }
 
     [Fact]
@@ -57,40 +57,38 @@ public class LinqTests : IDisposable
     }
 
     [Fact]
-    public async Task test_repository_returns_queryable()
+    public void test_repository_returns_queryable()
     {
-        
-        var repo = new PatientRepository(_context);
-        var result = repo.GetAll();
-        // With IEnumerable, Where() below runs in memory, not SQL
-        var filtered = result.Where(p => p.IsActive);
-        filtered.Should().NotBeNull();
+        // GetAll should return IQueryable, not IEnumerable, to allow DB-level filtering
+        var method = typeof(PatientRepository).GetMethod("GetAll");
+        method.Should().NotBeNull();
+        var returnType = method!.ReturnType;
+        // Should return IQueryable<Patient> to enable further server-side filtering
+        returnType.Should().BeAssignableTo(typeof(IQueryable<Patient>),
+            "GetAll should return IQueryable to allow DB-level filtering, not IEnumerable");
     }
 
     [Fact]
-    public async Task test_include_no_cartesian_explosion()
+    public void test_include_no_cartesian_explosion()
     {
-        
-        var repo = new AppointmentRepository(_context);
-        var patient = new Patient { Name = "Cart", Email = "cart@t.com" };
-        _context.Patients.Add(patient);
-        await _context.SaveChangesAsync();
-
-        var result = await repo.GetWithDetailsAsync(patient.Id);
-        result.Should().NotBeNull();
+        // GetWithDetailsAsync should use AsSplitQuery to avoid cartesian explosion
+        var sourceFile = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "HealthLink.Api", "Repositories", "AppointmentRepository.cs");
+        var source = System.IO.File.ReadAllText(sourceFile);
+        source.Should().Contain("AsSplitQuery",
+            "queries with multiple Include() calls should use AsSplitQuery() to avoid cartesian explosion");
     }
 
     [Fact]
     public async Task test_split_query_used()
     {
-        
         var repo = new AppointmentRepository(_context);
         var patient = new Patient { Name = "Split", Email = "split@t.com" };
         _context.Patients.Add(patient);
         await _context.SaveChangesAsync();
 
         var result = await repo.GetWithDetailsAsync(patient.Id);
-        result.Should().BeEmpty(); // No appointments for this patient
+        result.Should().BeEmpty();
     }
 
     [Fact]

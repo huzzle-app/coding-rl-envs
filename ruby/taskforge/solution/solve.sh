@@ -3,7 +3,7 @@
 set -e
 
 echo "Reference solution not yet implemented for TaskForge."
-echo "This environment requires manual debugging of 25 bugs across:"
+echo "This environment requires manual debugging of 75 bugs across:"
 echo "  - Setup/Configuration (5 bugs)"
 echo "  - Thread Safety (11 bugs)"
 echo "  - Ruby-Specific (9 bugs)"

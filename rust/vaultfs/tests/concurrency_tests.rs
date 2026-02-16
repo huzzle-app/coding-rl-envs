@@ -13,257 +13,241 @@
 
 // ===== BUG C4: Future not Send =====
 
-/
+/// The upload handler must produce a Send future (use Arc<Mutex>, not Rc<RefCell>).
 /// After fix, it uses Arc<Mutex> instead of Rc<RefCell>.
 #[test]
 fn test_upload_multipart_future_is_send() {
-    // This is a compile-time check. If C4 is fixed, the upload handler
-    // produces a Send future that can be used with tokio::spawn.
-    // We verify by checking that the types used are Send.
-
+    // Verify at compile time that the types used in upload.rs are Send+Sync.
+    // The source code in handlers/upload.rs must NOT use Rc<RefCell>.
     fn assert_send<T: Send>() {}
 
-    // Arc<Mutex<T>> is Send (correct)
+    // Arc<Mutex<T>> is Send (correct after fix)
     assert_send::<std::sync::Arc<tokio::sync::Mutex<Vec<u8>>>>();
 
-    // Rc<RefCell<T>> is NOT Send (buggy)
-    // assert_send::<std::rc::Rc<std::cell::RefCell<Vec<u8>>>>(); // Would fail
-
-    // The test passes if the fixed code compiles with Send bounds
+    // Verify the source file doesn't contain Rc<RefCell> usage
+    let upload_src = include_str!("../src/handlers/upload.rs");
+    assert!(
+        !upload_src.contains("Rc<RefCell") && !upload_src.contains("Rc::new(RefCell"),
+        "handlers/upload.rs must not use Rc<RefCell> (not Send). Use Arc<Mutex> instead (C4). \
+         Found Rc<RefCell> in source."
+    );
+    assert!(
+        upload_src.contains("Arc") && upload_src.contains("Mutex"),
+        "handlers/upload.rs must use Arc<Mutex> for thread-safe shared state (C4)"
+    );
 }
 
-/
+/// Verify the upload handler uses Arc<Mutex>, not Rc<RefCell>, for progress tracking.
 #[test]
 fn test_upload_uses_arc_mutex_not_rc() {
-    // Verify that Arc<Mutex> can be shared across threads (Send + Sync)
     fn assert_send_sync<T: Send + Sync>() {}
-
     assert_send_sync::<std::sync::Arc<tokio::sync::Mutex<usize>>>();
 
-    // The upload_with_background_processing function should compile
-    // because it uses Arc<Mutex> instead of Rc<RefCell>
+    // Source verification: Rc must not appear in upload.rs
+    let upload_src = include_str!("../src/handlers/upload.rs");
+    let rc_count = upload_src.matches("Rc::new").count()
+        + upload_src.matches("Rc<").count();
+    let refcell_count = upload_src.matches("RefCell::new").count()
+        + upload_src.matches("RefCell<").count();
+    assert_eq!(
+        rc_count + refcell_count, 0,
+        "upload.rs must have zero Rc/RefCell usages (C4). Found {} Rc + {} RefCell references",
+        rc_count, refcell_count
+    );
 }
 
 // ===== BUG B2: File repo lifetime annotation =====
 
-/
+/// File repo must return owned data, not references to locals that get dropped.
 #[test]
 fn test_file_repo_lifetime_annotation() {
-    // After fix: the lifetime annotation is explicit or uses owned types.
-    // This test verifies the pattern compiles.
+    // Verify the source code returns owned types, not references to locals
+    let repo_src = include_str!("../src/repository/file_repo.rs");
 
-    // Simulating the fixed pattern: return owned data, not references
+    // The function signatures should return owned types (not &'a references to locals)
+    // After fix: find_by_id returns anyhow::Result<Option<FileMetadata>> (owned)
+    assert!(
+        !repo_src.contains("-> &'a ") || repo_src.contains("&'a self"),
+        "file_repo.rs must not return references to local variables (B2). \
+         Return types should be owned (e.g., Vec<FileMetadata>, not &'a [FileMetadata])."
+    );
+
+    // Also test the pattern compiles: return owned data, not references
     fn get_data() -> Vec<String> {
         let local = vec!["file1".to_string(), "file2".to_string()];
-        local // Returns owned Vec, not &[String]
+        local
     }
-
     let data = get_data();
     assert_eq!(data.len(), 2, "Must return owned data (B2)");
 }
 
-/
+/// File repo query must return owned results that outlive the function scope.
 #[test]
 fn test_file_repo_query_compiles() {
-    // The fix ensures that query results are owned values, not references
-    // that would be dropped when the function returns.
+    // Verify the repo doesn't try to return references to query results
+    let repo_src = include_str!("../src/repository/file_repo.rs");
 
-    struct MockRepo;
-
-    impl MockRepo {
-        fn find_by_name(&self, name: &str) -> Option<String> {
-            // Fixed: returns owned String, not &str
-            Some(format!("file_{}", name))
-        }
-    }
-
-    let repo = MockRepo;
-    let result = repo.find_by_name("test");
-    assert!(result.is_some(), "Query must return a result (B2)");
-    assert_eq!(result.unwrap(), "file_test");
+    // After fix: no dangling reference patterns
+    // The find_by_owner function should not try to return a reference bound to its own scope
+    assert!(
+        repo_src.contains("anyhow::Result<Option<FileMetadata>>")
+            || repo_src.contains("Result<Option<FileMetadata>"),
+        "file_repo find_by_id must return owned Option<FileMetadata>, not a reference (B2)"
+    );
 }
 
 // ===== BUG B3: Self-referential struct =====
 
-/
+/// Chunk struct must not contain self-referential raw pointers.
 #[test]
 fn test_chunk_no_self_referential_struct() {
-    // After fix: chunk stores owned data, not references to itself
-    #[derive(Debug, Clone)]
-    struct FixedChunk {
-        data: Vec<u8>,
-        hash: String,
-        // NOT: data_ref: &[u8] pointing to self.data
-    }
+    // Verify the Chunk struct doesn't have data_ptr / data_len fields
+    let chunk_src = include_str!("../src/models/chunk.rs");
 
-    let chunk = FixedChunk {
-        data: vec![1, 2, 3],
-        hash: "abc".to_string(),
-    };
-
-    // Must be movable without issues
-    let moved_chunk = chunk;
-    assert_eq!(moved_chunk.data, vec![1, 2, 3], "Chunk must be movable (B3)");
+    assert!(
+        !chunk_src.contains("data_ptr") && !chunk_src.contains("*const u8"),
+        "Chunk struct must not contain self-referential raw pointer (data_ptr: *const u8) (B3). \
+         Remove data_ptr and data_len fields; use &self.data instead."
+    );
+    assert!(
+        !chunk_src.contains("from_raw_parts"),
+        "Chunk must not use std::slice::from_raw_parts (unsafe self-reference) (B3). \
+         Use &self.data directly."
+    );
 }
 
-/
+/// Chunk must be safely movable (no dangling pointers after move).
 #[test]
 fn test_chunk_can_be_moved() {
-    use vaultfs::models::file::FileChunk;
+    use vaultfs::models::chunk::Chunk;
 
-    let chunk = FileChunk {
-        index: 0,
-        key: "chunk_0".to_string(),
-        size: 1024,
-        hash: "abcdef".to_string(),
-    };
+    let chunk = Chunk::new(vec![1, 2, 3, 4, 5], 0);
 
-    // Move into a Vec - must work without self-reference issues
+    // Move the chunk (this would cause UB with self-referential pointer)
+    let moved_chunk = chunk;
+
+    // After fix: get_data_ref returns &self.data, which is always valid
+    let data = moved_chunk.get_data_ref();
+    assert_eq!(data, &[1, 2, 3, 4, 5], "Chunk data must survive moves without corruption (B3)");
+
+    // Move into a Vec and back
     let mut chunks = Vec::new();
-    chunks.push(chunk);
-
-    // Move out of Vec
+    chunks.push(moved_chunk);
     let retrieved = chunks.pop().unwrap();
-    assert_eq!(retrieved.index, 0, "Chunk must survive moves (B3)");
-    assert_eq!(retrieved.key, "chunk_0");
+    let data2 = retrieved.get_data_ref();
+    assert_eq!(data2, &[1, 2, 3, 4, 5], "Chunk data must survive multiple moves (B3)");
 }
 
 // ===== BUG B4: Lifetime bounds in async =====
 
-/
-#[tokio::test]
-async fn test_create_share_owned_across_await() {
-    // After fix: file_id is cloned to an owned String before the await point.
-    // The reference no longer needs to live across the await.
+/// Share handler must use owned types across await points (not references).
+#[test]
+fn test_create_share_owned_across_await() {
+    // Verify the shares handler doesn't hold references across await points
+    let shares_src = include_str!("../src/handlers/shares.rs");
 
-    let file_id = "test-file-123".to_string();
-
-    // Simulate the fixed pattern
-    async fn process_share(id: String) -> String {
-        // Some async work
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-        format!("share_{}", id)
-    }
-
-    let result = process_share(file_id.clone()).await;
-    assert!(result.starts_with("share_"), "Share must be created (B4)");
-    assert!(result.contains("test-file-123"), "Share must reference correct file");
+    // After fix: create_share should not have a lifetime parameter 'a on the handler
+    // The function should use owned String, not &'a str across awaits
+    let has_lifetime_on_handler = shares_src.contains("async fn create_share<'a>");
+    assert!(
+        !has_lifetime_on_handler,
+        "create_share handler must not have lifetime parameter <'a> (B4). \
+         Use owned String instead of &'a str across await points."
+    );
 }
 
-/
-#[tokio::test]
-async fn test_share_no_dangling_reference() {
-    // After fix: no &str references across await points
-    let data = "some_data".to_string();
+/// No dangling references across await points in the share handler.
+#[test]
+fn test_share_no_dangling_reference() {
+    let shares_src = include_str!("../src/handlers/shares.rs");
 
-    let result = async {
-        let owned = data.clone(); // Clone to owned before await
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-        owned // Return owned value
-    }.await;
-
-    assert_eq!(result, "some_data", "Owned value must survive await (B4)");
+    // After fix: get_file_reference should return owned String, not &'a str
+    // Or file_id should be cloned before the await point
+    let has_ref_return = shares_src.contains("fn get_file_reference<'a>(file_id: &'a str) -> &'a str");
+    assert!(
+        !has_ref_return,
+        "get_file_reference must not return a borrowed &'a str (B4). \
+         Return String or clone the file_id before crossing await points."
+    );
 }
 
 // ===== BUG D2: Error variant not handled =====
 
-/
+/// get_file handler must handle all Result match arms (Ok(Some), Ok(None), Err).
 #[test]
 fn test_get_file_handler_all_match_arms() {
-    // After fix: the match covers Ok(Some), Ok(None), AND Err(_)
-    enum MockResult {
-        Found(String),
-        NotFound,
-        Error(String),
-    }
+    let files_src = include_str!("../src/handlers/files.rs");
 
-    fn handle_result(r: MockResult) -> Result<String, String> {
-        match r {
-            MockResult::Found(f) => Ok(f),
-            MockResult::NotFound => Err("Not found".to_string()),
-            MockResult::Error(e) => Err(e), // This arm was MISSING in the bug
-        }
-    }
+    // After fix: the match in get_file must handle the Err case
+    // Look for the pattern: Err(e) => or Err(_) => in the get_file function
+    let has_err_arm = files_src.contains("Err(e)")
+        || files_src.contains("Err(_)")
+        || files_src.contains("result?");  // Using ? operator also handles Err
 
-    // All three variants must be handled
-    assert!(handle_result(MockResult::Found("file".into())).is_ok());
-    assert!(handle_result(MockResult::NotFound).is_err());
-    assert!(handle_result(MockResult::Error("db error".into())).is_err());
+    assert!(
+        has_err_arm,
+        "get_file handler must handle the Err(_) match arm (D2). \
+         The match on fetch_file result must cover Ok(Some), Ok(None), AND Err."
+    );
 }
 
-/
+/// get_file must propagate database errors, not silently ignore them.
 #[test]
 fn test_get_file_handles_db_error() {
-    // Simulate a database error in fetch_file
-    let result: Result<Option<String>, String> = Err("Connection refused".into());
+    let files_src = include_str!("../src/handlers/files.rs");
 
-    // After fix: Err variant is handled
-    let response = match result {
-        Ok(Some(file)) => Ok(file),
-        Ok(None) => Err("File not found".to_string()),
-        Err(e) => Err(format!("Database error: {}", e)),
-    };
+    // The get_file function must not have an incomplete match
+    // After fix: it should have all three arms or use ? operator
+    let get_file_section = files_src.split("pub async fn get_file")
+        .nth(1)
+        .unwrap_or("");
 
-    assert!(response.is_err(), "DB error must be propagated (D2)");
+    // Must not have a match that only covers Ok(Some) and Ok(None)
+    // without Err handling
+    let has_complete_match = get_file_section.contains("Err(")
+        || get_file_section.contains("result?")
+        || get_file_section.contains(".await?");
+
     assert!(
-        response.unwrap_err().contains("Database error"),
-        "Error message must indicate database failure"
+        has_complete_match,
+        "get_file must handle Err from database operations (D2)"
     );
 }
 
 // ===== BUG D3: Incompatible error types =====
 
-/
+/// User repo must properly convert between error types (not unwrap).
 #[test]
 fn test_user_repo_error_conversion() {
-    // After fix: ? operator works because error types implement From
-    use std::fmt;
+    let user_repo_src = include_str!("../src/repository/user_repo.rs");
 
-    #[derive(Debug)]
-    struct DbError(String);
-    impl fmt::Display for DbError {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "DB: {}", self.0)
-        }
-    }
-    impl std::error::Error for DbError {}
+    // After fix: create() should use ? with proper From impl or map_err,
+    // not unwrap() on incompatible error types
+    let has_unwrap_in_create = {
+        let create_section = user_repo_src.split("pub async fn create")
+            .nth(1)
+            .unwrap_or("");
+        let next_fn = create_section.find("pub async fn")
+            .unwrap_or(create_section.len());
+        let create_body = &create_section[..next_fn];
+        create_body.contains(".unwrap()") && !create_body.contains("// ")
+    };
 
-    #[derive(Debug)]
-    struct AppError(String);
-    impl fmt::Display for AppError {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "App: {}", self.0)
-        }
-    }
-
-    // After fix: From<DbError> for AppError is implemented
-    impl From<DbError> for AppError {
-        fn from(e: DbError) -> Self {
-            AppError(e.0)
-        }
-    }
-
-    fn db_operation() -> Result<String, DbError> {
-        Err(DbError("connection lost".into()))
-    }
-
-    fn app_operation() -> Result<String, AppError> {
-        let result = db_operation()?; // ? works because From is implemented
-        Ok(result)
-    }
-
-    let result = app_operation();
-    assert!(result.is_err(), "Error must be propagated (D3)");
+    // unwrap() in create method is the bug - should use ? or map_err
+    assert!(
+        !has_unwrap_in_create,
+        "user_repo create() must not use .unwrap() for error conversion (D3). \
+         Use ? operator with From impl or .map_err() instead."
+    );
 }
 
-/
+/// User repo error handling must not panic on incompatible error types.
 #[test]
 fn test_user_repo_incompatible_error_handled() {
-    // After fix: map_err is used instead of unwrap for error conversion
+    // Verify the pattern: io::Error -> anyhow::Error conversion works
     let io_err: Result<String, std::io::Error> =
         Err(std::io::Error::new(std::io::ErrorKind::NotFound, "user not found"));
 
-    // Convert io::Error to anyhow::Error using map_err (not unwrap)
     let result: Result<String, anyhow::Error> =
         io_err.map_err(|e| anyhow::anyhow!("User repo error: {}", e));
 
@@ -277,7 +261,7 @@ fn test_user_repo_incompatible_error_handled() {
 
 // ===== BUG E2: File handle not closed on error =====
 
-/
+/// Chunker must close file handles even when errors occur (RAII).
 #[test]
 fn test_chunker_file_handle_closed_on_error() {
     use std::fs::File;
@@ -288,42 +272,46 @@ fn test_chunker_file_handle_closed_on_error() {
     file.write_all(b"test data for chunker").unwrap();
     drop(file);
 
-    // Simulate a chunker that opens a file and encounters an error
-    // After fix: file handle is closed in both success and error paths
+    // Verify the storage service properly closes handles
+    let storage_src = include_str!("../src/services/storage.rs");
+
+    // After fix: file handles should be managed by RAII (File dropped at end of scope)
+    // No explicit close() calls needed in Rust if using RAII properly
+    // The bug would be holding File in a way that prevents RAII cleanup
     let result = std::panic::catch_unwind(|| {
         let _file = File::open(test_path).unwrap();
-        // Simulate error during processing
-        // After fix: file is dropped here (RAII) even on error
+        // RAII: file handle closed when _file goes out of scope
     });
 
     assert!(result.is_ok(), "Chunker must not leak file handles on error (E2)");
 
-    // Verify the file is not locked (we can open it again)
+    // Verify the file is not locked
     let reopen = File::open(test_path);
-    assert!(
-        reopen.is_ok(),
-        "File must be accessible after chunker error (handle was closed) (E2)"
-    );
+    assert!(reopen.is_ok(), "File must be accessible after chunker (E2)");
 
     std::fs::remove_file(test_path).ok();
 }
 
-/
+/// Multiple file operations must not exhaust file descriptors (no handle leaks).
 #[test]
 fn test_chunker_no_leaked_handles() {
     let test_path = "/tmp/vaultfs-chunker-leak-test.bin";
 
-    // Create and process file multiple times
     for i in 0..100 {
         let mut file = std::fs::File::create(test_path).unwrap();
         std::io::Write::write_all(&mut file, format!("iteration {}", i).as_bytes()).unwrap();
         drop(file);
 
         let opened = std::fs::File::open(test_path).unwrap();
-        drop(opened); // Must be properly closed
+        drop(opened);
     }
 
-    // If handles were leaking, we'd eventually hit a limit
-    // The fact that 100 iterations succeeded means handles are being closed
+    // Verify storage source uses proper RAII patterns
+    let storage_src = include_str!("../src/services/storage.rs");
+    assert!(
+        !storage_src.contains("mem::forget") && !storage_src.contains("ManuallyDrop"),
+        "storage.rs must not use mem::forget or ManuallyDrop which would leak handles (E2)"
+    );
+
     std::fs::remove_file(test_path).ok();
 }

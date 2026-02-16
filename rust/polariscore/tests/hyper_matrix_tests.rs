@@ -100,6 +100,14 @@ fn run_policy_test(idx: usize) {
     let tier = compliance_tier(score);
     assert!(["auto", "ops-review", "board-review"].contains(&tier),
         "compliance tier should be valid at idx {}", idx);
+
+    // Verify compliance tier thresholds are correctly calibrated
+    assert_eq!(compliance_tier(80.0), "board-review",
+        "score 80 should trigger board-review at idx {}", idx);
+    assert_eq!(compliance_tier(60.0), "ops-review",
+        "score 60 should trigger ops-review at idx {}", idx);
+    assert_eq!(compliance_tier(20.0), "auto",
+        "score 20 should be auto at idx {}", idx);
 }
 
 fn run_queue_test(idx: usize) {
@@ -148,6 +156,14 @@ fn run_security_test(idx: usize) {
         "signature should validate at idx {}", idx);
     assert!(!validate_signature(&payload, "invalid", secret),
         "invalid signature should not validate at idx {}", idx);
+    // Near-match: single byte difference must be rejected (constant-time comparison)
+    let mut near_bytes = sig.as_bytes().to_vec();
+    if near_bytes.len() > 2 {
+        near_bytes[2] = if near_bytes[2] == b'0' { b'1' } else { b'0' };
+        let near_match = String::from_utf8(near_bytes).unwrap();
+        assert!(!validate_signature(&payload, &near_match, secret),
+            "near-match signature (1 byte diff) should be rejected at idx {}", idx);
+    }
 }
 
 fn run_economics_test(idx: usize) {
@@ -164,6 +180,15 @@ fn run_economics_test(idx: usize) {
 
     let margin = margin_ratio(cost + 5000, cost);
     assert!(margin >= 0.0 && margin <= 1.0, "margin should be in [0, 1] at idx {}", idx);
+
+    // Surge multiplier must scale cost proportionally
+    let cost_base = projected_cost_cents(&shipments, 100.0, 1.0);
+    let cost_doubled = projected_cost_cents(&shipments, 100.0, 2.0);
+    if cost_base > 0 {
+        let ratio = cost_doubled as f64 / cost_base as f64;
+        assert!((ratio - 2.0).abs() < 0.02,
+            "2.0x surge should double cost at idx {}, got ratio {:.4}", idx, ratio);
+    }
 }
 
 // Generate test functions - each runs ITERATIONS cases

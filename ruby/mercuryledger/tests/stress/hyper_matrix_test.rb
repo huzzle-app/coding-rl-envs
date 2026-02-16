@@ -4,138 +4,168 @@ require 'digest'
 require_relative '../test_helper'
 require_relative '../../shared/contracts/contracts'
 
+# =============================================================================
+# HyperMatrixTest — 7000 parameterized tests distributed across 14 bug buckets.
+# Each bucket targets a specific source-code bug so that fixing one module
+# yields proportional reward improvement (~500 tests per bug).
+# =============================================================================
 class HyperMatrixTest < Minitest::Test
   TOTAL_CASES = 7000
+  NUM_BUCKETS = 14
 
   TOTAL_CASES.times do |idx|
     define_method("test_hyper_matrix_#{format('%05d', idx)}") do
-      severity_a = (idx % 7) + 1
-      severity_b = ((idx * 3) % 7) + 1
-      sla_a = 20 + (idx % 90)
-      sla_b = 20 + ((idx * 2) % 90)
+      bucket = idx % NUM_BUCKETS
 
-      order_a = MercuryLedger::Core::Order.new(severity: severity_a, sla_minutes: sla_a)
-      order_b = MercuryLedger::Core::Order.new(severity: severity_b, sla_minutes: sla_b)
+      case bucket
 
-      planned = MercuryLedger::Core::Dispatch.plan_settlement(
-        [
-          { id: "a-#{idx}", urgency: order_a.urgency_score, eta: "0#{idx % 9}:1#{idx % 6}" },
-          { id: "b-#{idx}", urgency: order_b.urgency_score, eta: "0#{(idx + 3) % 9}:2#{idx % 6}" },
-          { id: "c-#{idx}", urgency: (idx % 50) + 2, eta: "1#{idx % 4}:0#{idx % 6}" }
-        ],
-        2
-      )
+      # ----- Bug 1: plan_settlement sorts ascending (should sort descending) -----
+      when 0
+        high_urg = 50 + (idx % 50)
+        low_urg = 1 + (idx % 10)
+        planned = MercuryLedger::Core::Dispatch.plan_settlement(
+          [
+            { id: "lo-#{idx}", urgency: low_urg, eta: '09:00' },
+            { id: "hi-#{idx}", urgency: high_urg, eta: '10:00' }
+          ], 1
+        )
+        assert_equal 1, planned.length
+        assert_equal "hi-#{idx}", planned[0][:id],
+          'plan_settlement must select highest urgency order'
 
-      assert_operator planned.length, :>=, 1
-      assert_operator planned.length, :<=, 2
-      assert_operator planned[0][:urgency], :>=, planned[1][:urgency] if planned.length == 2
+      # ----- Bug 2: has_conflict? uses <= instead of < (adjacent = conflict) -----
+      when 1
+        s1 = idx % 20
+        e1 = s1 + 4 + (idx % 6)
+        s2 = e1  # adjacent: starts exactly when first ends
+        e2 = s2 + 3 + (idx % 5)
+        slot_a = { berth: 'B1', start_hour: s1, end_hour: e1 }
+        slot_b = { berth: 'B1', start_hour: s2, end_hour: e2 }
+        refute MercuryLedger::Core::Dispatch.has_conflict?(slot_a, slot_b),
+          "Adjacent berth windows (end=#{e1}, start=#{s2}) must not conflict"
 
-      # Exercise dispatch_batch
-      batch = MercuryLedger::Core::Dispatch.dispatch_batch(
-        [{ id: "d-#{idx}", urgency: idx % 20 + 1, eta: "05:00" }, { id: "e-#{idx}", urgency: idx % 10 + 1, eta: "06:00" }], 1
-      )
-      assert_equal 1, batch[:planned].length
+      # ----- Bug 3: allocate_costs truncates instead of rounding -----
+      when 2
+        # Budget ≡ 1 mod 3 ensures 2/3 share always has .X667 pattern
+        # so truncation (X.66) differs from rounding (X.67)
+        budget = ((idx / NUM_BUCKETS) % 100 + 10) * 3.0 + 1.0
+        orders = [{ id: 1, urgency: 1 }, { id: 2, urgency: 2 }]
+        result = MercuryLedger::Core::Dispatch.allocate_costs(orders, budget)
+        share_2 = result.find { |o| o[:id] == 2 }[:allocated]
+        expected = (budget * 2.0 / 3.0).round(2)
+        assert_equal expected, share_2,
+          "2/3 of #{budget} should round to #{expected}, not truncate"
 
-      blocked = (idx % 5).zero? ? ['beta'] : []
-      route = MercuryLedger::Core::Routing.choose_corridor(
-        [
-          { channel: 'alpha', latency: 2 + (idx % 9) },
-          { channel: 'beta', latency: idx % 3 },
-          { channel: 'gamma', latency: 4 + (idx % 4) }
-        ],
-        blocked
-      )
-      refute_nil route
-      refute_equal 'beta', route[:channel] if blocked.include?('beta')
+      # ----- Bug 4: sign_manifest uses cargo:vessel instead of vessel:cargo -----
+      when 3
+        vessel = "SHIP-#{idx}"
+        tons = 1000 + (idx * 7) % 9000
+        secret = "secret-#{idx % 100}"
+        sig = MercuryLedger::Core::Security.sign_manifest(vessel, tons, secret)
+        canonical = Digest::SHA256.hexdigest("#{secret}:#{vessel}:#{tons}")
+        assert_equal canonical, sig,
+          'Manifest signature must use vessel_id:cargo_tons field order'
 
-      # Exercise channel_score and transit_time
-      score = MercuryLedger::Core::Routing.channel_score({ latency: 10, reliability: 0.8 })
-      assert_operator score, :>, 0
-      tt = MercuryLedger::Core::Routing.estimate_transit_time(1000 + idx)
-      assert_operator tt, :>, 0
+      # ----- Bug 5: variance uses population (n) instead of sample (n-1) -----
+      when 4
+        base = (idx % 20) + 1
+        values = [base.to_f, (base + 2).to_f]
+        result = MercuryLedger::Core::Statistics.variance(values)
+        # Sample variance of [x, x+2]: mean = x+1, sum_sq = 2, n-1 = 1 => 2.0
+        assert_in_delta 2.0, result, 0.001,
+          'Variance must use Bessel correction (n-1 denominator)'
 
-      src = (idx % 2).zero? ? :queued : :allocated
-      dst = src == :queued ? :allocated : :departed
-      assert MercuryLedger::Core::Workflow.transition_allowed?(src, dst)
-      refute MercuryLedger::Core::Workflow.transition_allowed?(:arrived, :queued)
+      # ----- Bug 6: replay uses > instead of >= (first-write-wins bug) -----
+      when 5
+        events = [
+          { id: "evt-#{idx}", sequence: 1, value: 'original' },
+          { id: "evt-#{idx}", sequence: 1, value: 'corrected' }
+        ]
+        replayed = MercuryLedger::Core::Resilience.replay(events)
+        assert_equal 1, replayed.length
+        assert_equal 'corrected', replayed[0][:value],
+          'Last event at same sequence must win (last-write-wins)'
 
-      # Exercise shortest_path and terminal state
-      assert MercuryLedger::Core::Workflow.is_terminal_state?(:arrived)
-      path = MercuryLedger::Core::Workflow.shortest_path(:queued, :arrived)
-      assert_operator path.length, :>=, 2 if path
+      # ----- Bug 7: TokenStore.cleanup uses && instead of || -----
+      when 6
+        store = MercuryLedger::Core::TokenStore.new
+        store.store("tok-#{idx}", 'hash', 3600)
+        store.revoke("tok-#{idx}")
+        removed = store.cleanup(Time.now.to_i + 10)
+        assert_equal 1, removed,
+          'Revoked token must be cleaned even if not yet expired'
 
-      pol = MercuryLedger::Core::Policy.next_policy((idx % 2).zero? ? 'normal' : 'watch', 2 + (idx % 2))
-      assert_includes %w[watch restricted halted], pol
+      # ----- Bug 8: DEESCALATION_THRESHOLDS has "watching" instead of "watch" -----
+      when 7
+        streak = 4 + (idx % 10)
+        result = MercuryLedger::Core::Policy.should_deescalate?('watch', streak)
+        assert result,
+          "Watch with streak=#{streak} should allow de-escalation"
 
-      # Exercise previous_policy and SLA
-      prev = MercuryLedger::Core::Policy.previous_policy(pol)
-      refute_nil prev
-      sla_status = MercuryLedger::Core::Policy.check_sla_compliance(idx % 120, 60)
-      assert_includes %i[compliant at_risk breached], sla_status
+      # ----- Bug 9: shortest_path missing from==to early return -----
+      when 8
+        states = MercuryLedger::Core::Workflow::GRAPH.keys
+        state = states[idx % states.length]
+        path = MercuryLedger::Core::Workflow.shortest_path(state, state)
+        refute_nil path, "Self-path for #{state} must not be nil"
+        assert_equal [state], path,
+          "Self-path for #{state} must be [#{state}]"
 
-      depth = (idx % 30) + 1
-      refute MercuryLedger::Core::Queue.should_shed?(depth, 40, false)
-      assert MercuryLedger::Core::Queue.should_shed?(41, 40, false)
+      # ----- Bug 10: CorridorTable#active uses == true instead of != false -----
+      when 9
+        table = MercuryLedger::Core::CorridorTable.new
+        # Route without :active key should default to active
+        table.add("ch-#{idx}", { channel: "ch-#{idx}", latency: 10 + (idx % 50) })
+        active = table.active
+        assert_equal 1, active.length,
+          'Route without :active key should be considered active by default'
 
-      # Exercise queue health and wait time
-      health = MercuryLedger::Core::QueueMonitor.queue_health(depth, 40)
-      refute_nil health.status
-      wt = MercuryLedger::Core::Queue.estimate_wait_time(depth, 5)
-      assert_operator wt, :>=, 0
+      # ----- Bug 11: CircuitBreaker success resets wrong counter in closed state -----
+      when 10
+        threshold = 3 + (idx % 5)
+        cb = MercuryLedger::Core::CircuitBreaker.new(
+          failure_threshold: threshold, success_threshold: 1, timeout: 600
+        )
+        threshold.times { cb.record_failure }
+        cb.record_success
+        threshold.times { cb.record_failure }
+        assert_equal 'closed', cb.state,
+          "Success must reset failure counter; threshold=#{threshold}"
 
-      replayed = MercuryLedger::Core::Resilience.replay([
-        { id: "k-#{idx % 17}", sequence: 1 },
-        { id: "k-#{idx % 17}", sequence: 2 },
-        { id: "z-#{idx % 13}", sequence: 1 }
-      ])
-      assert_operator replayed.length, :>=, 2
-      assert_operator replayed.last[:sequence], :>=, 1
+      # ----- Bug 12: plan_multi_leg uses crow-flies instead of leg sum -----
+      when 11
+        offset = idx % 500
+        waypoints = [
+          { name: 'A', nm: 0 },
+          { name: 'B', nm: 200 + offset },
+          { name: 'C', nm: 50 + (offset / 2) }
+        ]
+        result = MercuryLedger::Core::Routing.plan_multi_leg(waypoints)
+        leg_sum = result[:legs].sum { |l| l[:distance_nm] }
+        assert_in_delta leg_sum, result[:total_distance], 0.01,
+          'Total distance must equal sum of legs, not crow-flies'
 
-      # Exercise deduplicate and converges
-      deduped = MercuryLedger::Core::Resilience.deduplicate([
-        { id: "d-#{idx}", sequence: 1 }, { id: "d-#{idx}", sequence: 1 }
-      ])
-      assert_equal 1, deduped.length
+      # ----- Bug 13: RateLimiter allows fractional tokens -----
+      when 12
+        t = Time.now.to_f + idx
+        limiter = MercuryLedger::Core::RateLimiter.new(max_tokens: 1, refill_rate: 0.5)
+        assert limiter.allow?(t)
+        # After 1 second, refills 0.5 tokens — fractional, must deny
+        refute limiter.allow?(t + 1.0),
+          'Fractional token (0.5) must not allow a request'
 
-      p50 = MercuryLedger::Core::Statistics.percentile([idx % 11, (idx * 7) % 11, (idx * 5) % 11, (idx * 3) % 11], 50)
-      assert_kind_of Integer, p50
-
-      # Exercise mean and moving_average
-      avg = MercuryLedger::Core::Statistics.mean([idx % 10 + 1, (idx * 3) % 10 + 1])
-      assert_operator avg, :>, 0
-      ma = MercuryLedger::Core::Statistics.moving_average([1, 2, 3, 4], 2)
-      assert_equal 3, ma.length
-
-      # Exercise severity classify
-      sev = MercuryLedger::Core::Severity.classify((idx % 3).zero? ? 'critical' : 'routine')
-      assert MercuryLedger::Core::Severity.valid?(sev)
-
-      # Exercise estimate_cost
-      cost = MercuryLedger::Core::Dispatch.estimate_cost([{ urgency: idx % 5 + 1 }])
-      assert_operator cost, :>=, 0
-
-      # Exercise service registry
-      if (idx % 100).zero?
-        registry = MercuryLedger::Contracts::ServiceRegistry.new
-        url = registry.get_service_url(:gateway)
-        assert_includes url, '8110'
-        assert registry.validate_contract(:routing)
+      # ----- Bug 14: TERMINAL_STATES missing :arrived -----
+      when 13
+        assert MercuryLedger::Core::Workflow.is_terminal_state?(:arrived),
+          ':arrived must be a terminal state'
+        engine = MercuryLedger::Core::WorkflowEngine.new
+        engine.register("e-#{idx}")
+        engine.transition("e-#{idx}", :allocated)
+        engine.transition("e-#{idx}", :departed)
+        engine.transition("e-#{idx}", :arrived)
+        assert engine.is_terminal?("e-#{idx}"),
+          'Entity at :arrived must be terminal'
       end
-
-      next unless (idx % 17).zero?
-
-      payload = "manifest:#{idx}"
-      digest = Digest::SHA256.hexdigest(payload)
-      assert MercuryLedger::Core::Security.verify_signature(payload, digest, digest)
-      refute MercuryLedger::Core::Security.verify_signature(payload, digest[1..], digest)
-
-      # Exercise sign/verify manifest
-      sig = MercuryLedger::Core::Security.sign_manifest('V-1', 45000, 'key')
-      assert MercuryLedger::Core::Security.verify_manifest('V-1', 45000, 'key', sig)
-
-      # Exercise sanitise_path
-      safe = MercuryLedger::Core::Security.sanitise_path("../../etc/passwd")
-      refute_includes safe, '..'
     end
   end
 end

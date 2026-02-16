@@ -3,8 +3,8 @@
 ## Overview
 - **Name:** SignalDock
 - **Language:** JavaScript (Node.js)
-- **Bug Count:** issues
-- **Test Count:** 9213 scenario tests
+- **Bug Count:** 49 bugs across 10 source files
+- **Test Count:** 12213 scenario tests
 - **Difficulty:** Hyper-Principal (70-140h expected)
 
 ## Bug Categories
@@ -19,6 +19,7 @@
 | Workflow | 4 | workflow.js |
 | Queue | 5 | queue.js |
 | Models | 4 | dispatch-ticket.js |
+| Contracts | 5 | contracts.js |
 
 ## Getting Started
 ```bash
@@ -32,7 +33,7 @@ npm test
 - Keep security and policy controls enforced.
 
 ## Success Criteria
-- Full test suite passes (`npm test`) with **9213+ scenarios**.
+- Full test suite passes (`npm test`) with **12213 scenarios**.
 - All bugs fixed in source files only.
 - No regressions in existing functionality.
 

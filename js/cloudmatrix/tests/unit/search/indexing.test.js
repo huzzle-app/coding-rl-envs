@@ -217,3 +217,54 @@ describe('SearchService', () => {
     });
   });
 });
+
+describe('BM25Scorer', () => {
+  let BM25Scorer;
+
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../services/search/src/services/search');
+    BM25Scorer = mod.BM25Scorer;
+  });
+
+  it('BM25 default k1 should be 1.2 (not 0.75)', () => {
+    const scorer = new BM25Scorer();
+    // Standard BM25 defaults: k1=1.2, b=0.75
+    // BUG: k1 and b are swapped (k1=0.75, b=1.2)
+    expect(scorer.k1).toBeCloseTo(1.2, 1);
+  });
+
+  it('BM25 default b should be 0.75 (not 1.2)', () => {
+    const scorer = new BM25Scorer();
+    // Standard BM25: b controls length normalization, should be 0.75
+    // BUG: b is set to 1.2, which is invalid (b should be 0-1)
+    expect(scorer.b).toBeCloseTo(0.75, 1);
+  });
+
+  it('BM25 b parameter must be in range [0, 1]', () => {
+    const scorer = new BM25Scorer();
+    // b > 1 is nonsensical for BM25 scoring
+    expect(scorer.b).toBeLessThanOrEqual(1.0);
+    expect(scorer.b).toBeGreaterThanOrEqual(0.0);
+  });
+
+  it('BM25 scoring should increase with higher term frequency', () => {
+    const scorer = new BM25Scorer();
+    scorer.setCorpusStats(1000, 100);
+    const score1 = scorer.score(1, 10, 100);
+    const score5 = scorer.score(5, 10, 100);
+    // Higher TF should always give higher score
+    expect(score5).toBeGreaterThan(score1);
+  });
+
+  it('BM25 with swapped defaults produces incorrect document ranking', () => {
+    const scorer = new BM25Scorer();
+    scorer.setCorpusStats(1000, 200);
+    // With correct defaults (k1=1.2, b=0.75), short docs with high TF score highest
+    // With swapped defaults, scoring is distorted
+    const shortDocScore = scorer.score(5, 10, 50);  // short doc, high TF
+    const longDocScore = scorer.score(5, 10, 500);   // long doc, same TF
+    // Short docs should score higher than long docs for same TF
+    expect(shortDocScore).toBeGreaterThan(longDocScore);
+  });
+});

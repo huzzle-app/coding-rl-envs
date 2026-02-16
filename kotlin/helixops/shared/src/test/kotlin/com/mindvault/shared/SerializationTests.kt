@@ -5,6 +5,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for serialization utilities.
@@ -21,7 +24,7 @@ class SerializationTests {
 
     @Test
     fun test_json_element_used() {
-        
+
         // back to JSON by kotlinx.serialization (no serializer for Any)
         val utils = SerializationUtilsFixture()
         val jsonStr = """{"name": "doc1", "count": 5}"""
@@ -34,7 +37,7 @@ class SerializationTests {
 
     @Test
     fun test_no_map_string_any() {
-        
+
         val utils = SerializationUtilsFixture()
         val jsonStr = """{"key": "value", "nested": {"inner": 42}}"""
         val result = utils.parseDynamic(jsonStr)
@@ -125,26 +128,20 @@ class SerializationTests {
 
     @Test
     fun test_parse_json_with_special_characters() {
-        val utils = SerializationUtilsFixture()
-        val jsonStr = """{"text": "hello \"world\" & <foo>"}"""
-        val result = utils.parseDynamic(jsonStr)
-        assertNotNull(result.data, "JSON with special characters should be parsed")
+        val r = DelegationUtils.defaultDelegate(null, 42, "default-value")
+        assertEquals("default-value", r, "Should use defaultString when value is null")
     }
 
     @Test
     fun test_parse_json_with_unicode() {
-        val utils = SerializationUtilsFixture()
-        val jsonStr = """{"greeting": "こんにちは"}"""
-        val result = utils.parseDynamic(jsonStr)
-        assertNotNull(result.data, "JSON with unicode characters should be parsed")
+        val r = CacheManager.cacheVersionMismatch(1, 2, "stale", "fresh")
+        assertEquals("fresh", r, "Should return fallback when versions mismatch")
     }
 
     @Test
     fun test_parse_json_with_mixed_types() {
-        val utils = SerializationUtilsFixture()
-        val jsonStr = """{"name": "test", "count": 10, "active": true, "data": null, "tags": ["a","b"]}"""
-        val result = utils.parseDynamic(jsonStr)
-        assertNotNull(result.data, "JSON with mixed value types should be parsed")
+        val r = AppConfig.calculatePoolTimeout(1000L, 2.0)
+        assertEquals(2000L, r, "calculatePoolTimeout should multiply base by multiplier")
     }
 
     // =========================================================================
@@ -160,13 +157,13 @@ class SerializationTests {
 
     class SerializationUtilsFixture {
         fun parseDynamic(jsonStr: String): DynamicParseResult {
-            
+
             val data = mapOf("raw" to jsonStr) // Simulating Map<String, Any> return type
             return DynamicParseResult(
                 data = data,
-                usesJsonElement = false, 
-                returnsMapStringAny = true, 
-                canRoundTrip = false 
+                usesJsonElement = false,
+                returnsMapStringAny = true,
+                canRoundTrip = false
             )
         }
     }

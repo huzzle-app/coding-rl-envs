@@ -33,9 +33,9 @@
 #[test] fn hyper_matrix_0075() { let m = median(&[1.0, 3.0, 5.0, 7.0]).unwrap(); assert!((m - 4.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0076() { let p = percentile(&[1.0, 2.0, 3.0, 4.0, 5.0], 50.0).unwrap(); assert!((p - 3.0).abs() < 0.5); }
 #[test] fn hyper_matrix_0077() { let v = variance(&[1.0, 2.0, 3.0, 4.0, 5.0]).unwrap(); assert!(v > 0.0); }
-#[test] fn hyper_matrix_0078() { let ma = moving_average(&[1.0, 2.0, 3.0, 4.0, 5.0], 3); assert!(!ma.is_empty()); }
+#[test] fn hyper_matrix_0078() { let ma = moving_average(&[1.0, 2.0, 3.0, 4.0, 5.0], 3); assert_eq!(ma.len(), 3, "moving_average([1..5], 3) should have 3 elements"); }
 #[test] fn hyper_matrix_0079() { let (lo, hi) = confidence_interval_95(10.0, 1.0); assert!(lo < 10.0 && hi > 10.0); }
-#[test] fn hyper_matrix_0080() { let t = bonferroni_threshold(0.05, 10); assert!((t - 0.005).abs() < 0.001); }
+#[test] fn hyper_matrix_0080() { let t = bonferroni_threshold(0.05, 10); assert!((t - 0.005).abs() < 0.0001, "bonferroni 0.05/10 should be exactly 0.005"); }
 
 // Consent tests (81-150)
 #[test] fn hyper_matrix_0081() { let c = ConsentRecord { subject_id: "s1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert!(can_access_dataset(&c, "clinical_report")); }
@@ -99,12 +99,12 @@
 #[test] fn hyper_matrix_0133() { let p = percentile(&[1.0, 2.0, 3.0, 4.0, 5.0], 75.0).unwrap(); assert!(p >= 3.0 && p <= 5.0); }
 #[test] fn hyper_matrix_0134() { let f1 = f1_score(1.0, 1.0).unwrap(); assert!((f1 - 1.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0135() { let f1 = f1_score(0.5, 0.5).unwrap(); assert!((f1 - 0.5).abs() < 0.01); }
-#[test] fn hyper_matrix_0136() { let f1 = f1_score(0.6, 0.4).unwrap(); assert!(f1 > 0.0 && f1 < 1.0); }
+#[test] fn hyper_matrix_0136() { let f1 = f1_score(0.6, 0.4).unwrap(); assert!((f1 - 0.48).abs() < 0.01, "F1(0.6,0.4) = 2*0.6*0.4/1.0 = 0.48"); }
 #[test] fn hyper_matrix_0137() { assert!(passes_variant_quality(30, 30.0, 0.05)); }
 #[test] fn hyper_matrix_0138() { assert!(!passes_variant_quality(25, 30.0, 0.05)); }
 #[test] fn hyper_matrix_0139() { assert!(passes_variant_quality(50, 25.0, 0.05)); }
 #[test] fn hyper_matrix_0140() { assert!(!passes_variant_quality(50, 30.0, 0.10)); }
-#[test] fn hyper_matrix_0141() { let ma = moving_average(&[1.0, 2.0, 3.0], 2); assert!(!ma.is_empty()); }
+#[test] fn hyper_matrix_0141() { let ma = moving_average(&[1.0, 2.0, 3.0], 2); assert_eq!(ma.len(), 2, "moving_average([1,2,3], 2) should have 2 elements"); }
 #[test] fn hyper_matrix_0142() { let ma = moving_average(&[1.0, 2.0, 3.0, 4.0, 5.0], 3); assert_eq!(ma.len(), 3); }
 #[test] fn hyper_matrix_0143() { let (lo, hi) = confidence_interval_95(100.0, 10.0); assert!(lo < 100.0 && hi > 100.0); }
 #[test] fn hyper_matrix_0144() { let (lo, hi) = confidence_interval_95(0.0, 1.0); assert!(lo < 0.0 && hi > 0.0); }
@@ -224,24 +224,24 @@
 #[test] fn hyper_matrix_0250() { let c = ConsentRecord { subject_id: "j".into(), allows_research: false, allows_clinical_reporting: false, revoked: false }; assert!(!can_access_dataset(&c, "any")); }
 
 // Aggregator tests (251-320)
-#[test] fn hyper_matrix_0251() { let points = vec![CohortPoint { cohort: "a".into(), variant_count: 100, flagged_pathogenic: 10 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
-#[test] fn hyper_matrix_0252() { let points = vec![CohortPoint { cohort: "b".into(), variant_count: 100, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
+#[test] fn hyper_matrix_0251() { let points = vec![CohortPoint { cohort: "a".into(), variant_count: 100, flagged_pathogenic: 10 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0252() { let points = vec![CohortPoint { cohort: "b".into(), variant_count: 100, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0253() { let points = vec![CohortPoint { cohort: "c".into(), variant_count: 100, flagged_pathogenic: 0 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.0).abs() < 0.01); }
-#[test] fn hyper_matrix_0254() { let points = vec![CohortPoint { cohort: "d".into(), variant_count: 100, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
-#[test] fn hyper_matrix_0255() { let points = vec![CohortPoint { cohort: "e".into(), variant_count: 200, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.01); }
+#[test] fn hyper_matrix_0254() { let points = vec![CohortPoint { cohort: "d".into(), variant_count: 100, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0255() { let points = vec![CohortPoint { cohort: "e".into(), variant_count: 200, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0256() { let points: Vec<CohortPoint> = vec![]; let ratio = pathogenic_ratio(&points); assert!(ratio.is_none() || ratio.unwrap().abs() < 0.01); }
-#[test] fn hyper_matrix_0257() { let p1 = CohortPoint { cohort: "a".into(), variant_count: 100, flagged_pathogenic: 10 }; let p2 = CohortPoint { cohort: "b".into(), variant_count: 100, flagged_pathogenic: 20 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.15).abs() < 0.01); }
+#[test] fn hyper_matrix_0257() { let p1 = CohortPoint { cohort: "a".into(), variant_count: 100, flagged_pathogenic: 10 }; let p2 = CohortPoint { cohort: "b".into(), variant_count: 100, flagged_pathogenic: 20 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.15).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0258() { let cohorts = vec![CohortSummary { cohort_id: "a".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 30 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "b".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 20 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "a"); }
 #[test] fn hyper_matrix_0259() { let cohorts = vec![CohortSummary { cohort_id: "x".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 10 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "y".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 50 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "y"); }
 #[test] fn hyper_matrix_0260() { let cohorts: Vec<CohortSummary> = vec![]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert!(ranked.is_empty()); }
-#[test] fn hyper_matrix_0261() { let points = vec![CohortPoint { cohort: "f".into(), variant_count: 50, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
-#[test] fn hyper_matrix_0262() { let points = vec![CohortPoint { cohort: "g".into(), variant_count: 1000, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
+#[test] fn hyper_matrix_0261() { let points = vec![CohortPoint { cohort: "f".into(), variant_count: 50, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0262() { let points = vec![CohortPoint { cohort: "g".into(), variant_count: 1000, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0263() { let cohorts = vec![CohortSummary { cohort_id: "single".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 10 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked.len(), 1); }
 #[test] fn hyper_matrix_0264() { let cohorts = vec![CohortSummary { cohort_id: "a".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 10 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "b".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 10 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked.len(), 2); }
 #[test] fn hyper_matrix_0265() { let points = vec![CohortPoint { cohort: "h".into(), variant_count: 10, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
 #[test] fn hyper_matrix_0266() { let points = vec![CohortPoint { cohort: "i".into(), variant_count: 1, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0267() { let points = vec![CohortPoint { cohort: "j".into(), variant_count: 1, flagged_pathogenic: 0 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.0).abs() < 0.01); }
-#[test] fn hyper_matrix_0268() { let p1 = CohortPoint { cohort: "k".into(), variant_count: 50, flagged_pathogenic: 5 }; let p2 = CohortPoint { cohort: "l".into(), variant_count: 50, flagged_pathogenic: 5 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
+#[test] fn hyper_matrix_0268() { let p1 = CohortPoint { cohort: "k".into(), variant_count: 50, flagged_pathogenic: 5 }; let p2 = CohortPoint { cohort: "l".into(), variant_count: 50, flagged_pathogenic: 5 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0269() { let cohorts = vec![CohortSummary { cohort_id: "m".into(), total_variants: 1000, sample_count: 10, pathogenic_variants: 500 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 500); }
 #[test] fn hyper_matrix_0270() { let cohorts = vec![CohortSummary { cohort_id: "n".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 1 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "o".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 99 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "o"); }
 
@@ -256,28 +256,28 @@
 #[test] fn hyper_matrix_0278() { let p = percentile(&[1.0, 2.0, 3.0], 50.0).unwrap(); assert!((p - 2.0).abs() < 0.5); }
 #[test] fn hyper_matrix_0279() { let p = percentile(&[10.0, 20.0, 30.0, 40.0], 25.0).unwrap(); assert!(p >= 10.0 && p <= 20.0); }
 #[test] fn hyper_matrix_0280() { let p = percentile(&[10.0, 20.0, 30.0, 40.0], 75.0).unwrap(); assert!(p >= 30.0 && p <= 40.0); }
-#[test] fn hyper_matrix_0281() { let f1 = f1_score(0.9, 0.1).unwrap(); assert!(f1 > 0.0 && f1 < 0.5); }
-#[test] fn hyper_matrix_0282() { let f1 = f1_score(0.1, 0.9).unwrap(); assert!(f1 > 0.0 && f1 < 0.5); }
+#[test] fn hyper_matrix_0281() { let f1 = f1_score(0.9, 0.1).unwrap(); assert!((f1 - 0.18).abs() < 0.01, "F1(0.9,0.1) = 2*0.9*0.1/1.0 = 0.18"); }
+#[test] fn hyper_matrix_0282() { let f1 = f1_score(0.1, 0.9).unwrap(); assert!((f1 - 0.18).abs() < 0.01, "F1(0.1,0.9) = 2*0.1*0.9/1.0 = 0.18"); }
 #[test] fn hyper_matrix_0283() { assert!(passes_variant_quality(100, 30.0, 0.01)); }
 #[test] fn hyper_matrix_0284() { assert!(!passes_variant_quality(20, 30.0, 0.05)); }
 #[test] fn hyper_matrix_0285() { assert!(passes_variant_quality(35, 30.0, 0.05)); }
-#[test] fn hyper_matrix_0286() { let ma = moving_average(&[1.0], 1); assert!(!ma.is_empty()); }
+#[test] fn hyper_matrix_0286() { let ma = moving_average(&[1.0], 1); assert_eq!(ma.len(), 1, "moving_average([1.0], 1) should have 1 element"); }
 #[test] fn hyper_matrix_0287() { let ma = moving_average(&[1.0, 2.0], 1); assert_eq!(ma.len(), 2); }
 #[test] fn hyper_matrix_0288() { let ma = moving_average(&[1.0, 2.0, 3.0, 4.0], 2); assert_eq!(ma.len(), 3); }
 #[test] fn hyper_matrix_0289() { let (lo, hi) = confidence_interval_95(50.0, 5.0); assert!(lo < 50.0 && hi > 50.0); }
 #[test] fn hyper_matrix_0290() { let (lo, hi) = confidence_interval_95(0.0, 0.1); assert!(lo < 0.0 && hi > 0.0); }
-#[test] fn hyper_matrix_0291() { let t = bonferroni_threshold(0.10, 5); assert!((t - 0.02).abs() < 0.001); }
+#[test] fn hyper_matrix_0291() { let t = bonferroni_threshold(0.10, 5); assert!((t - 0.02).abs() < 0.0001, "bonferroni 0.10/5 should be exactly 0.02"); }
 #[test] fn hyper_matrix_0292() { let t = bonferroni_threshold(0.01, 50); assert!((t - 0.0002).abs() < 0.0001); }
 #[test] fn hyper_matrix_0293() { let m = mean(&[1.5, 2.5, 3.5]).unwrap(); assert!((m - 2.5).abs() < 0.01); }
 #[test] fn hyper_matrix_0294() { let m = median(&[1.5, 2.5, 3.5, 4.5, 5.5]).unwrap(); assert!((m - 3.5).abs() < 0.01); }
 #[test] fn hyper_matrix_0295() { let v = variance(&[10.0, 20.0, 30.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0296() { let p = percentile(&[5.0, 10.0, 15.0, 20.0, 25.0], 50.0).unwrap(); assert!((p - 15.0).abs() < 1.0); }
 #[test] fn hyper_matrix_0297() { let f1 = f1_score(0.7, 0.7).unwrap(); assert!((f1 - 0.7).abs() < 0.01); }
-#[test] fn hyper_matrix_0298() { let f1 = f1_score(0.6, 0.8).unwrap(); assert!(f1 > 0.6 && f1 < 0.8); }
+#[test] fn hyper_matrix_0298() { let f1 = f1_score(0.6, 0.8).unwrap(); assert!((f1 - 0.6857).abs() < 0.01, "F1(0.6,0.8) = 2*0.6*0.8/1.4 = 0.6857"); }
 #[test] fn hyper_matrix_0299() { assert!(passes_variant_quality(40, 35.0, 0.04)); }
 #[test] fn hyper_matrix_0300() { assert!(!passes_variant_quality(30, 31.0, 0.05)); }
 #[test] fn hyper_matrix_0301() { let ma = moving_average(&[10.0, 20.0, 30.0, 40.0, 50.0], 3); assert_eq!(ma.len(), 3); }
-#[test] fn hyper_matrix_0302() { let (lo, hi) = confidence_interval_95(1000.0, 50.0); assert!(lo < 1000.0 && hi > 1000.0); }
+#[test] fn hyper_matrix_0302() { let (lo, hi) = confidence_interval_95(1000.0, 50.0); assert!((hi - lo - 196.0).abs() < 1.0, "95% CI width should be 2*1.96*50 = 196"); }
 #[test] fn hyper_matrix_0303() { let t = bonferroni_threshold(0.05, 20); assert!((t - 0.0025).abs() < 0.0001); }
 #[test] fn hyper_matrix_0304() { let m = mean(&[0.1, 0.2, 0.3, 0.4, 0.5]).unwrap(); assert!((m - 0.3).abs() < 0.01); }
 #[test] fn hyper_matrix_0305() { let m = median(&[0.1, 0.2, 0.3, 0.4]).unwrap(); assert!((m - 0.25).abs() < 0.01); }
@@ -287,13 +287,13 @@
 #[test] fn hyper_matrix_0309() { assert!(passes_variant_quality(50, 40.0, 0.03)); }
 #[test] fn hyper_matrix_0310() { assert!(!passes_variant_quality(39, 40.0, 0.05)); }
 #[test] fn hyper_matrix_0311() { let ma = moving_average(&[2.0, 4.0, 6.0, 8.0, 10.0], 2); assert_eq!(ma.len(), 4); }
-#[test] fn hyper_matrix_0312() { let (lo, hi) = confidence_interval_95(25.0, 2.5); assert!(lo < 25.0 && hi > 25.0); }
+#[test] fn hyper_matrix_0312() { let (lo, hi) = confidence_interval_95(25.0, 2.5); assert!((hi - lo - 9.8).abs() < 0.1, "95% CI width should be 2*1.96*2.5 = 9.8"); }
 #[test] fn hyper_matrix_0313() { let t = bonferroni_threshold(0.001, 10); assert!((t - 0.0001).abs() < 0.00001); }
 #[test] fn hyper_matrix_0314() { let m = mean(&[-10.0, -5.0, 0.0, 5.0, 10.0]).unwrap(); assert!(m.abs() < 0.01); }
 #[test] fn hyper_matrix_0315() { let m = median(&[-10.0, 0.0, 10.0]).unwrap(); assert!(m.abs() < 0.01); }
 #[test] fn hyper_matrix_0316() { let v = variance(&[-1.0, 0.0, 1.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0317() { let p = percentile(&[-10.0, 0.0, 10.0], 50.0).unwrap(); assert!(p.abs() < 5.0); }
-#[test] fn hyper_matrix_0318() { let f1 = f1_score(0.99, 0.01).unwrap(); assert!(f1 > 0.0 && f1 < 0.1); }
+#[test] fn hyper_matrix_0318() { let f1 = f1_score(0.99, 0.01).unwrap(); assert!((f1 - 0.0198).abs() < 0.005, "F1(0.99,0.01) should be ~0.0198"); }
 #[test] fn hyper_matrix_0319() { assert!(passes_variant_quality(60, 50.0, 0.02)); }
 #[test] fn hyper_matrix_0320() { assert!(!passes_variant_quality(49, 50.0, 0.05)); }
 
@@ -528,24 +528,24 @@
 #[test] fn hyper_matrix_0540() { let input = ReportInput { sample_id: "v3".into(), findings: 4, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 
 // Extended aggregator tests (541-670)
-#[test] fn hyper_matrix_0541() { let points = vec![CohortPoint { cohort: "agg1".into(), variant_count: 100, flagged_pathogenic: 10 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
-#[test] fn hyper_matrix_0542() { let points = vec![CohortPoint { cohort: "agg2".into(), variant_count: 100, flagged_pathogenic: 20 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.2).abs() < 0.01); }
-#[test] fn hyper_matrix_0543() { let points = vec![CohortPoint { cohort: "agg3".into(), variant_count: 100, flagged_pathogenic: 30 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.3).abs() < 0.01); }
-#[test] fn hyper_matrix_0544() { let points = vec![CohortPoint { cohort: "agg4".into(), variant_count: 100, flagged_pathogenic: 40 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.4).abs() < 0.01); }
-#[test] fn hyper_matrix_0545() { let points = vec![CohortPoint { cohort: "agg5".into(), variant_count: 100, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
-#[test] fn hyper_matrix_0546() { let points = vec![CohortPoint { cohort: "agg6".into(), variant_count: 100, flagged_pathogenic: 60 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.6).abs() < 0.01); }
-#[test] fn hyper_matrix_0547() { let points = vec![CohortPoint { cohort: "agg7".into(), variant_count: 100, flagged_pathogenic: 70 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.7).abs() < 0.01); }
-#[test] fn hyper_matrix_0548() { let points = vec![CohortPoint { cohort: "agg8".into(), variant_count: 100, flagged_pathogenic: 80 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.8).abs() < 0.01); }
-#[test] fn hyper_matrix_0549() { let points = vec![CohortPoint { cohort: "agg9".into(), variant_count: 100, flagged_pathogenic: 90 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.9).abs() < 0.01); }
-#[test] fn hyper_matrix_0550() { let points = vec![CohortPoint { cohort: "agg10".into(), variant_count: 100, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
-#[test] fn hyper_matrix_0551() { let p1 = CohortPoint { cohort: "c1".into(), variant_count: 50, flagged_pathogenic: 5 }; let p2 = CohortPoint { cohort: "c2".into(), variant_count: 50, flagged_pathogenic: 15 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.2).abs() < 0.01); }
-#[test] fn hyper_matrix_0552() { let p1 = CohortPoint { cohort: "c3".into(), variant_count: 100, flagged_pathogenic: 25 }; let p2 = CohortPoint { cohort: "c4".into(), variant_count: 100, flagged_pathogenic: 25 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.01); }
+#[test] fn hyper_matrix_0541() { let points = vec![CohortPoint { cohort: "agg1".into(), variant_count: 100, flagged_pathogenic: 10 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0542() { let points = vec![CohortPoint { cohort: "agg2".into(), variant_count: 100, flagged_pathogenic: 20 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.2).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0543() { let points = vec![CohortPoint { cohort: "agg3".into(), variant_count: 100, flagged_pathogenic: 30 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.3).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0544() { let points = vec![CohortPoint { cohort: "agg4".into(), variant_count: 100, flagged_pathogenic: 40 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.4).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0545() { let points = vec![CohortPoint { cohort: "agg5".into(), variant_count: 100, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0546() { let points = vec![CohortPoint { cohort: "agg6".into(), variant_count: 100, flagged_pathogenic: 60 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.6).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0547() { let points = vec![CohortPoint { cohort: "agg7".into(), variant_count: 100, flagged_pathogenic: 70 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.7).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0548() { let points = vec![CohortPoint { cohort: "agg8".into(), variant_count: 100, flagged_pathogenic: 80 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.8).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0549() { let points = vec![CohortPoint { cohort: "agg9".into(), variant_count: 100, flagged_pathogenic: 90 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.9).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0550() { let points = vec![CohortPoint { cohort: "agg10".into(), variant_count: 100, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0551() { let p1 = CohortPoint { cohort: "c1".into(), variant_count: 50, flagged_pathogenic: 5 }; let p2 = CohortPoint { cohort: "c2".into(), variant_count: 50, flagged_pathogenic: 15 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.2).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0552() { let p1 = CohortPoint { cohort: "c3".into(), variant_count: 100, flagged_pathogenic: 25 }; let p2 = CohortPoint { cohort: "c4".into(), variant_count: 100, flagged_pathogenic: 25 }; let points = vec![p1, p2]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0553() { let cohorts = vec![CohortSummary { cohort_id: "cs1".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 10 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked.len(), 1); }
 #[test] fn hyper_matrix_0554() { let cohorts = vec![CohortSummary { cohort_id: "cs2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 20 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "cs3".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 30 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "cs3"); }
 #[test] fn hyper_matrix_0555() { let cohorts = vec![CohortSummary { cohort_id: "cs4".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 50 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "cs5".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 40 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "cs6".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 60 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "cs6"); }
-#[test] fn hyper_matrix_0556() { let points = vec![CohortPoint { cohort: "d1".into(), variant_count: 200, flagged_pathogenic: 20 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
-#[test] fn hyper_matrix_0557() { let points = vec![CohortPoint { cohort: "d2".into(), variant_count: 500, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
-#[test] fn hyper_matrix_0558() { let points = vec![CohortPoint { cohort: "d3".into(), variant_count: 1000, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
+#[test] fn hyper_matrix_0556() { let points = vec![CohortPoint { cohort: "d1".into(), variant_count: 200, flagged_pathogenic: 20 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0557() { let points = vec![CohortPoint { cohort: "d2".into(), variant_count: 500, flagged_pathogenic: 50 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
+#[test] fn hyper_matrix_0558() { let points = vec![CohortPoint { cohort: "d3".into(), variant_count: 1000, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0559() { let points = vec![CohortPoint { cohort: "d4".into(), variant_count: 10, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
 #[test] fn hyper_matrix_0560() { let points = vec![CohortPoint { cohort: "d5".into(), variant_count: 5, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.2).abs() < 0.01); }
 #[test] fn hyper_matrix_0561() { let cohorts = vec![CohortSummary { cohort_id: "e1".into(), total_variants: 1000, sample_count: 10, pathogenic_variants: 100 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 100); }
@@ -555,9 +555,9 @@
 #[test] fn hyper_matrix_0565() { let points = vec![CohortPoint { cohort: "g1".into(), variant_count: 1, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0566() { let points = vec![CohortPoint { cohort: "g2".into(), variant_count: 2, flagged_pathogenic: 1 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
 #[test] fn hyper_matrix_0567() { let cohorts = vec![CohortSummary { cohort_id: "h1".into(), total_variants: 50, sample_count: 10, pathogenic_variants: 25 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 25); }
-#[test] fn hyper_matrix_0568() { let p1 = CohortPoint { cohort: "i1".into(), variant_count: 100, flagged_pathogenic: 10 }; let p2 = CohortPoint { cohort: "i2".into(), variant_count: 100, flagged_pathogenic: 10 }; let p3 = CohortPoint { cohort: "i3".into(), variant_count: 100, flagged_pathogenic: 10 }; let points = vec![p1, p2, p3]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
+#[test] fn hyper_matrix_0568() { let p1 = CohortPoint { cohort: "i1".into(), variant_count: 100, flagged_pathogenic: 10 }; let p2 = CohortPoint { cohort: "i2".into(), variant_count: 100, flagged_pathogenic: 10 }; let p3 = CohortPoint { cohort: "i3".into(), variant_count: 100, flagged_pathogenic: 10 }; let points = vec![p1, p2, p3]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0569() { let cohorts = vec![CohortSummary { cohort_id: "j1".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 1 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "j2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 2 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "j3".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 3 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "j3"); }
-#[test] fn hyper_matrix_0570() { let points = vec![CohortPoint { cohort: "k1".into(), variant_count: 250, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.01); }
+#[test] fn hyper_matrix_0570() { let points = vec![CohortPoint { cohort: "k1".into(), variant_count: 250, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.1).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 
 // More mixed tests (571-700)
 #[test] fn hyper_matrix_0571() { assert!(passes_variant_quality(30, 30.0, 0.05)); }
@@ -568,9 +568,9 @@
 #[test] fn hyper_matrix_0576() { let m = median(&[10.0, 20.0, 30.0]).unwrap(); assert!((m - 20.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0577() { let v = variance(&[10.0, 20.0, 30.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0578() { let p = percentile(&[10.0, 20.0, 30.0], 50.0).unwrap(); assert!((p - 20.0).abs() < 5.0); }
-#[test] fn hyper_matrix_0579() { let ma = moving_average(&[10.0, 20.0, 30.0], 2); assert!(!ma.is_empty()); }
-#[test] fn hyper_matrix_0580() { let (lo, hi) = confidence_interval_95(50.0, 10.0); assert!(lo < 50.0 && hi > 50.0); }
-#[test] fn hyper_matrix_0581() { let t = bonferroni_threshold(0.05, 5); assert!((t - 0.01).abs() < 0.001); }
+#[test] fn hyper_matrix_0579() { let ma = moving_average(&[10.0, 20.0, 30.0], 2); assert_eq!(ma.len(), 2, "moving_average([10,20,30], 2) should have 2 elements"); }
+#[test] fn hyper_matrix_0580() { let (lo, hi) = confidence_interval_95(50.0, 10.0); assert!((hi - lo - 39.2).abs() < 0.1, "95% CI width should be 2*1.96*10 = 39.2"); }
+#[test] fn hyper_matrix_0581() { let t = bonferroni_threshold(0.05, 5); assert!((t - 0.01).abs() < 0.0001, "bonferroni 0.05/5 should be exactly 0.01"); }
 #[test] fn hyper_matrix_0582() { assert!(!should_shed_load(50, 100)); }
 #[test] fn hyper_matrix_0583() { assert!(should_shed_load(100, 100)); }
 #[test] fn hyper_matrix_0584() { assert!(should_shed_load(150, 100)); }
@@ -596,7 +596,7 @@
 #[test] fn hyper_matrix_0604() { let input = ReportInput { sample_id: "n1".into(), findings: 5, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0605() { assert_eq!(report_priority(5, false), 1); }
 #[test] fn hyper_matrix_0606() { assert_eq!(report_priority(15, true), 6); }
-#[test] fn hyper_matrix_0607() { let points = vec![CohortPoint { cohort: "l1".into(), variant_count: 100, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.01); }
+#[test] fn hyper_matrix_0607() { let points = vec![CohortPoint { cohort: "l1".into(), variant_count: 100, flagged_pathogenic: 25 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.25).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0608() { let cohorts = vec![CohortSummary { cohort_id: "l2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 50 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 50); }
 #[test] fn hyper_matrix_0609() { assert_eq!(stage_index(&Stage::Intake), 0); }
 #[test] fn hyper_matrix_0610() { assert_eq!(stage_index(&Stage::Report), 5); }
@@ -615,7 +615,7 @@
 #[test] fn hyper_matrix_0623() { let v = variance(&[5.0, 10.0, 15.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0624() { let p = percentile(&[5.0, 10.0, 15.0], 50.0).unwrap(); assert!((p - 10.0).abs() < 3.0); }
 #[test] fn hyper_matrix_0625() { let ma = moving_average(&[5.0, 10.0, 15.0, 20.0], 2); assert_eq!(ma.len(), 3); }
-#[test] fn hyper_matrix_0626() { let (lo, hi) = confidence_interval_95(100.0, 20.0); assert!(lo < 100.0 && hi > 100.0); }
+#[test] fn hyper_matrix_0626() { let (lo, hi) = confidence_interval_95(100.0, 20.0); assert!((hi - lo - 78.4).abs() < 0.5, "95% CI width should be 2*1.96*20 = 78.4"); }
 #[test] fn hyper_matrix_0627() { let t = bonferroni_threshold(0.01, 10); assert!((t - 0.001).abs() < 0.0001); }
 #[test] fn hyper_matrix_0628() { assert!(!should_shed_load(25, 50)); }
 #[test] fn hyper_matrix_0629() { assert!(should_shed_load(50, 50)); }
@@ -653,7 +653,7 @@
 #[test] fn hyper_matrix_0659() { assert_eq!(report_priority(2, true), 2); }
 #[test] fn hyper_matrix_0660() { assert_eq!(report_priority(8, true), 4); }
 #[test] fn hyper_matrix_0661() { assert_eq!(report_priority(12, true), 6); }
-#[test] fn hyper_matrix_0662() { let points = vec![CohortPoint { cohort: "q1".into(), variant_count: 100, flagged_pathogenic: 15 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.15).abs() < 0.01); }
+#[test] fn hyper_matrix_0662() { let points = vec![CohortPoint { cohort: "q1".into(), variant_count: 100, flagged_pathogenic: 15 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.15).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0663() { let cohorts = vec![CohortSummary { cohort_id: "q2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 35 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 35); }
 #[test] fn hyper_matrix_0664() { assert_eq!(stage_index(&Stage::Qc), 1); }
 #[test] fn hyper_matrix_0665() { assert_eq!(stage_index(&Stage::Align), 2); }
@@ -675,7 +675,7 @@
 #[test] fn hyper_matrix_0681() { assert!(passes_variant_quality(40, 35.0, 0.04)); }
 #[test] fn hyper_matrix_0682() { assert!(!passes_variant_quality(34, 35.0, 0.05)); }
 #[test] fn hyper_matrix_0683() { let f1 = f1_score(0.7, 0.7).unwrap(); assert!((f1 - 0.7).abs() < 0.01); }
-#[test] fn hyper_matrix_0684() { let f1 = f1_score(0.6, 0.8).unwrap(); assert!(f1 > 0.6 && f1 < 0.8); }
+#[test] fn hyper_matrix_0684() { let f1 = f1_score(0.6, 0.8).unwrap(); assert!((f1 - 0.6857).abs() < 0.01, "F1(0.6,0.8) = 2*0.6*0.8/1.4 = 0.6857"); }
 #[test] fn hyper_matrix_0685() { let m = mean(&[1.0, 1.0, 1.0, 1.0]).unwrap(); assert!((m - 1.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0686() { let m = mean(&[0.0, 100.0]).unwrap(); assert!((m - 50.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0687() { let m = median(&[1.0, 1.0, 1.0]).unwrap(); assert!((m - 1.0).abs() < 0.01); }
@@ -685,8 +685,8 @@
 #[test] fn hyper_matrix_0691() { let p = percentile(&[1.0, 2.0, 3.0, 4.0], 25.0).unwrap(); assert!(p >= 1.0 && p <= 2.0); }
 #[test] fn hyper_matrix_0692() { let p = percentile(&[1.0, 2.0, 3.0, 4.0], 75.0).unwrap(); assert!(p >= 3.0 && p <= 4.0); }
 #[test] fn hyper_matrix_0693() { let ma = moving_average(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3); assert_eq!(ma.len(), 4); }
-#[test] fn hyper_matrix_0694() { let (lo, hi) = confidence_interval_95(0.0, 1.0); assert!(lo < 0.0 && hi > 0.0); }
-#[test] fn hyper_matrix_0695() { let t = bonferroni_threshold(0.05, 25); assert!((t - 0.002).abs() < 0.001); }
+#[test] fn hyper_matrix_0694() { let (lo, hi) = confidence_interval_95(0.0, 1.0); assert!((hi - lo - 3.92).abs() < 0.01, "95% CI width should be 2*1.96*1.0 = 3.92"); }
+#[test] fn hyper_matrix_0695() { let t = bonferroni_threshold(0.05, 25); assert!((t - 0.002).abs() < 0.0001, "bonferroni 0.05/25 should be exactly 0.002"); }
 #[test] fn hyper_matrix_0696() { assert!(!should_shed_load(40, 80)); }
 #[test] fn hyper_matrix_0697() { assert!(should_shed_load(80, 80)); }
 #[test] fn hyper_matrix_0698() { assert!(should_shed_load(120, 80)); }
@@ -715,7 +715,7 @@
 #[test] fn hyper_matrix_0721() { assert_eq!(report_priority(4, false), 1); }
 #[test] fn hyper_matrix_0722() { assert_eq!(report_priority(9, false), 2); }
 #[test] fn hyper_matrix_0723() { assert_eq!(report_priority(14, false), 3); }
-#[test] fn hyper_matrix_0724() { let points = vec![CohortPoint { cohort: "t1".into(), variant_count: 100, flagged_pathogenic: 5 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.05).abs() < 0.01); }
+#[test] fn hyper_matrix_0724() { let points = vec![CohortPoint { cohort: "t1".into(), variant_count: 100, flagged_pathogenic: 5 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.05).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0725() { let cohorts = vec![CohortSummary { cohort_id: "t2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 45 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 45); }
 #[test] fn hyper_matrix_0726() { assert_eq!(stage_index(&Stage::Annotate), 4); }
 #[test] fn hyper_matrix_0727() { assert!(is_critical_stage(&Stage::Align)); }
@@ -729,7 +729,7 @@
 #[test] fn hyper_matrix_0735() { let v = variance(&[2.0, 4.0, 6.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0736() { let p = percentile(&[2.0, 4.0, 6.0], 50.0).unwrap(); assert!((p - 4.0).abs() < 1.0); }
 #[test] fn hyper_matrix_0737() { let ma = moving_average(&[2.0, 4.0, 6.0, 8.0], 2); assert_eq!(ma.len(), 3); }
-#[test] fn hyper_matrix_0738() { let (lo, hi) = confidence_interval_95(50.0, 5.0); assert!(lo < 50.0 && hi > 50.0); }
+#[test] fn hyper_matrix_0738() { let (lo, hi) = confidence_interval_95(50.0, 5.0); assert!((hi - lo - 19.6).abs() < 0.1, "95% CI width should be 2*1.96*5 = 19.6"); }
 #[test] fn hyper_matrix_0739() { let t = bonferroni_threshold(0.05, 50); assert!((t - 0.001).abs() < 0.0001); }
 #[test] fn hyper_matrix_0740() { assert!(!should_shed_load(30, 60)); }
 #[test] fn hyper_matrix_0741() { assert!(should_shed_load(60, 60)); }
@@ -743,7 +743,7 @@
 #[test] fn hyper_matrix_0749() { let c = ConsentRecord { subject_id: "u1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert_eq!(consent_level(&c), 3); }
 #[test] fn hyper_matrix_0750() { let input = ReportInput { sample_id: "v1".into(), findings: 25, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0751() { assert_eq!(report_priority(25, true), 6); }
-#[test] fn hyper_matrix_0752() { let points = vec![CohortPoint { cohort: "w1".into(), variant_count: 100, flagged_pathogenic: 35 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.35).abs() < 0.01); }
+#[test] fn hyper_matrix_0752() { let points = vec![CohortPoint { cohort: "w1".into(), variant_count: 100, flagged_pathogenic: 35 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.35).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0753() { assert_eq!(stage_index(&Stage::Report), 5); }
 #[test] fn hyper_matrix_0754() { assert!(!is_critical_stage(&Stage::Report)); }
 #[test] fn hyper_matrix_0755() { assert!(can_transition(&Stage::Report, &Stage::Report)); }
@@ -753,7 +753,7 @@
 #[test] fn hyper_matrix_0759() { let m = median(&[3.0, 6.0, 9.0]).unwrap(); assert!((m - 6.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0760() { let v = variance(&[3.0, 6.0, 9.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0761() { let p = percentile(&[3.0, 6.0, 9.0], 50.0).unwrap(); assert!((p - 6.0).abs() < 1.5); }
-#[test] fn hyper_matrix_0762() { let (lo, hi) = confidence_interval_95(75.0, 7.5); assert!(lo < 75.0 && hi > 75.0); }
+#[test] fn hyper_matrix_0762() { let (lo, hi) = confidence_interval_95(75.0, 7.5); assert!((hi - lo - 29.4).abs() < 0.2, "95% CI width should be 2*1.96*7.5 = 29.4"); }
 #[test] fn hyper_matrix_0763() { let t = bonferroni_threshold(0.01, 5); assert!((t - 0.002).abs() < 0.0001); }
 #[test] fn hyper_matrix_0764() { assert!(!should_shed_load(35, 70)); }
 #[test] fn hyper_matrix_0765() { assert!(should_shed_load(70, 70)); }
@@ -765,7 +765,7 @@
 #[test] fn hyper_matrix_0771() { let c = ConsentRecord { subject_id: "x1".into(), allows_research: false, allows_clinical_reporting: true, revoked: false }; assert_eq!(consent_level(&c), 2); }
 #[test] fn hyper_matrix_0772() { let input = ReportInput { sample_id: "y1".into(), findings: 30, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0773() { assert_eq!(report_priority(30, false), 3); }
-#[test] fn hyper_matrix_0774() { let points = vec![CohortPoint { cohort: "z1".into(), variant_count: 100, flagged_pathogenic: 45 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.45).abs() < 0.01); }
+#[test] fn hyper_matrix_0774() { let points = vec![CohortPoint { cohort: "z1".into(), variant_count: 100, flagged_pathogenic: 45 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.45).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0775() { assert!(is_critical_stage(&Stage::Annotate)); }
 #[test] fn hyper_matrix_0776() { assert_eq!(retry_budget_for_stage(&Stage::Annotate), 4); }
 #[test] fn hyper_matrix_0777() { assert!(can_transition(&Stage::CallVariants, &Stage::Annotate)); }
@@ -776,8 +776,8 @@
 #[test] fn hyper_matrix_0782() { let m = median(&[4.0, 8.0, 12.0]).unwrap(); assert!((m - 8.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0783() { let v = variance(&[4.0, 8.0, 12.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0784() { let p = percentile(&[4.0, 8.0, 12.0], 50.0).unwrap(); assert!((p - 8.0).abs() < 2.0); }
-#[test] fn hyper_matrix_0785() { let (lo, hi) = confidence_interval_95(25.0, 2.5); assert!(lo < 25.0 && hi > 25.0); }
-#[test] fn hyper_matrix_0786() { let t = bonferroni_threshold(0.10, 10); assert!((t - 0.01).abs() < 0.001); }
+#[test] fn hyper_matrix_0785() { let (lo, hi) = confidence_interval_95(25.0, 2.5); assert!((hi - lo - 9.8).abs() < 0.1, "95% CI width should be 2*1.96*2.5 = 9.8"); }
+#[test] fn hyper_matrix_0786() { let t = bonferroni_threshold(0.10, 10); assert!((t - 0.01).abs() < 0.0001, "bonferroni 0.10/10 should be exactly 0.01"); }
 #[test] fn hyper_matrix_0787() { assert!(!should_shed_load(45, 90)); }
 #[test] fn hyper_matrix_0788() { assert!(should_shed_load(90, 90)); }
 #[test] fn hyper_matrix_0789() { assert!(replay_window_accept(85, 90, 10)); }
@@ -788,7 +788,7 @@
 #[test] fn hyper_matrix_0794() { let c = ConsentRecord { subject_id: "aa1".into(), allows_research: true, allows_clinical_reporting: false, revoked: false }; assert_eq!(consent_level(&c), 1); }
 #[test] fn hyper_matrix_0795() { let input = ReportInput { sample_id: "bb1".into(), findings: 35, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0796() { assert_eq!(report_priority(35, true), 6); }
-#[test] fn hyper_matrix_0797() { let points = vec![CohortPoint { cohort: "cc1".into(), variant_count: 100, flagged_pathogenic: 55 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.55).abs() < 0.01); }
+#[test] fn hyper_matrix_0797() { let points = vec![CohortPoint { cohort: "cc1".into(), variant_count: 100, flagged_pathogenic: 55 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.55).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0798() { assert_eq!(stage_index(&Stage::Intake), 0); }
 #[test] fn hyper_matrix_0799() { assert!(!is_critical_stage(&Stage::Intake)); }
 #[test] fn hyper_matrix_0800() { assert_eq!(retry_budget_for_stage(&Stage::Intake), 2); }
@@ -801,7 +801,7 @@
 #[test] fn hyper_matrix_0805() { let m = median(&[5.0, 10.0, 15.0]).unwrap(); assert!((m - 10.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0806() { let v = variance(&[5.0, 10.0, 15.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0807() { let p = percentile(&[5.0, 10.0, 15.0], 50.0).unwrap(); assert!((p - 10.0).abs() < 3.0); }
-#[test] fn hyper_matrix_0808() { let (lo, hi) = confidence_interval_95(100.0, 10.0); assert!(lo < 100.0 && hi > 100.0); }
+#[test] fn hyper_matrix_0808() { let (lo, hi) = confidence_interval_95(100.0, 10.0); assert!((hi - lo - 39.2).abs() < 0.2, "95% CI width should be 2*1.96*10 = 39.2"); }
 #[test] fn hyper_matrix_0809() { let t = bonferroni_threshold(0.05, 100); assert!((t - 0.0005).abs() < 0.0001); }
 #[test] fn hyper_matrix_0810() { assert!(!should_shed_load(50, 100)); }
 #[test] fn hyper_matrix_0811() { assert!(should_shed_load(100, 100)); }
@@ -813,7 +813,7 @@
 #[test] fn hyper_matrix_0817() { let c = ConsentRecord { subject_id: "dd1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert!(can_access_dataset(&c, "any")); }
 #[test] fn hyper_matrix_0818() { let input = ReportInput { sample_id: "ee1".into(), findings: 40, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0819() { assert_eq!(report_priority(40, false), 3); }
-#[test] fn hyper_matrix_0820() { let points = vec![CohortPoint { cohort: "ff1".into(), variant_count: 100, flagged_pathogenic: 65 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.65).abs() < 0.01); }
+#[test] fn hyper_matrix_0820() { let points = vec![CohortPoint { cohort: "ff1".into(), variant_count: 100, flagged_pathogenic: 65 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.65).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0821() { assert_eq!(stage_index(&Stage::Qc), 1); }
 #[test] fn hyper_matrix_0822() { assert!(!is_critical_stage(&Stage::Qc)); }
 #[test] fn hyper_matrix_0823() { assert_eq!(retry_budget_for_stage(&Stage::Qc), 2); }
@@ -825,7 +825,7 @@
 #[test] fn hyper_matrix_0829() { let m = median(&[6.0, 12.0, 18.0]).unwrap(); assert!((m - 12.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0830() { let v = variance(&[6.0, 12.0, 18.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0831() { let p = percentile(&[6.0, 12.0, 18.0], 50.0).unwrap(); assert!((p - 12.0).abs() < 3.0); }
-#[test] fn hyper_matrix_0832() { let (lo, hi) = confidence_interval_95(200.0, 20.0); assert!(lo < 200.0 && hi > 200.0); }
+#[test] fn hyper_matrix_0832() { let (lo, hi) = confidence_interval_95(200.0, 20.0); assert!((hi - lo - 78.4).abs() < 0.5, "95% CI width should be 2*1.96*20 = 78.4"); }
 #[test] fn hyper_matrix_0833() { let t = bonferroni_threshold(0.01, 20); assert!((t - 0.0005).abs() < 0.0001); }
 #[test] fn hyper_matrix_0834() { assert!(!should_shed_load(60, 120)); }
 #[test] fn hyper_matrix_0835() { assert!(should_shed_load(120, 120)); }
@@ -837,7 +837,7 @@
 #[test] fn hyper_matrix_0841() { let c = ConsentRecord { subject_id: "gg1".into(), allows_research: false, allows_clinical_reporting: false, revoked: false }; assert!(!can_access_dataset(&c, "any")); }
 #[test] fn hyper_matrix_0842() { let input = ReportInput { sample_id: "hh1".into(), findings: 45, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0843() { assert_eq!(report_priority(45, true), 6); }
-#[test] fn hyper_matrix_0844() { let points = vec![CohortPoint { cohort: "ii1".into(), variant_count: 100, flagged_pathogenic: 75 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.01); }
+#[test] fn hyper_matrix_0844() { let points = vec![CohortPoint { cohort: "ii1".into(), variant_count: 100, flagged_pathogenic: 75 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0845() { assert_eq!(stage_index(&Stage::Align), 2); }
 #[test] fn hyper_matrix_0846() { assert!(is_critical_stage(&Stage::Align)); }
 #[test] fn hyper_matrix_0847() { assert_eq!(retry_budget_for_stage(&Stage::Align), 5); }
@@ -849,7 +849,7 @@
 #[test] fn hyper_matrix_0853() { let m = median(&[7.0, 14.0, 21.0]).unwrap(); assert!((m - 14.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0854() { let v = variance(&[7.0, 14.0, 21.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0855() { let p = percentile(&[7.0, 14.0, 21.0], 50.0).unwrap(); assert!((p - 14.0).abs() < 4.0); }
-#[test] fn hyper_matrix_0856() { let (lo, hi) = confidence_interval_95(300.0, 30.0); assert!(lo < 300.0 && hi > 300.0); }
+#[test] fn hyper_matrix_0856() { let (lo, hi) = confidence_interval_95(300.0, 30.0); assert!((hi - lo - 117.6).abs() < 0.5, "95% CI width should be 2*1.96*30 = 117.6"); }
 #[test] fn hyper_matrix_0857() { let t = bonferroni_threshold(0.005, 10); assert!((t - 0.0005).abs() < 0.0001); }
 #[test] fn hyper_matrix_0858() { assert!(!should_shed_load(70, 140)); }
 #[test] fn hyper_matrix_0859() { assert!(should_shed_load(140, 140)); }
@@ -861,7 +861,7 @@
 #[test] fn hyper_matrix_0865() { let c = ConsentRecord { subject_id: "jj1".into(), allows_research: true, allows_clinical_reporting: false, revoked: true }; assert!(!can_access_dataset(&c, "research_cohort")); }
 #[test] fn hyper_matrix_0866() { let input = ReportInput { sample_id: "kk1".into(), findings: 50, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0867() { assert_eq!(report_priority(50, false), 3); }
-#[test] fn hyper_matrix_0868() { let points = vec![CohortPoint { cohort: "ll1".into(), variant_count: 100, flagged_pathogenic: 85 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.85).abs() < 0.01); }
+#[test] fn hyper_matrix_0868() { let points = vec![CohortPoint { cohort: "ll1".into(), variant_count: 100, flagged_pathogenic: 85 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.85).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0869() { assert_eq!(stage_index(&Stage::CallVariants), 3); }
 #[test] fn hyper_matrix_0870() { assert!(is_critical_stage(&Stage::CallVariants)); }
 #[test] fn hyper_matrix_0871() { assert_eq!(retry_budget_for_stage(&Stage::CallVariants), 3); }
@@ -873,7 +873,7 @@
 #[test] fn hyper_matrix_0877() { let m = median(&[8.0, 16.0, 24.0]).unwrap(); assert!((m - 16.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0878() { let v = variance(&[8.0, 16.0, 24.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0879() { let p = percentile(&[8.0, 16.0, 24.0], 50.0).unwrap(); assert!((p - 16.0).abs() < 4.0); }
-#[test] fn hyper_matrix_0880() { let (lo, hi) = confidence_interval_95(400.0, 40.0); assert!(lo < 400.0 && hi > 400.0); }
+#[test] fn hyper_matrix_0880() { let (lo, hi) = confidence_interval_95(400.0, 40.0); assert!((hi - lo - 156.8).abs() < 1.0, "95% CI width should be 2*1.96*40 = 156.8"); }
 #[test] fn hyper_matrix_0881() { let t = bonferroni_threshold(0.10, 50); assert!((t - 0.002).abs() < 0.0001); }
 #[test] fn hyper_matrix_0882() { assert!(!should_shed_load(80, 160)); }
 #[test] fn hyper_matrix_0883() { assert!(should_shed_load(160, 160)); }
@@ -885,7 +885,7 @@
 #[test] fn hyper_matrix_0889() { let c = ConsentRecord { subject_id: "mm1".into(), allows_research: false, allows_clinical_reporting: true, revoked: true }; assert!(!can_access_dataset(&c, "clinical_report")); }
 #[test] fn hyper_matrix_0890() { let input = ReportInput { sample_id: "nn1".into(), findings: 55, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0891() { assert_eq!(report_priority(55, true), 6); }
-#[test] fn hyper_matrix_0892() { let points = vec![CohortPoint { cohort: "oo1".into(), variant_count: 100, flagged_pathogenic: 95 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.95).abs() < 0.01); }
+#[test] fn hyper_matrix_0892() { let points = vec![CohortPoint { cohort: "oo1".into(), variant_count: 100, flagged_pathogenic: 95 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.95).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0893() { assert_eq!(stage_index(&Stage::Annotate), 4); }
 #[test] fn hyper_matrix_0894() { assert!(is_critical_stage(&Stage::Annotate)); }
 #[test] fn hyper_matrix_0895() { assert_eq!(retry_budget_for_stage(&Stage::Annotate), 4); }
@@ -897,7 +897,7 @@
 #[test] fn hyper_matrix_0901() { let m = median(&[9.0, 18.0, 27.0]).unwrap(); assert!((m - 18.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0902() { let v = variance(&[9.0, 18.0, 27.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0903() { let p = percentile(&[9.0, 18.0, 27.0], 50.0).unwrap(); assert!((p - 18.0).abs() < 5.0); }
-#[test] fn hyper_matrix_0904() { let (lo, hi) = confidence_interval_95(500.0, 50.0); assert!(lo < 500.0 && hi > 500.0); }
+#[test] fn hyper_matrix_0904() { let (lo, hi) = confidence_interval_95(500.0, 50.0); assert!((hi - lo - 196.0).abs() < 1.0, "95% CI width should be 2*1.96*50 = 196"); }
 #[test] fn hyper_matrix_0905() { let t = bonferroni_threshold(0.05, 200); assert!((t - 0.00025).abs() < 0.0001); }
 #[test] fn hyper_matrix_0906() { assert!(!should_shed_load(90, 180)); }
 #[test] fn hyper_matrix_0907() { assert!(should_shed_load(180, 180)); }
@@ -909,7 +909,7 @@
 #[test] fn hyper_matrix_0913() { let c = ConsentRecord { subject_id: "pp1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert_eq!(consent_level(&c), 3); }
 #[test] fn hyper_matrix_0914() { let input = ReportInput { sample_id: "qq1".into(), findings: 60, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0915() { assert_eq!(report_priority(60, false), 3); }
-#[test] fn hyper_matrix_0916() { let points = vec![CohortPoint { cohort: "rr1".into(), variant_count: 200, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
+#[test] fn hyper_matrix_0916() { let points = vec![CohortPoint { cohort: "rr1".into(), variant_count: 200, flagged_pathogenic: 100 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0917() { assert_eq!(stage_index(&Stage::Report), 5); }
 #[test] fn hyper_matrix_0918() { assert!(!is_critical_stage(&Stage::Report)); }
 #[test] fn hyper_matrix_0919() { assert_eq!(retry_budget_for_stage(&Stage::Report), 2); }
@@ -921,7 +921,7 @@
 #[test] fn hyper_matrix_0925() { let m = median(&[10.0, 20.0, 30.0]).unwrap(); assert!((m - 20.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0926() { let v = variance(&[10.0, 20.0, 30.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0927() { let p = percentile(&[10.0, 20.0, 30.0], 50.0).unwrap(); assert!((p - 20.0).abs() < 5.0); }
-#[test] fn hyper_matrix_0928() { let (lo, hi) = confidence_interval_95(1000.0, 100.0); assert!(lo < 1000.0 && hi > 1000.0); }
+#[test] fn hyper_matrix_0928() { let (lo, hi) = confidence_interval_95(1000.0, 100.0); assert!((hi - lo - 392.0).abs() < 2.0, "95% CI width should be 2*1.96*100 = 392"); }
 #[test] fn hyper_matrix_0929() { let t = bonferroni_threshold(0.01, 100); assert!((t - 0.0001).abs() < 0.00001); }
 #[test] fn hyper_matrix_0930() { assert!(!should_shed_load(100, 200)); }
 #[test] fn hyper_matrix_0931() { assert!(should_shed_load(200, 200)); }
@@ -933,7 +933,7 @@
 #[test] fn hyper_matrix_0937() { let c = ConsentRecord { subject_id: "ss1".into(), allows_research: true, allows_clinical_reporting: false, revoked: false }; assert_eq!(consent_level(&c), 1); }
 #[test] fn hyper_matrix_0938() { let input = ReportInput { sample_id: "tt1".into(), findings: 65, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0939() { assert_eq!(report_priority(65, true), 6); }
-#[test] fn hyper_matrix_0940() { let points = vec![CohortPoint { cohort: "uu1".into(), variant_count: 200, flagged_pathogenic: 150 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.01); }
+#[test] fn hyper_matrix_0940() { let points = vec![CohortPoint { cohort: "uu1".into(), variant_count: 200, flagged_pathogenic: 150 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0941() { let stages = vec![Stage::Intake, Stage::Qc, Stage::Align, Stage::CallVariants, Stage::Annotate, Stage::Report]; assert!(valid_stage_order(&stages)); }
 #[test] fn hyper_matrix_0942() { let stages = vec![Stage::Report, Stage::Annotate, Stage::CallVariants]; assert!(!valid_stage_order(&stages)); }
 #[test] fn hyper_matrix_0943() { let stages: Vec<Stage> = vec![]; assert!(!valid_stage_order(&stages)); }
@@ -943,7 +943,7 @@
 #[test] fn hyper_matrix_0947() { let m = median(&[11.0, 22.0, 33.0]).unwrap(); assert!((m - 22.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0948() { let v = variance(&[11.0, 22.0, 33.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0949() { let p = percentile(&[11.0, 22.0, 33.0], 50.0).unwrap(); assert!((p - 22.0).abs() < 6.0); }
-#[test] fn hyper_matrix_0950() { let (lo, hi) = confidence_interval_95(150.0, 15.0); assert!(lo < 150.0 && hi > 150.0); }
+#[test] fn hyper_matrix_0950() { let (lo, hi) = confidence_interval_95(150.0, 15.0); assert!((hi - lo - 58.8).abs() < 0.5, "95% CI width should be 2*1.96*15 = 58.8"); }
 #[test] fn hyper_matrix_0951() { let t = bonferroni_threshold(0.05, 500); assert!((t - 0.0001).abs() < 0.0001); }
 #[test] fn hyper_matrix_0952() { assert!(!should_shed_load(110, 220)); }
 #[test] fn hyper_matrix_0953() { assert!(should_shed_load(220, 220)); }
@@ -955,17 +955,17 @@
 #[test] fn hyper_matrix_0959() { let c = ConsentRecord { subject_id: "vv1".into(), allows_research: false, allows_clinical_reporting: true, revoked: false }; assert_eq!(consent_level(&c), 2); }
 #[test] fn hyper_matrix_0960() { let input = ReportInput { sample_id: "ww1".into(), findings: 70, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0961() { assert_eq!(report_priority(70, false), 3); }
-#[test] fn hyper_matrix_0962() { let points = vec![CohortPoint { cohort: "xx1".into(), variant_count: 200, flagged_pathogenic: 180 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.9).abs() < 0.01); }
+#[test] fn hyper_matrix_0962() { let points = vec![CohortPoint { cohort: "xx1".into(), variant_count: 200, flagged_pathogenic: 180 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.9).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0963() { assert!(can_transition(&Stage::Intake, &Stage::Intake)); }
 #[test] fn hyper_matrix_0964() { assert!(can_transition(&Stage::Qc, &Stage::Qc)); }
 #[test] fn hyper_matrix_0965() { assert!(can_transition(&Stage::Align, &Stage::Align)); }
 #[test] fn hyper_matrix_0966() { assert!(passes_variant_quality(95, 90.0, 0.03)); }
-#[test] fn hyper_matrix_0967() { let f1 = f1_score(0.10, 0.90).unwrap(); assert!(f1 > 0.0 && f1 < 0.5); }
+#[test] fn hyper_matrix_0967() { let f1 = f1_score(0.10, 0.90).unwrap(); assert!((f1 - 0.18).abs() < 0.01, "F1(0.10,0.90) = 0.18"); }
 #[test] fn hyper_matrix_0968() { let m = mean(&[12.0, 24.0, 36.0]).unwrap(); assert!((m - 24.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0969() { let m = median(&[12.0, 24.0, 36.0]).unwrap(); assert!((m - 24.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0970() { let v = variance(&[12.0, 24.0, 36.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0971() { let p = percentile(&[12.0, 24.0, 36.0], 50.0).unwrap(); assert!((p - 24.0).abs() < 6.0); }
-#[test] fn hyper_matrix_0972() { let (lo, hi) = confidence_interval_95(250.0, 25.0); assert!(lo < 250.0 && hi > 250.0); }
+#[test] fn hyper_matrix_0972() { let (lo, hi) = confidence_interval_95(250.0, 25.0); assert!((hi - lo - 98.0).abs() < 0.5, "95% CI width should be 2*1.96*25 = 98"); }
 #[test] fn hyper_matrix_0973() { let t = bonferroni_threshold(0.01, 50); assert!((t - 0.0002).abs() < 0.0001); }
 #[test] fn hyper_matrix_0974() { assert!(!should_shed_load(120, 240)); }
 #[test] fn hyper_matrix_0975() { assert!(should_shed_load(240, 240)); }
@@ -977,17 +977,17 @@
 #[test] fn hyper_matrix_0981() { let c = ConsentRecord { subject_id: "yy1".into(), allows_research: false, allows_clinical_reporting: false, revoked: false }; assert_eq!(consent_level(&c), 0); }
 #[test] fn hyper_matrix_0982() { let input = ReportInput { sample_id: "zz1".into(), findings: 75, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_0983() { assert_eq!(report_priority(75, true), 6); }
-#[test] fn hyper_matrix_0984() { let points = vec![CohortPoint { cohort: "aaa1".into(), variant_count: 200, flagged_pathogenic: 200 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
+#[test] fn hyper_matrix_0984() { let points = vec![CohortPoint { cohort: "aaa1".into(), variant_count: 200, flagged_pathogenic: 200 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_0985() { assert!(can_transition(&Stage::CallVariants, &Stage::CallVariants)); }
 #[test] fn hyper_matrix_0986() { assert!(can_transition(&Stage::Annotate, &Stage::Annotate)); }
 #[test] fn hyper_matrix_0987() { assert!(can_transition(&Stage::Report, &Stage::Report)); }
 #[test] fn hyper_matrix_0988() { assert!(passes_variant_quality(100, 95.0, 0.03)); }
-#[test] fn hyper_matrix_0989() { let f1 = f1_score(0.90, 0.10).unwrap(); assert!(f1 > 0.0 && f1 < 0.5); }
+#[test] fn hyper_matrix_0989() { let f1 = f1_score(0.90, 0.10).unwrap(); assert!((f1 - 0.18).abs() < 0.01, "F1(0.90,0.10) = 0.18"); }
 #[test] fn hyper_matrix_0990() { let m = mean(&[13.0, 26.0, 39.0]).unwrap(); assert!((m - 26.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0991() { let m = median(&[13.0, 26.0, 39.0]).unwrap(); assert!((m - 26.0).abs() < 0.01); }
 #[test] fn hyper_matrix_0992() { let v = variance(&[13.0, 26.0, 39.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_0993() { let p = percentile(&[13.0, 26.0, 39.0], 50.0).unwrap(); assert!((p - 26.0).abs() < 7.0); }
-#[test] fn hyper_matrix_0994() { let (lo, hi) = confidence_interval_95(350.0, 35.0); assert!(lo < 350.0 && hi > 350.0); }
+#[test] fn hyper_matrix_0994() { let (lo, hi) = confidence_interval_95(350.0, 35.0); assert!((hi - lo - 137.2).abs() < 1.0, "95% CI width should be 2*1.96*35 = 137.2"); }
 #[test] fn hyper_matrix_0995() { let t = bonferroni_threshold(0.001, 10); assert!((t - 0.0001).abs() < 0.00001); }
 #[test] fn hyper_matrix_0996() { assert!(!should_shed_load(130, 260)); }
 #[test] fn hyper_matrix_0997() { assert!(should_shed_load(260, 260)); }
@@ -1011,7 +1011,7 @@
 #[test] fn hyper_matrix_1013() { let m = median(&[14.0, 28.0, 42.0]).unwrap(); assert!((m - 28.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1014() { let v = variance(&[14.0, 28.0, 42.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1015() { let p = percentile(&[14.0, 28.0, 42.0], 50.0).unwrap(); assert!((p - 28.0).abs() < 7.0); }
-#[test] fn hyper_matrix_1016() { let (lo, hi) = confidence_interval_95(450.0, 45.0); assert!(lo < 450.0 && hi > 450.0); }
+#[test] fn hyper_matrix_1016() { let (lo, hi) = confidence_interval_95(450.0, 45.0); assert!((hi - lo - 176.4).abs() < 1.0, "95% CI width should be 2*1.96*45 = 176.4"); }
 #[test] fn hyper_matrix_1017() { let t = bonferroni_threshold(0.05, 1000); assert!((t - 0.00005).abs() < 0.00001); }
 #[test] fn hyper_matrix_1018() { assert!(!should_shed_load(140, 280)); }
 #[test] fn hyper_matrix_1019() { assert!(should_shed_load(280, 280)); }
@@ -1027,12 +1027,12 @@
 #[test] fn hyper_matrix_1029() { let stages = vec![Stage::Intake, Stage::Qc, Stage::Align]; assert!(!valid_stage_order(&stages)); }
 #[test] fn hyper_matrix_1030() { let stages = vec![Stage::CallVariants, Stage::Annotate, Stage::Report]; assert!(!valid_stage_order(&stages)); }
 #[test] fn hyper_matrix_1031() { assert!(passes_variant_quality(110, 105.0, 0.03)); }
-#[test] fn hyper_matrix_1032() { let f1 = f1_score(0.40, 0.60).unwrap(); assert!(f1 > 0.4 && f1 < 0.6); }
+#[test] fn hyper_matrix_1032() { let f1 = f1_score(0.40, 0.60).unwrap(); assert!((f1 - 0.48).abs() < 0.01, "F1(0.4,0.6) = 2*0.4*0.6/1.0 = 0.48"); }
 #[test] fn hyper_matrix_1033() { let m = mean(&[15.0, 30.0, 45.0]).unwrap(); assert!((m - 30.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1034() { let m = median(&[15.0, 30.0, 45.0]).unwrap(); assert!((m - 30.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1035() { let v = variance(&[15.0, 30.0, 45.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1036() { let p = percentile(&[15.0, 30.0, 45.0], 50.0).unwrap(); assert!((p - 30.0).abs() < 8.0); }
-#[test] fn hyper_matrix_1037() { let (lo, hi) = confidence_interval_95(550.0, 55.0); assert!(lo < 550.0 && hi > 550.0); }
+#[test] fn hyper_matrix_1037() { let (lo, hi) = confidence_interval_95(550.0, 55.0); assert!((hi - lo - 215.6).abs() < 1.0, "95% CI width should be 2*1.96*55 = 215.6"); }
 #[test] fn hyper_matrix_1038() { let t = bonferroni_threshold(0.10, 100); assert!((t - 0.001).abs() < 0.0001); }
 #[test] fn hyper_matrix_1039() { assert!(!should_shed_load(150, 300)); }
 #[test] fn hyper_matrix_1040() { assert!(should_shed_load(300, 300)); }
@@ -1046,13 +1046,13 @@
 #[test] fn hyper_matrix_1048() { assert_eq!(report_priority(90, false), 3); }
 #[test] fn hyper_matrix_1049() { let cohorts = vec![CohortSummary { cohort_id: "jjj1".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 65 , mean_coverage: 30.0 }, CohortSummary { cohort_id: "jjj2".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 35 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].cohort_id, "jjj1"); }
 #[test] fn hyper_matrix_1050() { assert!(passes_variant_quality(115, 110.0, 0.03)); }
-#[test] fn hyper_matrix_1051() { let f1 = f1_score(0.60, 0.40).unwrap(); assert!(f1 > 0.4 && f1 < 0.6); }
+#[test] fn hyper_matrix_1051() { let f1 = f1_score(0.60, 0.40).unwrap(); assert!((f1 - 0.48).abs() < 0.01, "F1(0.6,0.4) = 2*0.6*0.4/1.0 = 0.48"); }
 #[test] fn hyper_matrix_1052() { let m = mean(&[16.0, 32.0, 48.0]).unwrap(); assert!((m - 32.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1053() { let m = median(&[16.0, 32.0, 48.0]).unwrap(); assert!((m - 32.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1054() { let v = variance(&[16.0, 32.0, 48.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1055() { let p = percentile(&[16.0, 32.0, 48.0], 50.0).unwrap(); assert!((p - 32.0).abs() < 8.0); }
-#[test] fn hyper_matrix_1056() { let (lo, hi) = confidence_interval_95(650.0, 65.0); assert!(lo < 650.0 && hi > 650.0); }
-#[test] fn hyper_matrix_1057() { let t = bonferroni_threshold(0.05, 25); assert!((t - 0.002).abs() < 0.001); }
+#[test] fn hyper_matrix_1056() { let (lo, hi) = confidence_interval_95(650.0, 65.0); assert!((hi - lo - 254.8).abs() < 1.5, "95% CI width should be 2*1.96*65 = 254.8"); }
+#[test] fn hyper_matrix_1057() { let t = bonferroni_threshold(0.05, 25); assert!((t - 0.002).abs() < 0.0001, "bonferroni 0.05/25 should be exactly 0.002"); }
 #[test] fn hyper_matrix_1058() { assert!(!should_shed_load(160, 320)); }
 #[test] fn hyper_matrix_1059() { assert!(should_shed_load(320, 320)); }
 #[test] fn hyper_matrix_1060() { assert!(replay_window_accept(315, 320, 10)); }
@@ -1062,14 +1062,14 @@
 #[test] fn hyper_matrix_1064() { let c = ConsentRecord { subject_id: "kkk1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert!(can_access_dataset(&c, "any_dataset")); }
 #[test] fn hyper_matrix_1065() { let input = ReportInput { sample_id: "lll1".into(), findings: 95, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_1066() { assert_eq!(report_priority(95, true), 6); }
-#[test] fn hyper_matrix_1067() { let points = vec![CohortPoint { cohort: "mmm1".into(), variant_count: 300, flagged_pathogenic: 150 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.01); }
+#[test] fn hyper_matrix_1067() { let points = vec![CohortPoint { cohort: "mmm1".into(), variant_count: 300, flagged_pathogenic: 150 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.5).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_1068() { assert!(passes_variant_quality(120, 115.0, 0.03)); }
 #[test] fn hyper_matrix_1069() { let f1 = f1_score(0.80, 0.80).unwrap(); assert!((f1 - 0.80).abs() < 0.01); }
 #[test] fn hyper_matrix_1070() { let m = mean(&[17.0, 34.0, 51.0]).unwrap(); assert!((m - 34.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1071() { let m = median(&[17.0, 34.0, 51.0]).unwrap(); assert!((m - 34.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1072() { let v = variance(&[17.0, 34.0, 51.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1073() { let p = percentile(&[17.0, 34.0, 51.0], 50.0).unwrap(); assert!((p - 34.0).abs() < 9.0); }
-#[test] fn hyper_matrix_1074() { let (lo, hi) = confidence_interval_95(750.0, 75.0); assert!(lo < 750.0 && hi > 750.0); }
+#[test] fn hyper_matrix_1074() { let (lo, hi) = confidence_interval_95(750.0, 75.0); assert!((hi - lo - 294.0).abs() < 1.5, "95% CI width should be 2*1.96*75 = 294"); }
 #[test] fn hyper_matrix_1075() { let t = bonferroni_threshold(0.01, 25); assert!((t - 0.0004).abs() < 0.0001); }
 #[test] fn hyper_matrix_1076() { assert!(!should_shed_load(170, 340)); }
 #[test] fn hyper_matrix_1077() { assert!(should_shed_load(340, 340)); }
@@ -1080,14 +1080,14 @@
 #[test] fn hyper_matrix_1082() { let c = ConsentRecord { subject_id: "nnn1".into(), allows_research: false, allows_clinical_reporting: false, revoked: true }; assert_eq!(consent_level(&c), 0); }
 #[test] fn hyper_matrix_1083() { let input = ReportInput { sample_id: "ooo1".into(), findings: 100, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_1084() { assert_eq!(report_priority(100, false), 3); }
-#[test] fn hyper_matrix_1085() { let points = vec![CohortPoint { cohort: "ppp1".into(), variant_count: 300, flagged_pathogenic: 225 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.01); }
+#[test] fn hyper_matrix_1085() { let points = vec![CohortPoint { cohort: "ppp1".into(), variant_count: 300, flagged_pathogenic: 225 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 0.75).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_1086() { assert!(passes_variant_quality(125, 120.0, 0.03)); }
 #[test] fn hyper_matrix_1087() { let f1 = f1_score(0.70, 0.70).unwrap(); assert!((f1 - 0.70).abs() < 0.01); }
 #[test] fn hyper_matrix_1088() { let m = mean(&[18.0, 36.0, 54.0]).unwrap(); assert!((m - 36.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1089() { let m = median(&[18.0, 36.0, 54.0]).unwrap(); assert!((m - 36.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1090() { let v = variance(&[18.0, 36.0, 54.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1091() { let p = percentile(&[18.0, 36.0, 54.0], 50.0).unwrap(); assert!((p - 36.0).abs() < 9.0); }
-#[test] fn hyper_matrix_1092() { let (lo, hi) = confidence_interval_95(850.0, 85.0); assert!(lo < 850.0 && hi > 850.0); }
+#[test] fn hyper_matrix_1092() { let (lo, hi) = confidence_interval_95(850.0, 85.0); assert!((hi - lo - 333.2).abs() < 2.0, "95% CI width should be 2*1.96*85 = 333.2"); }
 #[test] fn hyper_matrix_1093() { let t = bonferroni_threshold(0.005, 25); assert!((t - 0.0002).abs() < 0.0001); }
 #[test] fn hyper_matrix_1094() { assert!(!should_shed_load(180, 360)); }
 #[test] fn hyper_matrix_1095() { assert!(should_shed_load(360, 360)); }
@@ -1098,14 +1098,14 @@
 #[test] fn hyper_matrix_1100() { let c = ConsentRecord { subject_id: "qqq1".into(), allows_research: true, allows_clinical_reporting: true, revoked: false }; assert!(can_access_dataset(&c, "clinical_report")); }
 #[test] fn hyper_matrix_1101() { let input = ReportInput { sample_id: "rrr1".into(), findings: 105, consent_ok: true, qc_passed: true }; assert!(can_emit_clinical_report(&input)); }
 #[test] fn hyper_matrix_1102() { assert_eq!(report_priority(105, true), 6); }
-#[test] fn hyper_matrix_1103() { let points = vec![CohortPoint { cohort: "sss1".into(), variant_count: 300, flagged_pathogenic: 300 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.01); }
+#[test] fn hyper_matrix_1103() { let points = vec![CohortPoint { cohort: "sss1".into(), variant_count: 300, flagged_pathogenic: 300 }]; let ratio = pathogenic_ratio(&points).unwrap(); assert!((ratio - 1.0).abs() < 0.002, "pathogenic_ratio should be exact for correct denominator"); }
 #[test] fn hyper_matrix_1104() { assert!(passes_variant_quality(130, 125.0, 0.03)); }
 #[test] fn hyper_matrix_1105() { let f1 = f1_score(0.60, 0.60).unwrap(); assert!((f1 - 0.60).abs() < 0.01); }
 #[test] fn hyper_matrix_1106() { let m = mean(&[19.0, 38.0, 57.0]).unwrap(); assert!((m - 38.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1107() { let m = median(&[19.0, 38.0, 57.0]).unwrap(); assert!((m - 38.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1108() { let v = variance(&[19.0, 38.0, 57.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1109() { let p = percentile(&[19.0, 38.0, 57.0], 50.0).unwrap(); assert!((p - 38.0).abs() < 10.0); }
-#[test] fn hyper_matrix_1110() { let (lo, hi) = confidence_interval_95(950.0, 95.0); assert!(lo < 950.0 && hi > 950.0); }
+#[test] fn hyper_matrix_1110() { let (lo, hi) = confidence_interval_95(950.0, 95.0); assert!((hi - lo - 372.4).abs() < 2.0, "95% CI width should be 2*1.96*95 = 372.4"); }
 #[test] fn hyper_matrix_1111() { let t = bonferroni_threshold(0.001, 25); assert!((t - 0.00004).abs() < 0.00001); }
 #[test] fn hyper_matrix_1112() { assert!(!should_shed_load(190, 380)); }
 #[test] fn hyper_matrix_1113() { assert!(should_shed_load(380, 380)); }
@@ -1118,12 +1118,12 @@
 #[test] fn hyper_matrix_1120() { assert_eq!(report_priority(110, false), 3); }
 #[test] fn hyper_matrix_1121() { let cohorts = vec![CohortSummary { cohort_id: "vvv1".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 75 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 75); }
 #[test] fn hyper_matrix_1122() { assert!(passes_variant_quality(135, 130.0, 0.03)); }
-#[test] fn hyper_matrix_1123() { let f1 = f1_score(0.50, 1.0); assert!(f1.is_some()); }
+#[test] fn hyper_matrix_1123() { let f1 = f1_score(0.50, 1.0).unwrap(); assert!((f1 - 0.667).abs() < 0.01, "F1(0.5, 1.0) = 2*0.5*1.0/1.5 = 0.667"); }
 #[test] fn hyper_matrix_1124() { let m = mean(&[20.0, 40.0, 60.0]).unwrap(); assert!((m - 40.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1125() { let m = median(&[20.0, 40.0, 60.0]).unwrap(); assert!((m - 40.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1126() { let v = variance(&[20.0, 40.0, 60.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1127() { let p = percentile(&[20.0, 40.0, 60.0], 50.0).unwrap(); assert!((p - 40.0).abs() < 10.0); }
-#[test] fn hyper_matrix_1128() { let (lo, hi) = confidence_interval_95(1050.0, 105.0); assert!(lo < 1050.0 && hi > 1050.0); }
+#[test] fn hyper_matrix_1128() { let (lo, hi) = confidence_interval_95(1050.0, 105.0); assert!((hi - lo - 411.6).abs() < 2.0, "95% CI width should be 2*1.96*105 = 411.6"); }
 #[test] fn hyper_matrix_1129() { let t = bonferroni_threshold(0.0001, 10); assert!((t - 0.00001).abs() < 0.000001); }
 #[test] fn hyper_matrix_1130() { assert!(!should_shed_load(200, 400)); }
 #[test] fn hyper_matrix_1131() { assert!(should_shed_load(400, 400)); }
@@ -1136,12 +1136,12 @@
 #[test] fn hyper_matrix_1138() { assert_eq!(report_priority(115, true), 6); }
 #[test] fn hyper_matrix_1139() { let cohorts = vec![CohortSummary { cohort_id: "yyy1".into(), total_variants: 100, sample_count: 10, pathogenic_variants: 85 , mean_coverage: 30.0 }]; let ranked = rank_cohorts_by_pathogenic(&cohorts); assert_eq!(ranked[0].pathogenic_variants, 85); }
 #[test] fn hyper_matrix_1140() { assert!(passes_variant_quality(140, 135.0, 0.03)); }
-#[test] fn hyper_matrix_1141() { let f1 = f1_score(1.0, 0.50); assert!(f1.is_some()); }
+#[test] fn hyper_matrix_1141() { let f1 = f1_score(1.0, 0.50).unwrap(); assert!((f1 - 0.667).abs() < 0.01, "F1(1.0, 0.5) = 2*1.0*0.5/1.5 = 0.667"); }
 #[test] fn hyper_matrix_1142() { let m = mean(&[21.0, 42.0, 63.0]).unwrap(); assert!((m - 42.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1143() { let m = median(&[21.0, 42.0, 63.0]).unwrap(); assert!((m - 42.0).abs() < 0.01); }
 #[test] fn hyper_matrix_1144() { let v = variance(&[21.0, 42.0, 63.0]).unwrap(); assert!(v > 0.0); }
 #[test] fn hyper_matrix_1145() { let p = percentile(&[21.0, 42.0, 63.0], 50.0).unwrap(); assert!((p - 42.0).abs() < 11.0); }
-#[test] fn hyper_matrix_1146() { let (lo, hi) = confidence_interval_95(1150.0, 115.0); assert!(lo < 1150.0 && hi > 1150.0); }
+#[test] fn hyper_matrix_1146() { let (lo, hi) = confidence_interval_95(1150.0, 115.0); assert!((hi - lo - 450.8).abs() < 2.5, "95% CI width should be 2*1.96*115 = 450.8"); }
 #[test] fn hyper_matrix_1147() { let t = bonferroni_threshold(0.05, 2); assert!((t - 0.025).abs() < 0.001); }
 #[test] fn hyper_matrix_1148() { assert!(!should_shed_load(210, 420)); }
 #[test] fn hyper_matrix_1149() { assert!(should_shed_load(420, 420)); }

@@ -12,9 +12,9 @@ const CATEGORY_WEIGHTS = {
   security: 2.0
 };
 
-// Sparse reward thresholds
-const PASS_THRESHOLDS = [0.25, 0.50, 0.75, 0.90, 1.0];
-const THRESHOLD_REWARDS = [0.0, 0.15, 0.35, 0.65, 1.0];
+// Sparse reward thresholds (5-threshold Senior tier, matches scoring.py)
+const PASS_THRESHOLDS = [0.50, 0.75, 0.90, 1.0];
+const THRESHOLD_REWARDS = [0.15, 0.35, 0.65, 1.0];
 
 class RewardCalculator {
   constructor() {
@@ -136,4 +136,50 @@ class RewardCalculator {
   }
 }
 
+/**
+ * Bug-to-test mapping for per-bug status tracking.
+ * Keys: bug IDs. Values: arrays of test name substrings that validate the fix.
+ */
+const BUG_TEST_MAPPING = {
+  A1: ['should complete broadcast before returning', 'should await Redis publish'],
+  A2: ['should handle concurrent updates', 'race condition'],
+  A3: ['should remove heartbeat listener', 'memory leak'],
+  A4: ['stale closure', 'should track correct board after switch'],
+  A5: ['redundant JSON round-trip', 'should not block event loop'],
+  B1: ['should correctly compare vector clock values above 9', 'string/number clock'],
+  B2: ['should preserve deeply nested properties', 'partial style update'],
+  B3: ['should not merge inherited properties', 'prototype pollution'],
+  B4: ['should store deep copies in undo stack'],
+  C1: ['should use transaction for board creation', 'transaction for atomicity'],
+  C2: ['atomic permission-check-and-remove', 'concurrent permission revocation'],
+  C3: ['should close duplicated Redis connections'],
+  C4: ['should batch-load elements', 'N+1 queries'],
+  D1: ['should fail with undefined JWT_SECRET', 'JWT secret validation'],
+  D2: ['should validate OAuth state', 'CSRF'],
+  D3: ['should maintain this context in permission checker'],
+  D4: ['socket auth timing', 'token expiry correctly'],
+  E1: ['path traversal', 'directory traversal'],
+  E2: ['file size checked before reading', 'memory'],
+  E3: ['should properly propagate errors from image processing'],
+  E4: ['should reject executable files', 'file extension'],
+  F1: ['socket.io version', 'package version'],
+  F2: ['circular import', 'circular dependency'],
+  F3: ['missing await on database sync', 'database connection'],
+  F4: ['DB_POOL_SIZE', 'environment variable type'],
+};
+
+/**
+ * Bug categories for grouping and setup detection.
+ */
+const BUG_CATEGORIES = {
+  websocket: ['A1', 'A2', 'A3', 'A4', 'A5'],
+  state: ['B1', 'B2', 'B3', 'B4'],
+  database: ['C1', 'C2', 'C3', 'C4'],
+  auth: ['D1', 'D2', 'D3', 'D4'],
+  file: ['E1', 'E2', 'E3', 'E4'],
+  config: ['F1', 'F2', 'F3', 'F4'],
+};
+
 module.exports = RewardCalculator;
+module.exports.BUG_TEST_MAPPING = BUG_TEST_MAPPING;
+module.exports.BUG_CATEGORIES = BUG_CATEGORIES;

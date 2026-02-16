@@ -13,13 +13,37 @@ jest.mock('ioredis', () => {
     hset: jest.fn().mockResolvedValue(1),
     hget: jest.fn().mockResolvedValue(null),
     hdel: jest.fn().mockResolvedValue(1),
+    hgetall: jest.fn().mockResolvedValue({}),
     expire: jest.fn().mockResolvedValue(1),
+    setex: jest.fn().mockResolvedValue('OK'),
     publish: jest.fn().mockResolvedValue(1),
     subscribe: jest.fn().mockResolvedValue(),
     on: jest.fn(),
     quit: jest.fn().mockResolvedValue(),
   }));
   return Redis;
+});
+
+// Mock sharp (native binary may not be available in test environment)
+jest.mock('sharp', () => {
+  const mockSharp = jest.fn().mockImplementation((input) => {
+    const instance = {
+      resize: jest.fn().mockReturnThis(),
+      toBuffer: jest.fn().mockImplementation((callback) => {
+        if (typeof input === 'string' && !require('fs').existsSync(input)) {
+          callback(new Error('Input file is missing'));
+          return;
+        }
+        // Simulate image processing
+        const buffer = Buffer.from('processed-image');
+        callback(null, buffer, { width: 100, height: 100, size: buffer.length });
+      }),
+      toFile: jest.fn().mockResolvedValue({ width: 100, height: 100, size: 100 }),
+      metadata: jest.fn().mockResolvedValue({ width: 800, height: 600, format: 'png' }),
+    };
+    return instance;
+  });
+  return mockSharp;
 });
 
 // Test database configuration

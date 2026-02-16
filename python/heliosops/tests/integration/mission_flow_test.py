@@ -13,6 +13,12 @@ class MissionFlowTests(unittest.TestCase):
         self.assertEqual(route["channel"], "north")
         self.assertTrue(can_transition("queued", "allocated"))
 
+    def test_full_mission_lifecycle(self) -> None:
+        self.assertTrue(can_transition("queued", "allocated"))
+        self.assertTrue(can_transition("allocated", "departed"))
+        self.assertFalse(can_transition("arrived", "queued"),
+                         "Cannot go backwards in mission lifecycle")
+
 
 if __name__ == "__main__":
     unittest.main()

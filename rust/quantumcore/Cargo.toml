@@ -12,6 +12,7 @@ members = [
     "services/portfolio",
     "services/ledger",
     "services/alerts",
+    "integration-tests",
 ]
 
 [workspace.package]

@@ -8,7 +8,7 @@ fn stage_order_rejects_wrong_sequence() {
 
 #[test]
 fn retry_budget_profiles() {
-    assert_eq!(retry_budget_for_stage(&Stage::Align), 4);
+    assert_eq!(retry_budget_for_stage(&Stage::Align), 5);
     assert_eq!(retry_budget_for_stage(&Stage::CallVariants), 3);
     assert_eq!(retry_budget_for_stage(&Stage::Intake), 2);
 }

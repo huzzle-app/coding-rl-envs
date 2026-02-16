@@ -351,3 +351,55 @@ describe('StreamProcessor edge cases', () => {
     expect(processor.lastCheckpoint).toBeGreaterThanOrEqual(before);
   });
 });
+
+describe('IngestService resume threshold (A2)', () => {
+  test('resume should not accept when buffer is above threshold', async () => {
+    const { IngestService } = require('../../services/ingestion/src/services/ingest');
+    const mockEventBus = { publish: jest.fn().mockResolvedValue(true) };
+    const service = new IngestService(mockEventBus, {
+      batchSize: 100,
+      backpressureThreshold: 10,
+    });
+    for (let i = 0; i < 15; i++) {
+      await service.ingest('p1', [{ id: `r-${i}`, value: i }]);
+    }
+    expect(service._ingestionState).toBe('paused');
+    service.resume();
+    // BUG: resume() blindly sets accepting without checking buffer
+    expect(service._ingestionState).toBe('paused');
+  });
+
+  test('resume after drain should correctly accept new records', async () => {
+    const { IngestService } = require('../../services/ingestion/src/services/ingest');
+    const mockEventBus = { publish: jest.fn().mockResolvedValue(true) };
+    const service = new IngestService(mockEventBus, {
+      batchSize: 100,
+      backpressureThreshold: 10,
+    });
+    for (let i = 0; i < 15; i++) {
+      await service.ingest('p1', [{ id: `r-${i}`, value: i }]);
+    }
+    await service.drain();
+    service.resume();
+    expect(service._ingestionState).toBe('accepting');
+  });
+});
+
+describe('IngestService backpressure boundary', () => {
+  test('Boolean coercion of string "false" should produce false', async () => {
+    const { IngestService } = require('../../services/ingestion/src/services/ingest');
+    const service = new IngestService(null, { batchSize: 100 });
+    const schema = { fields: { active: { type: 'boolean' } } };
+    const result = service.validateSchema([{ active: 'false' }], schema);
+    // BUG: Boolean("false") === true in JS
+    expect(result[0].active).toBe(false);
+  });
+
+  test('Boolean coercion of empty string should produce false', async () => {
+    const { IngestService } = require('../../services/ingestion/src/services/ingest');
+    const service = new IngestService(null, { batchSize: 100 });
+    const schema = { fields: { active: { type: 'boolean' } } };
+    const result = service.validateSchema([{ active: '' }], schema);
+    expect(result[0].active).toBe(false);
+  });
+});

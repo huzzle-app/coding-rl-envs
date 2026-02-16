@@ -1,6 +1,6 @@
 Fix production defects in HelixOps by editing source code only.
 
-HelixOps is an Apex-Principal Kotlin environment and **12,tests** covering coroutine safety, Exposed ORM correctness, Ktor pipeline integrity, serialization fidelity, security hardening, and observability paths.
+HelixOps is an Apex-Principal Kotlin environment with **12,600+ tests** covering coroutine safety, Exposed ORM correctness, Ktor pipeline integrity, serialization fidelity, security hardening, and observability paths.
 
 ## Architecture
 

@@ -21,7 +21,6 @@ use std::collections::HashMap;
 // =============================================================================
 
 /// Test that margin calculations use Decimal, not f64.
-/
 #[test]
 fn test_price_decimal_precision() {
     // Classic float precision failure
@@ -143,7 +142,6 @@ fn test_risk_margin_safe() {
 // =============================================================================
 
 /// Test that risk check and position update are atomic.
-/
 ///         creating a TOCTOU (time-of-check-time-of-use) vulnerability.
 #[test]
 fn test_risk_check_atomic() {
@@ -193,7 +191,6 @@ fn test_risk_check_atomic() {
 // =============================================================================
 
 /// Test that circuit breaker state transitions are correct.
-/
 #[test]
 fn test_circuit_breaker_correct() {
     // Simulate a correctly implemented circuit breaker with single lock
@@ -313,7 +310,6 @@ fn test_circuit_breaker_concurrent() {
 // =============================================================================
 
 /// Test that position limits are enforced.
-/
 #[test]
 fn test_position_limits_enforced() {
     let position = Arc::new(AtomicU64::new(0));
@@ -363,7 +359,6 @@ fn test_position_limits_enforced() {
 // =============================================================================
 
 /// Test that authentication uses constant-time comparison.
-/
 #[test]
 fn test_constant_time_comparison() {
     let secret = b"correct_api_key_value_12345";
@@ -416,7 +411,6 @@ fn test_constant_time_comparison() {
 // =============================================================================
 
 /// Test that rate limiting cannot be bypassed via header manipulation.
-/
 #[test]
 fn test_rate_limit_not_bypassable() {
     // Simulate rate limiting based on authenticated identity (not headers)

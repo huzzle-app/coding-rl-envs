@@ -1,5 +1,7 @@
 'use strict';
 
+const { replay } = require('./resilience');
+
 // ---------------------------------------------------------------------------
 // Dispatch Statistics & Metrics
 //
@@ -151,12 +153,30 @@ function movingAverage(values, windowSize) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Replay analysis — combines event replay with statistical analysis
+// ---------------------------------------------------------------------------
+
+function replayAndAnalyze(events) {
+  const replayed = replay(events);
+  if (replayed.length === 0) return { eventCount: 0, meanSequence: 0, medianSequence: 0, maxSequence: 0, events: [] };
+  const sequences = replayed.map(e => e.sequence);
+  return {
+    eventCount: replayed.length,
+    meanSequence: mean(sequences),
+    medianSequence: median(sequences),
+    maxSequence: Math.max(...sequences),
+    events: replayed,
+  };
+}
+
 module.exports = {
   percentile,
   mean,
   variance,
   stddev,
   median,
+  replayAndAnalyze,
   ResponseTimeTracker,
   generateHeatmap,
   movingAverage,

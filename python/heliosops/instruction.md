@@ -34,17 +34,18 @@ python tests/run_all.py
 
 ## Success Criteria
 
-- All 9,tests pass
+- All 9,400+ tests pass
 - Routing, queue, policy, and replay behavior remain deterministic
 - Security and workflow invariants remain enforced
 
 ## Reward Function
 
-The environment uses 8-tier sparse rewards (Hyper-Principal):
+The environment uses 9-tier sparse rewards (Hyper-Principal):
 
 ```
 Pass Rate -> Reward
-< 25% -> 0.00
+< 10% -> 0.00
+10-25% -> 0.02
 25-40% -> 0.05
 40-55% -> 0.12
 55-70% -> 0.22

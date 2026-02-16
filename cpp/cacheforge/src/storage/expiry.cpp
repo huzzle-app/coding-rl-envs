@@ -16,19 +16,6 @@ void ExpiryManager::set_expiry(const std::string& key, std::chrono::seconds ttl)
         entries_[key] = {Clock::now() + ttl};
     }
     
-    // The expiry thread might be between checking the predicate and going to sleep:
-    //   1. Expiry thread: checks predicate (no expired keys) -> about to sleep
-    //   2. This thread: adds entry, calls notify_one() -> notification lost
-    //   3. Expiry thread: sleeps for full interval, missing the new entry
-    // FIX: Call cv_.notify_one() inside the lock_guard scope
-    //
-    
-    // Currently, the missed wakeups reduce concurrency between the expiry thread
-    // and normal cache operations. Once notifications work correctly, the expiry
-    // thread wakes up promptly and runs its cleanup loop more frequently.
-    // This increases the chance of concurrent access to EvictionManager::touch(),
-    // exposing the iterator invalidation bug (C2) that was previously hidden.
-    // Symptoms after fix: random crashes in eviction with "iterator not dereferenceable".
     cv_.notify_one();
 }
 
@@ -55,9 +42,6 @@ std::chrono::seconds ExpiryManager::get_ttl(const std::string& key) const {
 
 void ExpiryManager::set_expiry_seconds(const std::string& key, int64_t ttl_seconds) {
     
-    // std::chrono::seconds(ttl_seconds) on a large value causes the
-    // time_point to wrap around, setting the expiry in the past.
-    // FIX: Clamp ttl_seconds: ttl_seconds = std::min(ttl_seconds, (int64_t)(365*24*3600));
     auto ttl = std::chrono::seconds(ttl_seconds);
     set_expiry(key, ttl);
 }

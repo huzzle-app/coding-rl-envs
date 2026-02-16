@@ -68,6 +68,67 @@ describe('DocumentService', () => {
     });
   });
 
+  describe('serializeContent nested objects', () => {
+    it('serializeContent should preserve nested object structure', () => {
+      const service = new DocumentService();
+      const content = {
+        metadata: {
+          author: { name: 'Alice', id: 'u1' },
+          tags: ['draft', 'review'],
+        },
+      };
+      const serialized = service.serializeContent(content);
+      // BUG: nested objects are replaced with '[Object]' string
+      expect(serialized.metadata.author).toEqual({ name: 'Alice', id: 'u1' });
+    });
+
+    it('serializeContent should not replace objects with string markers', () => {
+      const service = new DocumentService();
+      const content = {
+        config: { nested: { deep: { value: 42 } } },
+      };
+      const serialized = service.serializeContent(content);
+      // BUG: replacer returns '[Object]' for nested objects
+      expect(serialized.config.nested).not.toBe('[Object]');
+      expect(typeof serialized.config.nested).toBe('object');
+    });
+
+    it('serializeContent deep nesting should be preserved', () => {
+      const service = new DocumentService();
+      const content = {
+        level1: { level2: { level3: { data: 'deep' } } },
+      };
+      const serialized = service.serializeContent(content);
+      expect(serialized.level1.level2.level3.data).toBe('deep');
+    });
+
+    it('serializeContent arrays within objects should remain arrays', () => {
+      const service = new DocumentService();
+      const content = {
+        items: { list: [1, 2, 3] },
+      };
+      const serialized = service.serializeContent(content);
+      expect(Array.isArray(serialized.items.list)).toBe(true);
+      expect(serialized.items.list).toEqual([1, 2, 3]);
+    });
+
+    it('serializeContent should handle mixed nested types correctly', () => {
+      const service = new DocumentService();
+      const content = {
+        doc: {
+          title: 'Test',
+          sections: [
+            { heading: 'Intro', content: 'text' },
+            { heading: 'Body', content: 'more text' },
+          ],
+        },
+      };
+      const serialized = service.serializeContent(content);
+      expect(serialized.doc.sections[0].heading).toBe('Intro');
+      expect(serialized.doc.sections[1].content).toBe('more text');
+    });
+  });
+
   describe('table cell merge', () => {
     it('table cell merge test', () => {
       const service = new DocumentService();

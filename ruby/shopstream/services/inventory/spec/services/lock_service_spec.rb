@@ -48,7 +48,7 @@ RSpec.describe LockService do
       expect(released).to be true
 
       # Lock should be gone
-      expect(redis.get('shopstream:lock:my-resource')).to be_nil rescue nil
+      expect(redis.get('shopstream:lock:my-resource')).to be_nil
     end
 
     it 'does not release lock held by another process' do

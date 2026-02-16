@@ -13,6 +13,12 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
+/**
+ * Service for vehicle position tracking, speed calculation, and history management.
+ *
+ * Bugs: A7, C4, F4, F5, F6, F7
+ * Categories: Concurrency, Precision/Arithmetic, Streams
+ */
 @Service
 public class TrackingService {
 
@@ -21,30 +27,27 @@ public class TrackingService {
     private final Map<String, List<TrackingData>> vehicleTrackHistory = new ConcurrentHashMap<>();
     private final Map<String, TrackingData> latestPositions = new ConcurrentHashMap<>();
 
-    
-    // Both use common ForkJoinPool -> thread starvation
-    // Fix: Use sequential inner stream or custom ForkJoinPool
+    // Bug A7: Nested parallel streams both use the common ForkJoinPool,
+    // causing thread starvation.
+    // Category: Concurrency
     public Map<String, Double> calculateAllVehicleSpeeds(List<String> vehicleIds) {
-        
         return vehicleIds.parallelStream()
             .collect(Collectors.toMap(
                 id -> id,
                 id -> {
                     List<TrackingData> history = vehicleTrackHistory.getOrDefault(id, List.of());
-                    
                     return history.parallelStream()
                         .mapToDouble(TrackingData::getSpeed)
                         .average()
                         .orElse(0.0);
                 }
             ));
-        // Fix: Use history.stream() (sequential) for inner stream
     }
 
-    
-    // Under high contention, some threads may never acquire the lock
-    // Fix: Use fair lock: new ReentrantReadWriteLock(true)
-    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock(false); 
+    // Bug C4: Unfair ReentrantReadWriteLock under high contention causes
+    // thread starvation for some threads.
+    // Category: Concurrency
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock(false);
 
     public void recordPosition(TrackingData data) {
         rwLock.writeLock().lock();
@@ -66,11 +69,10 @@ public class TrackingService {
         }
     }
 
-    
-    // Multiplying large integer values causes overflow
-    // Fix: Use long or check for overflow
+    // Bug F4: Multiplying large integer values causes overflow.
+    // Category: Precision/Arithmetic
     public int calculateTotalDistanceMeters(List<TrackingData> points) {
-        int totalDistance = 0; 
+        int totalDistance = 0;
 
         for (int i = 0; i < points.size() - 1; i++) {
             TrackingData p1 = points.get(i);
@@ -80,60 +82,37 @@ public class TrackingService {
             int segmentDistance = (int) (haversineMeters(
                 p1.getLat(), p1.getLng(), p2.getLat(), p2.getLng()));
 
-            
             totalDistance += segmentDistance;
         }
         return totalDistance;
-        // Fix: Use long totalDistance = 0L;
     }
 
-    
-    // Duration calculation between timestamps doesn't account for timezone
-    // Fix: Use Instant (UTC) consistently, or handle timezone conversion
+    // Bug F5: Duration calculation can return negative values when end is before start.
+    // Category: Precision/Arithmetic
     public long calculateTripDurationMinutes(Instant start, Instant end) {
-        
-        // this is fine. But if they're LocalDateTime converted incorrectly, it breaks.
-        // The real bug is when mixing LocalDateTime and Instant without timezone context
         Duration duration = Duration.between(start, end);
-        
-        return duration.toMinutes(); // Can return negative value
-        // Fix: return Math.max(0, duration.toMinutes());
+        return duration.toMinutes();
     }
 
-    
-    // When time difference is zero, division by zero produces Infinity or NaN
-    // Fix: Check for zero time difference
-    //
-    
-    // When F4 causes overflow, tests short-circuit before calling calculateSpeed with identical timestamps.
-    // Fixing BUG F4 will reveal this division-by-zero bug because:
-    //   1. calculateTotalDistanceMeters now returns correct large values
-    //   2. Trip processing continues to speed validation phase
-    //   3. calculateSpeed is called with rapid-fire GPS updates (same timestamp)
-    //   4. Division by zero produces Infinity, causing downstream NaN propagation
+    // Bug F6: Division by zero when timestamps are identical produces Infinity or NaN.
+    // Category: Precision/Arithmetic
     public double calculateSpeed(TrackingData point1, TrackingData point2) {
         double distance = haversineMeters(
             point1.getLat(), point1.getLng(), point2.getLat(), point2.getLng());
 
         long timeDiffSeconds = Duration.between(point1.getTimestamp(), point2.getTimestamp()).getSeconds();
 
-        
-        return distance / timeDiffSeconds; // Returns Infinity or NaN
-        // Fix: if (timeDiffSeconds == 0) return 0.0;
+        return distance / timeDiffSeconds;
     }
 
-    
-    // Collectors.toMap() throws IllegalStateException on duplicate keys
-    // Fix: Add merge function
+    // Bug F7: Collectors.toMap() throws IllegalStateException on duplicate keys.
+    // Category: Streams
     public Map<String, TrackingData> getLatestPositionsByVehicle(List<TrackingData> dataPoints) {
-        
         return dataPoints.stream()
             .collect(Collectors.toMap(
                 TrackingData::getVehicleId,
                 d -> d
-                
             ));
-        // Fix: .collect(Collectors.toMap(TrackingData::getVehicleId, d -> d, (d1, d2) -> d2))
     }
 
     private double haversineMeters(double lat1, double lng1, double lat2, double lng2) {

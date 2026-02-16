@@ -21,10 +21,7 @@ const std::map<int, int> SLA_BY_SEVERITY = {
 // ---------------------------------------------------------------------------
 
 int DispatchModel::urgency_score() const {
-  int remainder = 120 - sla_minutes;
-  if (remainder < 0) remainder = 0;
-  
-  return severity * 10 - remainder;
+  return severity * sla_minutes;
 }
 
 std::string DispatchModel::to_string() const {

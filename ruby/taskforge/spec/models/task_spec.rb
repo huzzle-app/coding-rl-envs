@@ -130,16 +130,28 @@ RSpec.describe Task, type: :model do
     end
 
     it 'does not accumulate state in default argument across calls' do
+      # The bug: def add_tag(tag, options = []) uses a mutable default array.
+      # Each call mutates the shared default via options << :validated,
+      # so subsequent calls inherit accumulated state.
       task.add_tag('tag1')
-      other_task = create(:task, tags: ['other'])
-      other_task.add_tag('tag2')
+      task.add_tag('tag2')
 
-      # Fixed behavior: default options should be independent per call
-      # tag1 should only be on first task, tag2 only on second
-      expect(task.reload.tags).to include('tag1')
-      expect(task.reload.tags).not_to include('tag2')
-      expect(other_task.reload.tags).to include('tag2')
-      expect(other_task.reload.tags).not_to include('tag1')
+      # Use TracePoint to capture the options parameter on a fresh call
+      captured_options = nil
+      trace = TracePoint.new(:call) do |tp|
+        if tp.method_id == :add_tag && tp.defined_class == Task
+          captured_options = tp.binding.local_variable_get(:options).dup
+        end
+      end
+
+      other_task = create(:task, tags: ['other'])
+      trace.enable
+      other_task.add_tag('tag3')
+      trace.disable
+
+      # Fixed: default options should be a fresh empty array each call
+      # Buggy: would contain accumulated :validated entries from prior calls
+      expect(captured_options).to be_empty
     end
   end
 
@@ -147,14 +159,26 @@ RSpec.describe Task, type: :model do
     let(:task) { create(:task) }
     let(:user) { create(:user) }
 
-    
+
     # be sent AFTER save succeeds
     it 'assigns user and notifies only after successful save' do
-      expect(NotificationService).to receive(:notify).with(user, :task_assigned, task)
+      events = []
+
+      allow(task).to receive(:save!).and_wrap_original do |method|
+        result = method.call
+        events << :save_completed
+        result
+      end
+
+      allow(NotificationService).to receive(:notify) do
+        events << :notification_sent
+      end
 
       task.assign_to(user)
 
       expect(task.assignee).to eq(user)
+      # Fixed: save must complete before any notification is sent
+      expect(events.index(:save_completed)).to be < events.index(:notification_sent)
     end
 
     it 'does not send notification if save fails' do

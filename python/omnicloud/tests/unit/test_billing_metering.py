@@ -29,8 +29,14 @@ class TestUsageMetering:
 
     def test_clock_skew_handling(self):
         """H1: Metering should use a centralized time source."""
-        # Verify that metering doesn't use local clock with potential skew
-        assert True, "Clock skew handling check"
+        # Verify that metering doesn't use local time.time() which is subject to clock skew
+        import inspect
+        from shared.utils.time import metering_timestamp
+        source = inspect.getsource(metering_timestamp)
+        # A proper implementation should use monotonic clock or centralized time source
+        # time.time() is subject to NTP jumps and clock skew across services
+        assert 'time.time()' not in source, \
+            "metering_timestamp() should not use time.time() which is subject to clock skew; use time.monotonic() or a centralized time source"
 
 
 class TestProration:

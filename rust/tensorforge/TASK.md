@@ -57,11 +57,11 @@ Fix production defects in source files only. All bugs are compilable logic error
 ## Getting Started
 
 ```bash
-# Build and run all tests
-cargo test
+# Build and run all tests (--no-fail-fast ensures all binaries run)
+cargo test --no-fail-fast
 
 # Run base tests only (skip matrix)
-cargo test -- --skip hyper_matrix_scenarios
+cargo test --no-fail-fast -- --skip hyper_matrix_scenarios
 
 # Run matrix scenarios only
 cargo test --test hyper_matrix -- --nocapture
@@ -88,10 +88,10 @@ Use these scenarios to:
 
 ## Completion Criteria
 
-- Full suite passes (`cargo test`) with **12,685 scenarios**.
+- Full suite passes (`cargo test --no-fail-fast`) with **12,755 scenarios** (255 base + 12,500 matrix).
 - Deterministic replay, scheduling, routing, and policy behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
-- Do not edit files under `tests/`.
+- Do not edit files under `tests/`, `environment/`, or `Cargo.toml`.
 
 ---
 

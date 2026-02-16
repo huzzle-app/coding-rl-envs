@@ -27,7 +27,7 @@ std::vector<DataPoint> consume_events(const std::string& topic, int max_count) {
     int count = std::min(max_count, static_cast<int>(events.size()));
 
     std::vector<DataPoint> result(events.begin(), events.begin() + count);
-    events.erase(events.end() - count, events.end());
+    events.erase(events.begin(), events.begin() + count);
 
     return result;
 }

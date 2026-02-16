@@ -77,26 +77,6 @@ From support ticket #CTL-2024-0189:
 2. **Rounding happens only at the end**: Individual trip fuel costs accumulate without rounding
 3. **Floating-point artifacts**: Numbers like `4.892342567892134` suggest `double` arithmetic
 
-### Comparison Test
-
-We ran a simple test with 1000 identical $1.001 charges:
-
-```java
-// Current code behavior (suspected)
-double total = 0.0;
-for (int i = 0; i < 1000; i++) {
-    total += 1.001;
-}
-System.out.println(total);  // Output: 1000.9999999999859
-
-// Expected behavior
-BigDecimal total = BigDecimal.ZERO;
-for (int i = 0; i < 1000; i++) {
-    total = total.add(new BigDecimal("1.001"));
-}
-System.out.println(total);  // Output: 1001.000
-```
-
 ---
 
 ## Related Issues
@@ -127,23 +107,6 @@ For some zero-distance trips (e.g., cancelled immediately after start), the per-
     at com.fleetpulse.billing.service.RateCalculator.calculatePerMileRate(RateCalculator.java:87)
     at com.fleetpulse.billing.service.InvoiceService.generateLineItem(InvoiceService.java:234)
 ```
-
----
-
-## Questions for Engineering
-
-1. Why are we using `double` for currency calculations?
-2. Is `BigDecimal` being used correctly where it exists? (We see `BigDecimal.equals()` comparisons in the code)
-3. Why are GPS coordinates being truncated to `float` precision?
-4. What happens when a trip has zero distance?
-
-## Files to Investigate
-
-Based on the symptoms:
-- `billing/src/main/java/com/fleetpulse/billing/service/InvoiceService.java`
-- `billing/src/main/java/com/fleetpulse/billing/service/RateCalculator.java`
-- `routes/src/main/java/com/fleetpulse/routes/service/TollCalculator.java`
-- `tracking/src/main/java/com/fleetpulse/tracking/service/PositionService.java`
 
 ---
 

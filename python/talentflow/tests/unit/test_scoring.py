@@ -60,7 +60,11 @@ class TestCandidateScoreCalculation:
             )
 
         score = _calculate_candidate_score(candidate)
-        assert score == 8 * 4 + 2 * 5
+        # Expected: experience(5yr) + skills(8, capped at 30) + primary(2*5)
+        # = (5/15)*30 + min(8*5, 30) + 2*5 = 10 + 30 + 10 = 50
+        expected = (candidate.years_experience / 15) * 30 + min(8 * 5, 30) + 2 * 5
+        assert score == expected, \
+            f"Score with 8 skills should be {expected}, got {score} (bug: 8*4 instead of min(8*5,30))"
 
     def test_score_with_complete_profile(self, candidate):
         """Test profile completeness bonus."""

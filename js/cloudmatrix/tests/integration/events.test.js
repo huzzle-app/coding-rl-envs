@@ -64,10 +64,25 @@ describe('Event Bus Integration', () => {
     it('should persist events to store', async () => {
       jest.resetModules();
       const { EventStore } = require('../../shared/events');
-      const store = new EventStore();
+      const mockDb = global.testUtils.mockDb();
 
-      await store.append('doc-1', { type: 'created', data: { title: 'Test' } });
-      await store.append('doc-1', { type: 'updated', data: { title: 'Updated' } });
+      const storedRows = [];
+      mockDb.query.mockImplementation(async (sql, params) => {
+        if (sql.includes('INSERT')) {
+          const row = { stream_id: params[0], data: params[1], metadata: params[2], position: storedRows.length + 1 };
+          storedRows.push(row);
+          return { rows: [row] };
+        }
+        if (sql.includes('SELECT') && sql.includes('events')) {
+          return { rows: storedRows.filter(r => r.stream_id === params[0]) };
+        }
+        return { rows: [] };
+      });
+
+      const store = new EventStore(mockDb);
+
+      await store.append('doc-1', [{ type: 'created', data: { title: 'Test' }, metadata: {} }]);
+      await store.append('doc-1', [{ type: 'updated', data: { title: 'Updated' }, metadata: {} }]);
 
       const events = await store.getEvents('doc-1');
       expect(events).toHaveLength(2);
@@ -75,14 +90,16 @@ describe('Event Bus Integration', () => {
 
     it('should replay events from store', async () => {
       jest.resetModules();
-      const { EventStore, EventProjection } = require('../../shared/events');
-      const store = new EventStore();
-      const projection = new EventProjection();
+      const { EventProjection } = require('../../shared/events');
+      const mockStorage = { clear: jest.fn().mockResolvedValue(undefined) };
 
-      await store.append('doc-1', { type: 'created', seq: 1 });
-      await store.append('doc-1', { type: 'updated', seq: 2 });
+      const projection = new EventProjection(null, mockStorage);
 
-      const events = await store.getEvents('doc-1');
+      const events = [
+        { seq: 1, type: 'created' },
+        { seq: 2, type: 'updated' },
+      ];
+
       for (const event of events) {
         projection.processEvent(event);
       }
@@ -93,14 +110,17 @@ describe('Event Bus Integration', () => {
     it('should snapshot after N events', async () => {
       jest.resetModules();
       const { EventStore } = require('../../shared/events');
-      const store = new EventStore();
+      const mockDb = global.testUtils.mockDb();
+
+      const store = new EventStore(mockDb);
 
       for (let i = 0; i < 10; i++) {
-        await store.append('doc-1', { type: 'updated', seq: i + 1 });
+        await store.append('doc-1', [{ type: 'updated', data: { seq: i + 1 }, metadata: {} }]);
       }
 
-      await store.createSnapshot('doc-1', { version: 10, content: 'current' });
+      await store.saveSnapshot('doc-1', { content: 'current' }, 10);
 
+      mockDb.query.mockResolvedValueOnce({ rows: [{ stream_id: 'doc-1', state: '{"content":"current"}', version: 10 }] });
       const snapshot = await store.getSnapshot('doc-1');
       expect(snapshot.version).toBe(10);
     });

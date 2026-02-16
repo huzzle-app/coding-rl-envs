@@ -26,7 +26,7 @@ AegisCore is a hyper-principal maritime dispatch reliability platform built with
 
 ## Bug Count
 
-issues across 10 modules with cross-module dependency chains.
+30+ issues across 10 modules with cross-module dependency chains.
 
 ## Running Tests
 

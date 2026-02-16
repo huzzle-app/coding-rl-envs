@@ -87,69 +87,26 @@ class PulseMapEnvironment:
     }
 
     _FILE_TEST_MAP = {
-        'src/main/kotlin/com/pulsemap/Application.kt': [
+        'src/main/kotlin/com/pulsemap/core/CoroutineStubs.kt': [
+            'com.pulsemap.coroutine.CoroutineTests',
+        ],
+        'src/main/kotlin/com/pulsemap/core/SetupStubs.kt': [
             'com.pulsemap.integration.SetupTests',
         ],
-        'src/main/kotlin/com/pulsemap/config/DatabaseConfig.kt': [
-            'com.pulsemap.integration.SetupTests',
-        ],
-        'src/main/kotlin/com/pulsemap/config/SerializationConfig.kt': [
-            'com.pulsemap.integration.SetupTests',
-        ],
-        'src/main/kotlin/com/pulsemap/routes/TileRoutes.kt': [
-            'com.pulsemap.coroutine.CoroutineTests',
-            'com.pulsemap.security.SecurityTests',
-        ],
-        'src/main/kotlin/com/pulsemap/routes/IngestionRoutes.kt': [
+        'src/main/kotlin/com/pulsemap/core/NullSafetyStubs.kt': [
             'com.pulsemap.unit.NullSafetyTests',
+        ],
+        'src/main/kotlin/com/pulsemap/core/DataClassStubs.kt': [
+            'com.pulsemap.unit.DataClassTests',
+        ],
+        'src/main/kotlin/com/pulsemap/core/KtorExposedStubs.kt': [
             'com.pulsemap.unit.KtorExposedTests',
         ],
-        'src/main/kotlin/com/pulsemap/service/IngestionService.kt': [
-            'com.pulsemap.coroutine.CoroutineTests',
-        ],
-        'src/main/kotlin/com/pulsemap/service/SpatialAggregationService.kt': [
-            'com.pulsemap.coroutine.CoroutineTests',
-        ],
-        'src/main/kotlin/com/pulsemap/service/GeocodingService.kt': [
-            'com.pulsemap.coroutine.CoroutineTests',
-        ],
-        'src/main/kotlin/com/pulsemap/service/GeometryService.kt': [
-            'com.pulsemap.unit.NullSafetyTests',
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/service/TileService.kt': [
-            'com.pulsemap.unit.NullSafetyTests',
-        ],
-        'src/main/kotlin/com/pulsemap/service/DeduplicationService.kt': [
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/model/SensorReading.kt': [
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/model/GeoPoint.kt': [
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/model/GeometryType.kt': [
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/model/QueryFilter.kt': [
-            'com.pulsemap.unit.DataClassTests',
-        ],
-        'src/main/kotlin/com/pulsemap/plugins/AuthPlugin.kt': [
-            'com.pulsemap.unit.KtorExposedTests',
-        ],
-        'src/main/kotlin/com/pulsemap/repository/SensorRepository.kt': [
-            'com.pulsemap.unit.NullSafetyTests',
-            'com.pulsemap.security.SecurityTests',
-        ],
-        'src/main/kotlin/com/pulsemap/repository/TileRepository.kt': [
-            'com.pulsemap.unit.KtorExposedTests',
-        ],
-        'src/main/kotlin/com/pulsemap/util/SpatialUtils.kt': [
+        'src/main/kotlin/com/pulsemap/core/LanguageFeatureStubs.kt': [
             'com.pulsemap.unit.LanguageFeatureTests',
         ],
-        'src/main/kotlin/com/pulsemap/util/JsonUtils.kt': [
-            'com.pulsemap.unit.LanguageFeatureTests',
+        'src/main/kotlin/com/pulsemap/core/SecurityStubs.kt': [
+            'com.pulsemap.security.SecurityTests',
         ],
     }
 
@@ -315,6 +272,9 @@ class PulseMapEnvironment:
         # Reject edits to test files
         if action_type == 'edit' and (file_path.startswith('src/test/') or '/src/test/' in file_path):
             return {'success': False, 'error': 'Editing test files is not allowed'}
+        # Reject edits to environment files
+        if action_type == 'edit' and (file_path.startswith('environment/') or '/environment/' in file_path):
+            return {'success': False, 'error': 'Editing environment files is not allowed'}
 
         content = action.get('content', '')
         if len(content) > 100_000:

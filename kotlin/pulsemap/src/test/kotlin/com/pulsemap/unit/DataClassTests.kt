@@ -1,5 +1,6 @@
 package com.pulsemap.unit
 
+import com.pulsemap.core.*
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -25,9 +26,6 @@ class DataClassTests {
 
     @Test
     fun test_sensor_reading_equality() {
-        
-        // Two SensorReadings with identical content should be equal, but won't be
-        // because DoubleArray.equals() checks reference, not structural equality.
         val reading1 = SensorReadingLocal(
             id = "r1",
             sensorId = "s1",
@@ -44,13 +42,11 @@ class DataClassTests {
             longitude = -74.0060,
             timestamp = 1700000000L
         )
-        // This SHOULD pass (structurally equal), but FAILS because DoubleArray uses reference equality
         assertEquals(reading1, reading2, "SensorReadings with identical values should be equal")
     }
 
     @Test
     fun test_deduplication_works() {
-        
         val reading1 = SensorReadingLocal(
             id = "r1", sensorId = "s1", values = doubleArrayOf(10.0, 20.0),
             latitude = 51.5074, longitude = -0.1278, timestamp = 1700000001L
@@ -60,7 +56,6 @@ class DataClassTests {
             latitude = 51.5074, longitude = -0.1278, timestamp = 1700000001L
         )
         val set = setOf(reading1, reading2)
-        // Should deduplicate to 1 entry, but fails because hashCode uses reference for DoubleArray
         assertEquals(1, set.size, "Identical sensor readings should deduplicate in a set")
     }
 
@@ -70,12 +65,10 @@ class DataClassTests {
 
     @Test
     fun test_copy_deep_mutable_list() {
-        
         val original = GeoPointLocal(lat = 40.0, lng = -74.0, annotations = mutableListOf("park"))
         val copied = original.copy()
         copied.annotations.add("building")
 
-        // The copy and original should have INDEPENDENT annotation lists
         assertNotEquals(
             original.annotations.size,
             copied.annotations.size,
@@ -85,7 +78,6 @@ class DataClassTests {
 
     @Test
     fun test_original_not_mutated_after_copy() {
-        
         val original = GeoPointLocal(lat = 35.6762, lng = 139.6503, annotations = mutableListOf("temple"))
         val copied = original.copy()
         copied.annotations.add("shrine")
@@ -104,7 +96,6 @@ class DataClassTests {
 
     @Test
     fun test_sealed_when_all_branches() {
-        
         val types = listOf(
             GeometryTypeLocal.Point,
             GeometryTypeLocal.LineString,
@@ -120,7 +111,6 @@ class DataClassTests {
 
     @Test
     fun test_multi_polygon_handled() {
-        
         val result = describeGeometryLocal(GeometryTypeLocal.MultiPolygon)
         assertEquals("MultiPolygon", result, "MultiPolygon should be handled in when expression")
     }
@@ -131,7 +121,6 @@ class DataClassTests {
 
     @Test
     fun test_sealed_serialization_registered() {
-        
         val filters = listOf(
             QueryFilterLocal.BoundingBoxFilter(minLat = 0.0, minLng = 0.0, maxLat = 1.0, maxLng = 1.0),
             QueryFilterLocal.PolygonFilter(points = listOf(GeoPointLocal(0.0, 0.0))),
@@ -151,7 +140,6 @@ class DataClassTests {
 
     @Test
     fun test_radius_filter_deserializes() {
-        
         val filter = QueryFilterLocal.RadiusFilter(centerLat = 34.0522, centerLng = -118.2437, radiusKm = 10.0)
         val json = serializeFilterLocal(filter)
         val restored = deserializeFilterLocal(json)
@@ -261,89 +249,5 @@ class DataClassTests {
     fun test_mutable_list_default_is_empty() {
         val point = GeoPointLocal(lat = 0.0, lng = 0.0)
         assertTrue(point.annotations.isEmpty(), "Default annotations should be empty")
-    }
-
-    // =========================================================================
-    // Local stubs simulating buggy production code
-    // =========================================================================
-
-    // C1: data class with DoubleArray (buggy - uses reference equality)
-    data class SensorReadingLocal(
-        val id: String,
-        val sensorId: String,
-        val values: DoubleArray, 
-        val latitude: Double,
-        val longitude: Double,
-        val timestamp: Long
-    )
-
-    // C2: GeoPoint with MutableList (buggy - shallow copy)
-    data class GeoPointLocal(
-        val lat: Double,
-        val lng: Double,
-        val annotations: MutableList<String> = mutableListOf()
-    )
-
-    // C3: Sealed class with missing when branch
-    sealed class GeometryTypeLocal {
-        object Point : GeometryTypeLocal()
-        object LineString : GeometryTypeLocal()
-        object Polygon : GeometryTypeLocal()
-        object MultiPolygon : GeometryTypeLocal()
-        object GeometryCollection : GeometryTypeLocal()
-    }
-
-    
-    private fun describeGeometryLocal(type: GeometryTypeLocal): String {
-        return when (type) {
-            is GeometryTypeLocal.Point -> "Point"
-            is GeometryTypeLocal.LineString -> "LineString"
-            is GeometryTypeLocal.Polygon -> "Polygon"
-            
-            is GeometryTypeLocal.GeometryCollection -> "GeometryCollection"
-            else -> throw IllegalArgumentException("Unknown geometry type")
-        }
-    }
-
-    // C4: Sealed serialization
-    sealed class QueryFilterLocal {
-        data class BoundingBoxFilter(
-            val minLat: Double, val minLng: Double,
-            val maxLat: Double, val maxLng: Double
-        ) : QueryFilterLocal()
-
-        data class PolygonFilter(val points: List<GeoPointLocal>) : QueryFilterLocal()
-        data class RadiusFilter(
-            val centerLat: Double,
-            val centerLng: Double,
-            val radiusKm: Double
-        ) : QueryFilterLocal()
-    }
-
-    
-    private val registeredTypes = setOf(
-        QueryFilterLocal.BoundingBoxFilter::class,
-        QueryFilterLocal.PolygonFilter::class
-        // Missing: QueryFilterLocal.RadiusFilter::class
-    )
-
-    private fun serializeFilterLocal(filter: QueryFilterLocal): String {
-        if (filter::class !in registeredTypes) {
-            throw IllegalArgumentException("Unregistered filter type: ${filter::class.simpleName}")
-        }
-        return when (filter) {
-            is QueryFilterLocal.BoundingBoxFilter -> """{"type":"bbox","minLat":${filter.minLat},"minLng":${filter.minLng},"maxLat":${filter.maxLat},"maxLng":${filter.maxLng}}"""
-            is QueryFilterLocal.PolygonFilter -> """{"type":"polygon","points":${filter.points.size}}"""
-            is QueryFilterLocal.RadiusFilter -> """{"type":"radius","centerLat":${filter.centerLat},"centerLng":${filter.centerLng},"radiusKm":${filter.radiusKm}}"""
-        }
-    }
-
-    private fun deserializeFilterLocal(json: String): QueryFilterLocal {
-        return when {
-            json.contains("\"type\":\"bbox\"") -> QueryFilterLocal.BoundingBoxFilter(0.0, 0.0, 1.0, 1.0)
-            json.contains("\"type\":\"polygon\"") -> QueryFilterLocal.PolygonFilter(emptyList())
-            json.contains("\"type\":\"radius\"") -> QueryFilterLocal.RadiusFilter(0.0, 0.0, 0.0)
-            else -> throw IllegalArgumentException("Unknown filter type in JSON")
-        }
     }
 }

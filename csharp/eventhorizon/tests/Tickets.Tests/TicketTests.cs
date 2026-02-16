@@ -134,7 +134,7 @@ public class TicketTests
         var context1 = scope1.ServiceProvider.GetRequiredService<TicketDbContext>();
         var context2 = scope2.ServiceProvider.GetRequiredService<TicketDbContext>();
 
-        Assert.NotSame(context1, context2, "DbContext instances should differ across scopes");
+        Assert.NotSame(context1, context2);
     }
 
     [Fact]
@@ -516,7 +516,7 @@ public record BookingRecord(int Id, List<string> Seats);
 // Mock DI types
 public class ServiceCollection : List<ServiceDescriptor>
 {
-    public ServiceCollection AddDbContext<T>(Action<object> configure = null) where T : DbContext
+    public ServiceCollection AddDbContext<T>(Action<DbContextOptions<T>>? configure = null) where T : DbContext
     {
         Add(new ServiceDescriptor(typeof(T), typeof(T), ServiceLifetime.Scoped));
         return this;

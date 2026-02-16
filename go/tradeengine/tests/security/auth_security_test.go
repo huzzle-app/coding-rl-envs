@@ -1,6 +1,10 @@
 package security
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +23,7 @@ func TestPasswordSecurity(t *testing.T) {
 		// When fixed, hash should be bcrypt format
 		isBcrypt := strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$")
 		assert.True(t, isBcrypt,
-			"BUG I5: Password hashing should use bcrypt ($2a$ or $2b$ prefix), not SHA256")
+			"Password hashing should use bcrypt ($2a$ or $2b$ prefix), not SHA256")
 	})
 
 	t.Run("should use unique salt per password", func(t *testing.T) {
@@ -29,7 +33,7 @@ func TestPasswordSecurity(t *testing.T) {
 
 		// With bcrypt, same password must produce different hashes (random salt)
 		assert.NotEqual(t, hash1, hash2,
-			"BUG I5: Same password should produce different hashes when using bcrypt with random salt")
+			"Same password should produce different hashes when using bcrypt with random salt")
 	})
 
 	t.Run("should resist timing attacks", func(t *testing.T) {
@@ -60,7 +64,7 @@ func TestPasswordSecurity(t *testing.T) {
 		// When fixed: both paths should take the same amount of time
 		diff := avgValid - avgInvalid
 		assert.Less(t, diff, 5*time.Millisecond,
-			"BUG I3: Timing difference between valid/invalid email should be < 5ms (use constant-time comparison)")
+			"Timing difference between valid/invalid email should be < 5ms (use constant-time comparison)")
 	})
 }
 
@@ -79,7 +83,7 @@ func TestJWTSecurity(t *testing.T) {
 
 		for _, weak := range weakSecrets {
 			if secret == weak {
-				t.Errorf("BUG I1: Using weak default secret: %s", secret)
+				t.Errorf("Using weak default secret: %s", secret)
 			}
 		}
 	})
@@ -123,7 +127,7 @@ func TestAPIKeySecurity(t *testing.T) {
 		unique := make(map[string]bool)
 		for _, k := range keys {
 			if unique[k] {
-				t.Error("BUG I4: Duplicate API key generated - using weak random")
+				t.Error("Duplicate API key generated - using weak random")
 			}
 			unique[k] = true
 		}
@@ -208,7 +212,7 @@ func TestRateLimiting(t *testing.T) {
 		}
 
 		// Should be rate limited after ~5 attempts
-		assert.Less(t, attempts, 100, "BUG I7: No rate limiting on login")
+		assert.Less(t, attempts, 100, "No rate limiting on login")
 	})
 
 	t.Run("should rate limit API key creation", func(t *testing.T) {
@@ -236,23 +240,26 @@ func TestPermissionInjection(t *testing.T) {
 		allowedPerms := map[string]bool{"read": true, "write": true, "delete": true}
 		for _, p := range perms {
 			assert.True(t, allowedPerms[p],
-				"BUG I6: Permission '%s' should be rejected - not in allowed whitelist", p)
+				"Permission '%s' should be rejected - not in allowed whitelist", p)
 		}
 	})
 }
 
-// Helper functions
+// Helper functions - mirror actual auth service behavior (including bugs)
 
 func hashPassword(password string) string {
-	
-	return "sha256_" + password
+	// Mirrors auth/service.go hashPassword: uses SHA256 instead of bcrypt (bug I5)
+	h := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(h[:])
 }
 
 func checkLogin(email, password string) error {
-	// Simulated login check
+	// Mirrors auth/service.go Login: timing attack (bug I3)
+	// Returns early for unknown email, slower for valid email
 	if email == "valid@test.com" {
 		time.Sleep(50 * time.Millisecond) // Hash comparison time
 	}
+	// No delay for invalid email - timing oracle
 	return nil
 }
 
@@ -265,7 +272,8 @@ func averageDuration(durations []time.Duration) time.Duration {
 }
 
 func getJWTSecret() string {
-	return "default-secret-key" 
+	// Mirrors auth/service.go JWTSecret default (bug I1)
+	return "default-secret-key"
 }
 
 func createToken(userID string, exp time.Time) string {
@@ -280,10 +288,20 @@ func validateToken(token string) (bool, error) {
 }
 
 func generateAPIKey() string {
-	return "weak-key-123"
+	// Mirrors auth/service.go GenerateAPIKey: uses math/rand instead of crypto/rand (bug I4)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 32)
+	for i := range b {
+		b[i] = charset[r.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 func listOrders(userID, status string) []interface{} {
+	// Mirrors orders/service.go List: SQL injection via fmt.Sprintf (bug E3)
+	query := fmt.Sprintf("SELECT * FROM orders WHERE user_id = '%s' AND status = '%s'", userID, status)
+	_ = query
 	return []interface{}{}
 }
 
@@ -292,17 +310,16 @@ func escapeSQL(input string) string {
 }
 
 func validateEmail(email string) bool {
-	
+	// Mirrors auth/service.go: no email validation (bug I2)
 	return len(email) > 0
 }
 
 func validateSymbol(symbol string) bool {
-	// Should validate properly
 	return !strings.ContainsAny(symbol, "<>'\"/\\")
 }
 
 func attemptLogin(email, password string) error {
-	
+	// No rate limiting (bug)
 	return nil
 }
 
@@ -311,5 +328,6 @@ func createAPIKeyForUser(userID, name string) error {
 }
 
 func parsePermissions(permsStr string) []string {
+	// Mirrors auth/service.go: no whitelist filtering (bug I6)
 	return strings.Split(permsStr, ",")
 }

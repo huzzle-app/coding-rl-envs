@@ -10,59 +10,40 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Service for route cost calculation, optimization, and waypoint management.
+ *
+ * Bugs: G1, G2, G3, G4, B4
+ * Categories: Precision/Arithmetic, Algorithm, Memory/Data Structures
+ */
 @Service
 public class RouteService {
 
     private static final Logger log = LoggerFactory.getLogger(RouteService.class);
 
-    
-    // Using double for financial and distance calculations -> precision errors
-    // 0.1 + 0.2 != 0.3 with floating point
-    // Fix: Use BigDecimal with explicit scale and rounding mode
-    //
-    
-    // When optimizeRoute hangs, cost calculation is never reached for optimized routes.
-    // Fixing BUG G2 (adding iteration limit) will reveal precision errors:
-    //   1. Routes complete optimization successfully
-    //   2. calculateRouteCost is called with precise distances from optimization
-    //   3. Floating-point precision loss in cost calculation becomes apparent
-    //   4. Invoice totals don't match expected values (off by pennies)
-    // The precision bug is currently hidden because the system times out before billing.
+    // Bug G1: Using double for financial calculations causes precision errors.
+    // Category: Precision/Arithmetic
     public double calculateRouteCost(double distanceKm, double ratePerKm) {
-        
-        // e.g., 10.0 * 2.55 might give 25.499999999... instead of 25.50
         double cost = distanceKm * ratePerKm;
-        return cost; // No rounding -> cent-level errors accumulate
-        // Fix: return BigDecimal.valueOf(distanceKm)
-        //          .multiply(BigDecimal.valueOf(ratePerKm))
-        //          .setScale(2, RoundingMode.HALF_UP)
-        //          .doubleValue();
+        return cost;
     }
 
-    
-    // new BigDecimal("1.0").equals(new BigDecimal("1.00")) returns FALSE
-    // because equals checks scale, but compareTo only checks numeric value
-    // Fix: Use compareTo() == 0 for value comparison
+    // Bug G2: BigDecimal.equals() checks scale, so "1.0".equals("1.00") returns false.
+    // Category: Precision/Arithmetic
     public boolean isRouteCostEqual(BigDecimal cost1, BigDecimal cost2) {
-        
         return cost1.equals(cost2);
-        // Fix: return cost1.compareTo(cost2) == 0;
     }
 
-    
-    // Division without explicit rounding mode throws ArithmeticException
-    // when result has non-terminating decimal representation
-    // Fix: Always specify RoundingMode in BigDecimal division
+    // Bug G3: Division without explicit rounding mode throws ArithmeticException
+    // when result has non-terminating decimal representation.
+    // Category: Precision/Arithmetic
     public BigDecimal calculateCostPerMile(BigDecimal totalCost, BigDecimal totalMiles) {
-        
         return totalCost.divide(totalMiles);
-        // Fix: return totalCost.divide(totalMiles, 4, RoundingMode.HALF_UP);
     }
 
-    
-    // Optimization algorithm doesn't converge when waypoints are equidistant
-    // No iteration limit -> infinite loop
-    // Fix: Add max iterations check
+    // Bug G4: Optimization algorithm has no iteration limit, causing potential
+    // infinite loop when floating point comparison keeps finding "improvements".
+    // Category: Algorithm
     public List<RouteWaypoint> optimizeRoute(List<RouteWaypoint> waypoints) {
         if (waypoints == null || waypoints.size() <= 2) {
             return waypoints;
@@ -70,8 +51,6 @@ public class RouteService {
 
         List<RouteWaypoint> optimized = new ArrayList<>(waypoints);
         boolean improved = true;
-        
-        // but floating point comparison keeps finding "improvements"
         while (improved) {
             improved = false;
             for (int i = 1; i < optimized.size() - 1; i++) {
@@ -81,29 +60,22 @@ public class RouteService {
                     swap(optimized, i, j);
                     double newDist = calculateSegmentDistance(optimized, i, j);
 
-                    
-                    // Floating point noise means this may keep swapping
                     if (newDist < currentDist) {
-                        improved = true; // Will loop again
+                        improved = true;
                     } else {
                         swap(optimized, i, j); // Swap back
                     }
                 }
             }
         }
-        // Fix: Add int maxIterations = 1000; int iteration = 0;
-        //      while (improved && iteration++ < maxIterations) { ... }
         return optimized;
     }
 
-    
-    // subList returns a view backed by the original list
-    // Fix: new ArrayList<>(list.subList(...))
+    // Bug B4: subList returns a view backed by the original list.
+    // Category: Memory/Data Structures
     public List<RouteWaypoint> getFirstNWaypoints(List<RouteWaypoint> waypoints, int n) {
         if (waypoints.size() <= n) return waypoints;
-        
         return waypoints.subList(0, n);
-        // Fix: return new ArrayList<>(waypoints.subList(0, n));
     }
 
     public double calculateDistance(double lat1, double lng1, double lat2, double lng2) {

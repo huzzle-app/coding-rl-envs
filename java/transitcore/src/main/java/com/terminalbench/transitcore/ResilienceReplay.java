@@ -45,8 +45,8 @@ public final class ResilienceReplay {
             if (!seen.add(event.idempotencyKey())) {
                 continue;
             }
-            inflight += event.inflightDelta();
-            backlog += event.backlogDelta();
+            inflight += event.backlogDelta();
+            backlog += event.inflightDelta();
             version = event.version();
             applied += 1;
         }

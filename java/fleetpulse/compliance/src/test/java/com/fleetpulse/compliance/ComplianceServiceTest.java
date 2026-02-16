@@ -57,8 +57,7 @@ public class ComplianceServiceTest {
         // Remaining: 60 - 52.75 = 7.25
 
         int remaining = complianceService.calculateRemainingDrivingHours(logs);
-        // With bug: intValue() of 7.25 = 7
-        // With fix: should be 7 (floor is acceptable for hours)
+        // 60 - 52.75 = 7.25, should round to 7 or 8
         assertTrue(remaining >= 7 && remaining <= 8,
             "Remaining hours from 7.25 should be 7 or 8, got " + remaining);
     }
@@ -117,8 +116,7 @@ public class ComplianceServiceTest {
     void test_rate_calculation() {
         
         double rate = complianceService.calculateComplianceRate(9, 10);
-        // With bug: (9 / 10) * 100 = 0 * 100 = 0.0
-        // With fix: ((double)9 / 10) * 100 = 90.0
+        // 9/10 should be 90%
         assertEquals(90.0, rate, 0.01,
             "9 out of 10 compliant days should be 90%, got " + rate);
     }
@@ -127,8 +125,7 @@ public class ComplianceServiceTest {
     void test_no_integer_division() {
         
         double rate = complianceService.calculateComplianceRate(1, 2);
-        // With bug: 1/2 = 0 in integer math, rate = 0
-        // With fix: 1.0/2.0 = 0.5, rate = 50.0
+        // 1/2 should be 50%
         assertEquals(50.0, rate, 0.01,
             "1 out of 2 should be 50%, got " + rate);
     }
@@ -154,8 +151,7 @@ public class ComplianceServiceTest {
     @Test
     void test_rate_33_percent() {
         double rate = complianceService.calculateComplianceRate(1, 3);
-        // With bug: 1/3 = 0 -> 0%
-        // With fix: 33.33...%
+        // 1/3 should be ~33.33%
         assertTrue(rate > 33.0 && rate < 34.0,
             "1 out of 3 should be ~33.33%, got " + rate);
     }
@@ -163,8 +159,7 @@ public class ComplianceServiceTest {
     @Test
     void test_rate_small_fraction() {
         double rate = complianceService.calculateComplianceRate(1, 100);
-        // With bug: 1/100 = 0 -> 0%
-        // With fix: 1.0%
+        // 1/100 should be 1%
         assertEquals(1.0, rate, 0.01,
             "1 out of 100 should be 1%");
     }
@@ -357,7 +352,7 @@ public class ComplianceServiceTest {
     @Test
     void test_virtual_thread_compliance() {
         
-        // The fix should use ReentrantLock instead
+        // Compliance check should not pin virtual threads
         List<DriverLog> logs = new ArrayList<>();
         logs.add(createLog(1L, "2025-01-01", new BigDecimal("12.00"), new BigDecimal("15.00")));
 

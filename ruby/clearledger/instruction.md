@@ -30,7 +30,7 @@ ruby -Ilib -Itests tests/run_all.rb
 
 ## Success Criteria
 
-Make the full test suite pass (`ruby -Ilib -Itests tests/run_all.rb`) with production-safe changes. All tests should pass with zero failures.
+Make the full test suite pass (`ruby -Ilib -Itests tests/run_all.rb`) with production-safe changes. All 1571 tests should pass with zero failures.
 
 ---
 

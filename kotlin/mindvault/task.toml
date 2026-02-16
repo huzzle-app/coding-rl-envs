@@ -4,6 +4,7 @@ version = "1.0"
 name = "mindvault"
 description = "Debug a Kotlin Ktor knowledge management platform with microservices"
 difficulty = "hard"
+tier = "principal"
 category = "programming"
 tags = ['debug', 'feature', 'refactor', 'optimize', 'api', 'migration', 'greenfield']
 language = "kotlin"

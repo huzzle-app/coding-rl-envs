@@ -27,7 +27,7 @@ Each scenario describes **symptoms and business impact** without revealing exact
 
 ## Completion Criteria
 
-- Full suite passes (`go test -race -v ./...`) with **7,583 test scenarios**.
+- Full suite passes (`go test -race -v ./...`) with **7,638 test scenarios**.
 - Deterministic consensus, settlement, and failover behavior remains stable.
 - Security, workflow, and compliance invariants remain enforced.
 - Do not edit files under `tests/`.

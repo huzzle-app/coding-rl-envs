@@ -1,8 +1,20 @@
 # VaultFS - Encrypted Filesystem Service
 
- in a Rust-based encrypted filesystem service built with Axum, Tokio, PostgreSQL, Redis, and S3/MinIO.
+Fix 29 bugs across 7 categories in a Rust-based encrypted filesystem service built with Axum, Tokio, PostgreSQL, Redis, and S3/MinIO.
 
-**Total** | tests | Difficulty: Senior (2-4h)
+**29 bugs** | **90 tests** | Difficulty: Senior (4-8h)
+
+## Bug Categories
+
+| Category | Bugs | Description |
+|----------|------|-------------|
+| L: Setup/Config | 4 | Nested runtime, pool config, env parsing, graceful shutdown |
+| A: Ownership | 5 | Use-after-move, partial move, borrowed values |
+| B: Lifetime | 4 | References to locals, self-referential structs, async lifetimes |
+| C: Concurrency | 5 | Deadlocks, blocking async, race conditions, non-Send futures |
+| D: Error Handling | 4 | Unwrap on None, missing match arms, error conversion, panic in drop |
+| E: Memory/Resource | 3 | Rc cycles, handle leaks, unbounded channels |
+| F: Security | 4 | Path traversal, SQL injection, timing attacks, unsafe mmap |
 
 ## Getting Started
 
@@ -27,7 +39,7 @@ cargo test test_name
 
 ## Success Criteria
 
-- All tests pass
+- All 79 tests pass
 - No compilation errors
 - No runtime panics or deadlocks
 - Services start successfully with `docker compose up -d`

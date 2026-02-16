@@ -15,26 +15,11 @@ void Replicator::enqueue(ReplicationEvent event) {
     event.sequence = next_sequence();
 
     std::lock_guard lock(queue_mutex_);
-    
     event_queue_.push(std::move(event));
-
-    
-    // After std::move, event.key is in a valid-but-unspecified state.
-    // It's likely empty, so this log message will show an empty key.
-    // FIX: Log before the move, or store the key in a local variable first:
-    //   auto key = event.key;
-    //   event_queue_.push(std::move(event));
-    //   spdlog::debug("Enqueued replication event for key: {}", key);
     spdlog::debug("Enqueued replication event for key: {}", event.key);
 }
 
 uint64_t Replicator::next_sequence() {
-    
-    // INT64_MAX is signed integer overflow → undefined behavior.
-    // FIX: Use uint64_t for sequence_counter_, or add overflow check:
-    //   if (sequence_counter_ == std::numeric_limits<int64_t>::max()) {
-    //       sequence_counter_ = 0;  // wrap around safely
-    //   }
     return static_cast<uint64_t>(++sequence_counter_);
 }
 

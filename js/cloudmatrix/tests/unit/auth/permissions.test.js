@@ -200,6 +200,179 @@ describe('ACL Service', () => {
   });
 });
 
+describe('Share Token Security', () => {
+  it('share token should have sufficient entropy for security', () => {
+    const { AuthService } = require('../../../services/auth/src/services/auth');
+    const service = new AuthService();
+    const token = service.generateShareToken();
+    // Token should be at least 16 hex chars (8 bytes) for brute-force resistance
+    expect(token.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('share token must not be trivially guessable (>= 8 bytes)', () => {
+    const { AuthService } = require('../../../services/auth/src/services/auth');
+    const service = new AuthService();
+    const token = service.generateShareToken();
+    // 3 bytes = 6 hex chars is far too short, need at least 8 bytes = 16 hex chars
+    expect(token.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('share tokens should have at least 64 bits of entropy', () => {
+    const { AuthService } = require('../../../services/auth/src/services/auth');
+    const service = new AuthService();
+    const tokens = [];
+    for (let i = 0; i < 10; i++) {
+      tokens.push(service.generateShareToken());
+    }
+    // All tokens must have sufficient length for 64+ bits
+    for (const t of tokens) {
+      expect(t.length).toBeGreaterThanOrEqual(16);
+    }
+  });
+
+  it('share token byte count should be sufficient for unguessability', () => {
+    const { AuthService } = require('../../../services/auth/src/services/auth');
+    const service = new AuthService();
+    const token = service.generateShareToken();
+    // Each hex char = 4 bits, so 16 hex chars = 64 bits = 8 bytes minimum
+    const byteCount = token.length / 2;
+    expect(byteCount).toBeGreaterThanOrEqual(8);
+  });
+
+  it('share token hex length must exceed brute-force threshold', () => {
+    const { AuthService } = require('../../../services/auth/src/services/auth');
+    const service = new AuthService();
+    const token = service.generateShareToken();
+    // With 6 hex chars (3 bytes), there are only 16M possibilities
+    // Need at least 16 hex chars for practical security
+    expect(token.length).toBeGreaterThanOrEqual(16);
+  });
+});
+
+describe('TOTP Authenticator', () => {
+  it('TOTP verify should accept token at exactly +window steps', () => {
+    const { TOTPAuthenticator } = require('../../../services/auth/src/services/auth');
+    const totp = new TOTPAuthenticator({ window: 1, stepSeconds: 30 });
+    const secret = totp.generateSecret();
+    const now = 1700000000000;
+    // Generate token at +1 step (exactly at window boundary)
+    const tokenAtPlusOne = totp.generateTOTP(secret, now + 30000);
+    // Should be accepted since window=1 means check -1, 0, +1 steps
+    // BUG: uses < instead of <= so +window is excluded
+    expect(totp.verify(tokenAtPlusOne, secret, now)).toBe(true);
+  });
+
+  it('TOTP verify should check full window range including boundaries', () => {
+    const { TOTPAuthenticator } = require('../../../services/auth/src/services/auth');
+    const totp = new TOTPAuthenticator({ window: 2, stepSeconds: 30 });
+    const secret = totp.generateSecret();
+    const now = 1700000000000;
+    const tokenAtPlusTwo = totp.generateTOTP(secret, now + 60000);
+    // window=2 should check i = -2, -1, 0, 1, 2
+    // BUG: loop uses i < window so i=2 is skipped
+    expect(totp.verify(tokenAtPlusTwo, secret, now)).toBe(true);
+  });
+
+  it('TOTP window should be symmetric (same range negative and positive)', () => {
+    const { TOTPAuthenticator } = require('../../../services/auth/src/services/auth');
+    const totp = new TOTPAuthenticator({ window: 1, stepSeconds: 30 });
+    const secret = totp.generateSecret();
+    const now = 1700000000000;
+    const tokenAtMinusOne = totp.generateTOTP(secret, now - 30000);
+    const tokenAtPlusOne = totp.generateTOTP(secret, now + 30000);
+    const acceptMinus = totp.verify(tokenAtMinusOne, secret, now);
+    const acceptPlus = totp.verify(tokenAtPlusOne, secret, now);
+    // Both should be accepted with window=1
+    expect(acceptMinus).toBe(true);
+    expect(acceptPlus).toBe(true);
+  });
+
+  it('TOTP verify loop should iterate from -window to +window inclusive', () => {
+    const { TOTPAuthenticator } = require('../../../services/auth/src/services/auth');
+    const totp = new TOTPAuthenticator({ window: 1, stepSeconds: 30 });
+    const secret = totp.generateSecret();
+    const now = 1700000000000;
+    // Count how many steps are checked
+    let checkedSteps = 0;
+    const origGenerate = totp.generateTOTP.bind(totp);
+    totp.generateTOTP = function(s, t) {
+      checkedSteps++;
+      return origGenerate(s, t);
+    };
+    totp.verify('000000', secret, now);
+    // Should check 3 steps: -1, 0, +1
+    expect(checkedSteps).toBe(3);
+  });
+
+  it('TOTP with window=0 should still check current step', () => {
+    const { TOTPAuthenticator } = require('../../../services/auth/src/services/auth');
+    const totp = new TOTPAuthenticator({ window: 0, stepSeconds: 30 });
+    const secret = totp.generateSecret();
+    const now = 1700000000000;
+    const currentToken = totp.generateTOTP(secret, now);
+    // window=0: loop from 0 to 0 inclusive, should check current
+    // BUG: i < 0 means loop body never executes
+    expect(totp.verify(currentToken, secret, now)).toBe(true);
+  });
+});
+
+describe('PKCE Validator', () => {
+  it('PKCE verifyChallenge should use base64url encoding', () => {
+    const { PKCEValidator } = require('../../../services/auth/src/services/auth');
+    const pkce = new PKCEValidator();
+    const { verifier, challenge } = pkce.generateChallenge();
+    // generateChallenge uses base64url, verifyChallenge should too
+    // BUG: verifyChallenge uses 'base64' not 'base64url'
+    const result = pkce.verifyChallenge(verifier, challenge);
+    expect(result).toBe(true);
+  });
+
+  it('PKCE challenge round-trip should work for any verifier', () => {
+    const { PKCEValidator } = require('../../../services/auth/src/services/auth');
+    const pkce = new PKCEValidator();
+    // Test multiple round-trips to catch encoding mismatches
+    for (let i = 0; i < 10; i++) {
+      const { verifier, challenge } = pkce.generateChallenge();
+      expect(pkce.verifyChallenge(verifier, challenge)).toBe(true);
+    }
+  });
+
+  it('PKCE verify encoding must match generate encoding (base64url)', () => {
+    const { PKCEValidator } = require('../../../services/auth/src/services/auth');
+    const crypto = require('crypto');
+    const pkce = new PKCEValidator();
+    const { verifier, challenge } = pkce.generateChallenge();
+    // Manually compute with base64url to verify
+    const expected = crypto.createHash('sha256').update(verifier).digest('base64url');
+    expect(challenge).toBe(expected);
+    // The verify method should also use base64url
+    expect(pkce.verifyChallenge(verifier, challenge)).toBe(true);
+  });
+
+  it('PKCE verifier containing + or / chars should still verify', () => {
+    const { PKCEValidator } = require('../../../services/auth/src/services/auth');
+    const pkce = new PKCEValidator();
+    // Generate many pairs; some will have chars that differ between base64 and base64url
+    let foundMismatch = false;
+    for (let i = 0; i < 50; i++) {
+      const { verifier, challenge } = pkce.generateChallenge();
+      if (!pkce.verifyChallenge(verifier, challenge)) {
+        foundMismatch = true;
+        break;
+      }
+    }
+    expect(foundMismatch).toBe(false);
+  });
+
+  it('PKCE should use URL-safe base64 (no + / = chars in challenge)', () => {
+    const { PKCEValidator } = require('../../../services/auth/src/services/auth');
+    const pkce = new PKCEValidator();
+    const { challenge } = pkce.generateChallenge();
+    // base64url should not contain +, /, or =
+    expect(challenge).not.toMatch(/[+/=]/);
+  });
+});
+
 describe('Configuration', () => {
   describe('JWT Secret', () => {
     it('jwt secret validation test', () => {

@@ -17,6 +17,13 @@ class WatermarkWindowTest {
     }
 
     @Test
+    void acceptAtExactToleranceBoundary() {
+        WatermarkWindow window = new WatermarkWindow();
+        // eventTs + tolerance == watermark: should accept
+        assertTrue(window.accept(100, 105, 5));
+    }
+
+    @Test
     void bucketForWindow() {
         WatermarkWindow window = new WatermarkWindow();
         assertEquals(12, window.bucketFor(3600, 300));

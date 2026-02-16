@@ -14,7 +14,7 @@ Restore production-safe behavior by fixing defects in source code only.
 
 ## Completion Criteria
 
-- Full suite passes (`npm test`) with **9200+ scenarios**.
+- Full suite passes (`npm test`) with **12213 scenarios**.
 - Deterministic replay, scheduling, and routing behavior is preserved.
 - Security, workflow, and policy invariants remain intact.
 - Do not modify files under `tests/`.

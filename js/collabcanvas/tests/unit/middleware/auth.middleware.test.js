@@ -1,215 +1,174 @@
 /**
  * Auth Middleware Unit Tests
+ *
+ * Tests JWT-based authentication middleware using actual JwtService.
+ * Tests bugs D1 (JWT secret validation) and token verification behavior.
  */
 
+// Set JWT_SECRET before requiring JwtService so the config module picks it up
+process.env.JWT_SECRET = 'test-secret-key-that-is-long-enough-for-signing';
+const JwtService = require('../../../src/services/auth/jwt.service');
+
 describe('Auth Middleware', () => {
-  let mockReq;
-  let mockRes;
-  let mockNext;
+  let jwtService;
+  let originalEnv;
 
   beforeEach(() => {
-    mockReq = {
-      headers: {},
-      cookies: {},
-    };
+    originalEnv = { ...process.env };
+    process.env.JWT_SECRET = 'test-secret-key-that-is-long-enough-for-signing';
+    jwtService = new JwtService();
+  });
 
-    mockRes = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn().mockReturnThis(),
-    };
-
-    mockNext = jest.fn();
+  afterEach(() => {
+    process.env = originalEnv;
+    jest.clearAllMocks();
   });
 
   describe('requireAuth', () => {
-    it('should pass with valid Bearer token', async () => {
-      mockReq.headers.authorization = 'Bearer valid-token';
+    it('should verify valid Bearer token using JwtService', () => {
+      const payload = { userId: 'user-1', email: 'test@example.com' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
 
-      const requireAuth = (verifyToken) => (req, res, next) => {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith('Bearer ')) {
-          return res.status(401).json({ error: 'No token provided' });
-        }
+      const decoded = jwtService.verifyToken(token);
 
-        const token = authHeader.substring(7);
-        try {
-          req.user = verifyToken(token);
-          next();
-        } catch (error) {
-          res.status(401).json({ error: 'Invalid token' });
-        }
-      };
-
-      const middleware = requireAuth((token) => ({ id: 'user-1' }));
-      middleware(mockReq, mockRes, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
-      expect(mockReq.user).toEqual({ id: 'user-1' });
+      expect(decoded).not.toBeNull();
+      expect(decoded.userId).toBe('user-1');
+      expect(decoded.email).toBe('test@example.com');
     });
 
-    it('should reject request without token', async () => {
-      const requireAuth = (req, res, next) => {
-        if (!req.headers.authorization) {
-          return res.status(401).json({ error: 'No token provided' });
-        }
-        next();
-      };
-
-      requireAuth(mockReq, mockRes, mockNext);
-
-      expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockNext).not.toHaveBeenCalled();
+    it('should reject request with no token', () => {
+      const result = jwtService.verifyToken(null);
+      expect(result).toBeNull();
     });
 
-    it('should reject invalid token format', async () => {
-      mockReq.headers.authorization = 'InvalidFormat token';
-
-      const requireAuth = (req, res, next) => {
-        const authHeader = req.headers.authorization;
-        if (!authHeader?.startsWith('Bearer ')) {
-          return res.status(401).json({ error: 'Invalid token format' });
-        }
-        next();
-      };
-
-      requireAuth(mockReq, mockRes, mockNext);
-
-      expect(mockRes.status).toHaveBeenCalledWith(401);
+    it('should reject malformed token', () => {
+      const result = jwtService.verifyToken('not-a-real-token');
+      // verifyToken catches errors and returns null (BUG D1)
+      // When fixed properly, it should throw for invalid tokens
+      expect(result).toBeNull();
     });
 
-    it('should reject expired token', async () => {
-      mockReq.headers.authorization = 'Bearer expired-token';
+    /**
+     * BUG D1: verifyToken returns null instead of throwing on expired tokens.
+     * Middleware should distinguish between "no token" and "expired token"
+     * to give appropriate error messages.
+     */
+    it('should throw on expired token', async () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1ms' });
 
-      const requireAuth = (verifyToken) => (req, res, next) => {
-        try {
-          const token = req.headers.authorization.substring(7);
-          verifyToken(token);
-        } catch (error) {
-          return res.status(401).json({ error: 'Token expired' });
-        }
-        next();
-      };
+      await new Promise(r => setTimeout(r, 50));
 
-      const middleware = requireAuth(() => {
-        throw new Error('Token expired');
-      });
+      // BUG D1: verifyToken swallows the error and returns null
+      // When fixed, this should throw an error about expiry
+      expect(() => jwtService.verifyToken(token)).toThrow();
+    });
 
-      middleware(mockReq, mockRes, mockNext);
+    /**
+     * BUG D1: verifyToken returns null on tampered tokens instead of throwing.
+     */
+    it('should throw on tampered token', () => {
+      const token = jwtService.generateToken({ userId: 'user-1' });
+      const parts = token.split('.');
+      parts[1] = Buffer.from(JSON.stringify({ userId: 'hacked' })).toString('base64url');
+      const tampered = parts.join('.');
 
-      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(() => jwtService.verifyToken(tampered)).toThrow();
     });
   });
 
-  describe('optionalAuth', () => {
-    it('should continue without token', async () => {
-      const optionalAuth = (verifyToken) => (req, res, next) => {
-        const authHeader = req.headers.authorization;
-        if (authHeader?.startsWith('Bearer ')) {
-          try {
-            req.user = verifyToken(authHeader.substring(7));
-          } catch {
-            // Ignore invalid token in optional auth
-          }
-        }
-        next();
-      };
+  describe('token generation', () => {
+    it('should generate token with custom expiry', () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '2h' });
 
-      const middleware = optionalAuth(() => null);
-      middleware(mockReq, mockRes, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
-      expect(mockReq.user).toBeUndefined();
+      expect(token).toBeDefined();
+      const decoded = jwtService.decodeToken(token);
+      expect(decoded.userId).toBe('user-1');
+      expect(decoded.exp).toBeDefined();
     });
 
-    it('should set user if valid token provided', async () => {
-      mockReq.headers.authorization = 'Bearer valid-token';
-
-      const optionalAuth = (verifyToken) => (req, res, next) => {
-        const authHeader = req.headers.authorization;
-        if (authHeader?.startsWith('Bearer ')) {
-          try {
-            req.user = verifyToken(authHeader.substring(7));
-          } catch {
-            // Ignore
-          }
-        }
-        next();
+    /**
+     * BUG: generateToken does not filter sensitive fields from payload.
+     * Password and secret keys should never be included in JWT tokens.
+     */
+    it('should not include sensitive fields in generated token', () => {
+      const payload = {
+        userId: 'user-1',
+        email: 'test@example.com',
+        password: 'secret-password',
+        secretKey: 'api-secret-key',
       };
 
-      const middleware = optionalAuth(() => ({ id: 'user-1' }));
-      middleware(mockReq, mockRes, mockNext);
+      const token = jwtService.generateToken(payload);
+      const decoded = jwtService.decodeToken(token);
 
-      expect(mockReq.user).toEqual({ id: 'user-1' });
-    });
-  });
-
-  describe('requireRole', () => {
-    it('should allow user with required role', async () => {
-      mockReq.user = { id: 'user-1', roles: ['admin', 'user'] };
-
-      const requireRole = (role) => (req, res, next) => {
-        if (!req.user?.roles?.includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
-        next();
-      };
-
-      const middleware = requireRole('admin');
-      middleware(mockReq, mockRes, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
+      expect(decoded.userId).toBe('user-1');
+      // BUG: generateToken includes ALL payload fields including sensitive ones
+      expect(decoded.password).toBeUndefined();
+      expect(decoded.secretKey).toBeUndefined();
     });
 
-    it('should reject user without required role', async () => {
-      mockReq.user = { id: 'user-1', roles: ['user'] };
-
-      const requireRole = (role) => (req, res, next) => {
-        if (!req.user?.roles?.includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
-        next();
+    it('should generate access and refresh token pair', () => {
+      const user = {
+        id: 'user-1',
+        email: 'test@example.com',
+        firstName: 'Test',
+        lastName: 'User',
       };
 
-      const middleware = requireRole('admin');
-      middleware(mockReq, mockRes, mockNext);
+      const tokens = jwtService.generateTokenPair(user);
 
-      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(tokens.accessToken).toBeDefined();
+      expect(tokens.refreshToken).toBeDefined();
+      expect(tokens.accessToken).not.toBe(tokens.refreshToken);
     });
   });
 
-  describe('apiKeyAuth', () => {
-    it('should accept valid API key', async () => {
-      mockReq.headers['x-api-key'] = 'valid-api-key';
+  describe('token refresh', () => {
+    it('should refresh valid token', () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
 
-      const apiKeyAuth = (validateKey) => (req, res, next) => {
-        const apiKey = req.headers['x-api-key'];
-        if (!apiKey || !validateKey(apiKey)) {
-          return res.status(401).json({ error: 'Invalid API key' });
-        }
-        next();
-      };
+      const newToken = jwtService.refreshToken(token);
 
-      const middleware = apiKeyAuth((key) => key === 'valid-api-key');
-      middleware(mockReq, mockRes, mockNext);
+      expect(newToken).toBeDefined();
+      expect(newToken).not.toBe(token);
 
-      expect(mockNext).toHaveBeenCalled();
+      const decoded = jwtService.decodeToken(newToken);
+      expect(decoded.userId).toBe('user-1');
     });
 
-    it('should reject invalid API key', async () => {
-      mockReq.headers['x-api-key'] = 'invalid-key';
+    /**
+     * BUG: refreshToken uses decodeToken (no verification) instead of verifyToken.
+     * This allows refreshing expired tokens, which is a security vulnerability.
+     */
+    it('should reject refresh of expired token', async () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1ms' });
 
-      const apiKeyAuth = (validateKey) => (req, res, next) => {
-        const apiKey = req.headers['x-api-key'];
-        if (!apiKey || !validateKey(apiKey)) {
-          return res.status(401).json({ error: 'Invalid API key' });
-        }
-        next();
-      };
+      await new Promise(r => setTimeout(r, 50));
 
-      const middleware = apiKeyAuth((key) => key === 'valid-api-key');
-      middleware(mockReq, mockRes, mockNext);
+      // BUG: refreshToken uses decodeToken which doesn't verify expiry
+      expect(() => jwtService.refreshToken(token)).toThrow();
+    });
+  });
 
-      expect(mockRes.status).toHaveBeenCalledWith(401);
+  describe('token introspection', () => {
+    it('should check if token is expired', () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
+
+      expect(jwtService.isTokenExpired(token)).toBe(false);
+    });
+
+    it('should report remaining time', () => {
+      const payload = { userId: 'user-1' };
+      const token = jwtService.generateToken(payload, { expiresIn: '1h' });
+
+      const remaining = jwtService.getTokenTimeRemaining(token);
+      expect(remaining).toBeGreaterThan(0);
+      expect(remaining).toBeLessThanOrEqual(3600000); // 1 hour in ms
     });
   });
 });

@@ -9,18 +9,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Service managing request context and request logging.
+ *
+ * Bugs: C3, D1
+ * Categories: Concurrency, Spring/DI
+ */
 @Service
 public class RequestService {
 
     private static final Logger log = LoggerFactory.getLogger(RequestService.class);
 
-    
-    // In virtual thread or pooled thread environment, context leaks to next request
-    // Fix: Add finally { requestContext.remove(); } in filter or interceptor
+    // Bug C3: ThreadLocal not cleared after request processing in pooled thread environment.
+    // Category: Concurrency
     private static final ThreadLocal<RequestContext> requestContext = new ThreadLocal<>();
 
     public void setRequestContext(RequestContext context) {
-        
         requestContext.set(context);
     }
 
@@ -32,12 +36,11 @@ public class RequestService {
         requestContext.remove();
     }
 
-    
-    // Public method calls @Transactional method on 'this' → transaction not started
-    // Fix: Inject self via @Lazy or extract to separate service
+    // Bug D1: Public method calls @Transactional method on 'this', bypassing the
+    // Spring AOP proxy so the transaction is never started.
+    // Category: Spring/DI
     public void processRequest(String requestId, String payload) {
         log.info("Processing request: {}", requestId);
-        
         this.saveRequestLog(requestId, payload);
     }
 

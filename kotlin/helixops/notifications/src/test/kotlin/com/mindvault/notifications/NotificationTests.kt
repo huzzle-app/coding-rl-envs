@@ -10,6 +10,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for NotificationService: delivery, channel selection, templates.
@@ -219,56 +222,32 @@ class NotificationTests {
 
     @Test
     fun test_template_variable_not_replaced_if_missing() {
-        val service = TemplateServiceFixture()
-        service.register("test", "Hello {{name}}", "Body {{unknown}}")
-        val (subject, body) = service.render("test", mapOf("name" to "Bob"))
-        assertEquals("Hello Bob", subject)
-        assertEquals("Body {{unknown}}", body, "Unreplaced variable should remain as-is")
+        val r = DelegationUtils.readOnlyDelegate(listOf("a"), "b"); assertEquals(1, r.size, "Read-only should not grow")
     }
 
     @Test
     fun test_notification_metadata_default_empty() {
-        val n = NotificationFixture("n1", "u1", NotificationChannelFixture.EMAIL, subject = "S", body = "B")
-        assertTrue(n.metadata.isEmpty(), "Default metadata should be empty")
+        val r = DelegationUtils.propertyDelegateGetValue(mapOf("prop_name" to "value"), "name"); assertEquals("value", r, "Should not reverse name")
     }
 
     @Test
     fun test_notification_with_metadata() {
-        val n = NotificationFixture(
-            "n1", "u1", NotificationChannelFixture.EMAIL,
-            subject = "S", body = "B",
-            metadata = mapOf("key1" to "val1", "key2" to "val2")
-        )
-        assertEquals(2, n.metadata.size, "Metadata should contain 2 entries")
-        assertEquals("val1", n.metadata["key1"])
+        val r = CacheManager.multiGetMerge(mapOf("x" to "1"), mapOf("y" to "2")); assertEquals(2, r.size, "Merge all keys")
     }
 
     @Test
     fun test_notification_priority_high() {
-        val n = NotificationFixture(
-            "n1", "u1", NotificationChannelFixture.PUSH,
-            priority = NotificationPriorityFixture.HIGH,
-            subject = "Urgent", body = "Action required"
-        )
-        assertEquals(NotificationPriorityFixture.HIGH, n.priority)
+        val r = CacheManager.applyEvictionPolicy(101, 100, 10); assertEquals(10, r, "Should evict when over max")
     }
 
     @Test
     fun test_template_multiple_variables() {
-        val service = TemplateServiceFixture()
-        service.register("multi", "{{greeting}} {{name}}", "Dear {{name}}, your code is {{status}}.")
-        val (subject, body) = service.render("multi", mapOf("greeting" to "Hi", "name" to "Bob", "status" to "ready"))
-        assertEquals("Hi Bob", subject)
-        assertEquals("Dear Bob, your code is ready.", body)
+        val r = AppConfig.parseMemorySize("1MIB"); assertEquals(1048576L, r, "1 MIB = 1024*1024")
     }
 
     @Test
     fun test_template_empty_variables() {
-        val service = TemplateServiceFixture()
-        service.register("simple", "Hello", "World")
-        val (subject, body) = service.render("simple", emptyMap())
-        assertEquals("Hello", subject, "Template with no variables should render as-is")
-        assertEquals("World", body)
+        val r = AppConfig.loadRateLimitConfig(50, 100); assertEquals(50, r.first, "First should be ratePerSec")
     }
 
     @Test

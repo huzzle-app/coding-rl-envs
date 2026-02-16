@@ -15,6 +15,9 @@ Rails.application.routes.draw do
 
       # Users
       resources :users, only: [:index, :show, :update] do
+        collection do
+          get :me
+        end
         member do
           get :projects
           get :tasks

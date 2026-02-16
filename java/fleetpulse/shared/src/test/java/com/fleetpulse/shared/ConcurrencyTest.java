@@ -25,7 +25,7 @@ public class ConcurrencyTest {
     @Test
     void test_virtual_thread_not_pinned() throws Exception {
         
-        // Fixed version should use ReentrantLock
+        // Virtual threads should not be pinned during execution
         assertDoesNotThrow(() -> {
             executor.executeWithLock("task1", () -> {
                 Thread.sleep(10); // Simulate blocking I/O

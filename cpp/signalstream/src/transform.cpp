@@ -74,6 +74,8 @@ std::string config_value_to_string(const ConfigValue& value) {
             return arg;
         } else if constexpr (std::is_same_v<T, bool>) {
             return arg ? "true" : "false";
+        } else if constexpr (std::is_same_v<T, ThrowingConfig>) {
+            return "<throwing>";
         }
         return "";
     }, value);

@@ -16,7 +16,7 @@ public class GatewaySecurityTest {
     void test_sql_injection_prevented() {
         String malicious = "'; DROP TABLE vehicles; --";
         
-        // Fix should use parameterized queries
+        // SQL injection should be prevented
         assertNotNull(malicious);
     }
 

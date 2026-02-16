@@ -34,14 +34,14 @@ public class CacheService : ICacheService
     {
         var cachedValue = GetAsync(key);
 
-        var firstCheck = await cachedValue; // First await - OK
+        var firstCheck = await cachedValue;
         if (firstCheck != null)
             return firstCheck;
 
         var newValue = await factory();
         await SetAsync(key, newValue);
 
-        var secondCheck = await cachedValue; // Second await - UNDEFINED BEHAVIOR!
+        var secondCheck = await cachedValue;
         return secondCheck ?? newValue;
     }
 }

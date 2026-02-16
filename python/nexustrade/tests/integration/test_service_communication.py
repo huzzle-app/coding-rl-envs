@@ -213,3 +213,72 @@ class TestBulkhead:
         full_queue = list(range(100))
         can_enqueue_full = len(full_queue) < max_queue_depth
         assert not can_enqueue_full, "Should reject when queue is at capacity"
+
+
+# ===================================================================
+# Source-code-verifying tests for service communication bugs
+# ===================================================================
+
+
+class TestCircuitBreakerThresholdCheck:
+    """Tests that circuit breaker threshold uses >= not > (BUG C1)."""
+
+    def test_record_failure_uses_gte_comparison(self):
+        """record_failure must use >= for threshold comparison, not >."""
+        import inspect
+        from shared.clients.base import CircuitBreaker
+        src = inspect.getsource(CircuitBreaker.record_failure)
+        # Should have >= self.failure_threshold, not > self.failure_threshold
+        assert ">= self.failure_threshold" in src or ">=self.failure_threshold" in src, \
+            "CircuitBreaker.record_failure must use >= (not >) for threshold check"
+
+    def test_circuit_opens_at_exact_threshold(self):
+        """Circuit breaker must open when failures == threshold, not threshold+1."""
+        from shared.clients.base import CircuitBreaker, CircuitState
+        cb = CircuitBreaker(failure_threshold=3)
+        for _ in range(3):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN, \
+            "Circuit must open at exactly failure_threshold failures"
+
+    def test_circuit_stays_closed_below_threshold(self):
+        """Circuit breaker must stay closed when failures < threshold."""
+        from shared.clients.base import CircuitBreaker, CircuitState
+        cb = CircuitBreaker(failure_threshold=3)
+        for _ in range(2):
+            cb.record_failure()
+        assert cb.state == CircuitState.CLOSED, \
+            "Circuit must stay closed below failure_threshold"
+
+
+class TestRequestCoalescingUserIsolation:
+    """Tests that request coalescing doesn't leak data between users (BUG C3)."""
+
+    def test_coalescing_cache_key_includes_user_context(self):
+        """Cache key for request coalescing must include user context."""
+        import inspect
+        from shared.clients.base import ServiceClient
+        src = inspect.getsource(ServiceClient.get)
+        # If coalescing is implemented, the cache_key must include headers/user info
+        if "cache_key" in src and "coalesce" in src:
+            # cache_key should include headers or user context, not just path:params
+            has_user_context = ("header" in src.lower() and "cache_key" in src) or \
+                               ("user" in src.lower() and "cache_key" in src) or \
+                               ("auth" in src.lower() and "cache_key" in src)
+            assert has_user_context, \
+                "Request coalescing cache_key must include user context to prevent data leaks"
+
+    def test_coalescing_key_not_just_path_params(self):
+        """Coalescing key using only path:params leaks data between users."""
+        import inspect
+        from shared.clients.base import ServiceClient
+        src = inspect.getsource(ServiceClient.get)
+        if "cache_key" in src:
+            # The bug pattern: cache_key = f"{path}:{params}" (no user isolation)
+            lines = src.split('\n')
+            for line in lines:
+                if 'cache_key' in line and '=' in line and 'f"' in line:
+                    # This line sets cache_key - check it includes more than path:params
+                    assert 'header' in line.lower() or 'user' in line.lower() or \
+                           'auth' in line.lower() or 'token' in line.lower(), \
+                        f"cache_key must include user context: {line.strip()}"

@@ -5,6 +5,8 @@ import com.docuvault.service.NotificationService;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -243,6 +245,28 @@ public class ConcurrentAccessTest {
 
         assertEquals(threadCount, counter.get("key"),
             "All increments should be counted with proper synchronization");
+    }
+
+    @Test
+    void test_auth_service_uses_shared_lock() throws Exception {
+        // A5: AuthService uses synchronized(this) with prototype scope - each instance
+        // has a different monitor, providing no mutual exclusion on shared static state.
+        // Fix: use a static lock object, or change to singleton scope.
+        String source = new String(Files.readAllBytes(
+            Paths.get("src/main/java/com/docuvault/security/AuthService.java")));
+        String code = source.replaceAll("/\\*[\\s\\S]*?\\*/", "").replaceAll("//[^\n]*", "");
+
+        boolean hasPrototypeScope = code.contains("SCOPE_PROTOTYPE");
+        boolean usesSyncThis = code.contains("synchronized (this)")
+            || code.contains("synchronized(this)")
+            || code.contains("public synchronized ");
+
+        // Either use a static lock with prototype scope, OR don't use prototype scope
+        if (hasPrototypeScope) {
+            assertFalse(usesSyncThis,
+                "AuthService uses SCOPE_PROTOTYPE with synchronized(this) - each instance " +
+                "has a different monitor. Use a static lock object or change to singleton scope.");
+        }
     }
 
     // General concurrency tests

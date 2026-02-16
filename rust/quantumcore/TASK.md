@@ -4,7 +4,7 @@
 
 You are debugging a high-frequency trading platform built with Rust microservices. The platform handles order matching, risk management, market data, and portfolio tracking with microsecond latency requirements.
 
-The codebase contains issues across 10 microservices that need to be identified and fixed. All 510+ tests must pass before the task is complete.
+The codebase contains 75 bugs across 10 microservices that need to be identified and fixed. All 960+ tests (759 unit + 202 integration) must pass before the task is complete.
 
 ## Getting Started
 
@@ -221,17 +221,18 @@ QuantumCore is a microservices platform with 10 Rust services:
 
 | Category | Tests | Focus |
 |----------|-------|-------|
-| Unit | 180 | Individual functions |
-| Integration | 120 | Service interactions |
-| Concurrency | 60 | Race conditions, deadlocks |
-| Performance | 50 | Latency, throughput |
-| Security | 50 | Auth, injection |
-| Chaos | 30 | Failure scenarios |
-| E2E | 20 | Full order lifecycle |
+| Unit (per-service) | 759 | Individual functions per service |
+| Integration: Matching | 21 | Lock ordering, price conversion, ABA |
+| Integration: Concurrency | 26 | Deadlocks, channels, atomics, condvars |
+| Integration: Financial | 35 | Float precision, overflow, rounding, fees |
+| Integration: Risk | 18 | Margin, circuit breaker, VaR, timing |
+| Integration: Security | 22 | JWT, SQL injection, rate limiting, PII |
+| Integration: Distributed | 38 | Event ordering, idempotency, failover |
+| Integration: Event Sourcing | 42 | Saga, Arc cycles, error chains, ledger |
 
 ## Success Criteria
 
-- All 510+ tests pass
+- All 950+ tests pass
 - No compiler warnings
 - `cargo clippy` clean
 - No data races (TSAN clean)

@@ -74,7 +74,7 @@ public class TokenValidatorTest {
         byte[] malicious = createSerializedObject();
         
         Map<String, Object> result = validator.deserializeSession(malicious);
-        // In fixed version, this should use safe deserialization
+        // Deserialization of untrusted data should be safe
         assertNotNull(result);
     }
 

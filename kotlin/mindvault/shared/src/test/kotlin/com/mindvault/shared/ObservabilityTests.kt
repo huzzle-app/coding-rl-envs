@@ -8,15 +8,17 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 
 /**
  * Tests for observability: logging levels, CancellationException handling, plugin ordering.
  *
  * Bug-specific tests:
  *   J2 - Exception handler logs at DEBUG level instead of ERROR
- *   J4 - runCatching swallows CancellationException, breaking structured concurrency
  *   J3 - Kafka trace header not extracted, breaking distributed tracing
+ *   J4 - runCatching swallows CancellationException, breaking structured concurrency
  *   J5 - CallLogging installed after StatusPages, so error responses are not logged
+ *   D5 - Error handler catches Throwable generically, losing typed error classification
  */
 class ObservabilityTests {
 
@@ -252,6 +254,37 @@ class ObservabilityTests {
     }
 
     // =========================================================================
+    // D5: Error handler wraps all exceptions generically, losing typed error info
+    // =========================================================================
+
+    @Test
+    fun test_error_handler_preserves_type() {
+        // The error handler catches Throwable and returns a generic error message
+        // instead of preserving the exception type for callers to handle specifically
+        val logging = LocalLogging()
+        val result = logging.handleAndClassify(IllegalArgumentException("bad input"))
+        assertEquals(
+            "CLIENT_ERROR",
+            result.errorClass,
+            "IllegalArgumentException should be classified as CLIENT_ERROR, not generic SERVER_ERROR"
+        )
+    }
+
+    @Test
+    fun test_error_handler_not_generic_catch() {
+        // Using catch(e: Throwable) loses the ability to differentiate between
+        // recoverable and non-recoverable errors
+        val logging = LocalLogging()
+        val clientResult = logging.handleAndClassify(IllegalArgumentException("bad"))
+        val serverResult = logging.handleAndClassify(OutOfMemoryError("oom"))
+        assertNotEquals(
+            clientResult.errorClass,
+            serverResult.errorClass,
+            "Client errors and fatal errors should NOT be classified the same way"
+        )
+    }
+
+    // =========================================================================
     // Local stubs simulating buggy production code
     // =========================================================================
 
@@ -281,12 +314,22 @@ class ObservabilityTests {
             return lastOrd >= minOrd
         }
 
-        
+
         inline fun <T> safeCatching(block: () -> T): Result<T> {
             return runCatching(block)
-            
+
+        }
+
+        // D5 bug: catches Throwable generically, classifies everything the same
+        fun handleAndClassify(e: Throwable): ErrorClassification {
+            // BUG: catches all Throwable as generic "SERVER_ERROR"
+            // Should differentiate: IllegalArgumentException → CLIENT_ERROR,
+            // Error subclasses → FATAL, other Exception → SERVER_ERROR
+            return ErrorClassification(errorClass = "SERVER_ERROR", message = e.message ?: "unknown")
         }
     }
+
+    data class ErrorClassification(val errorClass: String, val message: String)
 
     
     data class TraceResult(val traceExtracted: Boolean, val traceId: String? = null)

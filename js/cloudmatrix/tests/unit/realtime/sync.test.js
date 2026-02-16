@@ -293,6 +293,141 @@ describe('OperationalTransform', () => {
   });
 });
 
+describe('UndoRedoManager - User Isolation', () => {
+  let UndoRedoManager;
+
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../shared/realtime');
+    UndoRedoManager = mod.UndoRedoManager;
+  });
+
+  it('undo should only undo operations by the requesting user', () => {
+    const manager = new UndoRedoManager();
+    manager.pushOperation('user-a', { type: 'insert', position: 0, content: 'A' });
+    manager.pushOperation('user-b', { type: 'insert', position: 1, content: 'B' });
+    manager.pushOperation('user-a', { type: 'insert', position: 2, content: 'C' });
+
+    const undone = manager.undo('user-a');
+    // Should undo user-a's last operation (C), not user-b's (B)
+    // BUG: undo pops from shared stack without filtering by userId
+    expect(undone.type).toBe('delete');
+    expect(undone.position).toBe(2);
+    expect(undone.length).toBe(1);
+  });
+
+  it('undo should skip other users operations in the stack', () => {
+    const manager = new UndoRedoManager();
+    manager.pushOperation('alice', { type: 'insert', position: 0, content: 'Hello' });
+    manager.pushOperation('bob', { type: 'insert', position: 5, content: ' World' });
+
+    // Alice's undo should undo her 'Hello', not Bob's ' World'
+    const undone = manager.undo('alice');
+    expect(undone.position).toBe(0);
+    expect(undone.length).toBe(5); // 'Hello' length
+  });
+
+  it('user A undo should not affect user B operations', () => {
+    const manager = new UndoRedoManager();
+    manager.pushOperation('a', { type: 'insert', position: 0, content: 'X' });
+    manager.pushOperation('b', { type: 'insert', position: 1, content: 'Y' });
+
+    manager.undo('a');
+    // After a's undo, b should still be able to undo their own operation
+    const bUndo = manager.undo('b');
+    expect(bUndo).not.toBeNull();
+    expect(bUndo.position).toBe(1);
+  });
+
+  it('undo with multiple users should maintain per-user history', () => {
+    const manager = new UndoRedoManager();
+    manager.pushOperation('u1', { type: 'insert', position: 0, content: 'A' });
+    manager.pushOperation('u2', { type: 'insert', position: 1, content: 'B' });
+    manager.pushOperation('u1', { type: 'insert', position: 2, content: 'C' });
+    manager.pushOperation('u2', { type: 'insert', position: 3, content: 'D' });
+
+    // u1 should undo C first, then A
+    const u1Undo1 = manager.undo('u1');
+    expect(u1Undo1.position).toBe(2);
+
+    const u1Undo2 = manager.undo('u1');
+    expect(u1Undo2.position).toBe(0);
+  });
+
+  it('undo should return null if user has no operations', () => {
+    const manager = new UndoRedoManager();
+    manager.pushOperation('user-a', { type: 'insert', position: 0, content: 'text' });
+    // user-b has no operations
+    const result = manager.undo('user-b');
+    expect(result).toBeNull();
+  });
+});
+
+describe('OT Compose', () => {
+  let OperationalTransform;
+
+  beforeEach(() => {
+    jest.resetModules();
+    const mod = require('../../../shared/realtime');
+    OperationalTransform = mod.OperationalTransform;
+  });
+
+  it('compose should preserve delete operations', () => {
+    const ops = [
+      { type: 'insert', position: 0, content: 'Hello' },
+      { type: 'delete', position: 3, length: 2 },
+    ];
+    const composed = OperationalTransform.compose(ops);
+    // BUG: compose drops non-insert ops when types don't match
+    const hasDelete = composed.some(op => op.type === 'delete');
+    expect(hasDelete).toBe(true);
+  });
+
+  it('compose should not lose operations of different types', () => {
+    const ops = [
+      { type: 'insert', position: 0, content: 'A' },
+      { type: 'delete', position: 5, length: 3 },
+      { type: 'insert', position: 2, content: 'B' },
+    ];
+    const composed = OperationalTransform.compose(ops);
+    // All three operations should be represented in the result
+    // BUG: non-insert ops are silently replaced
+    expect(composed.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('compose of mixed types should return all operations', () => {
+    const ops = [
+      { type: 'delete', position: 0, length: 5 },
+      { type: 'insert', position: 0, content: 'New' },
+    ];
+    const composed = OperationalTransform.compose(ops);
+    // Should preserve both delete and insert
+    const types = composed.map(op => op.type);
+    expect(types).toContain('delete');
+    expect(types).toContain('insert');
+  });
+
+  it('compose should handle format operations', () => {
+    const ops = [
+      { type: 'insert', position: 0, content: 'text' },
+      { type: 'format', position: 0, length: 4, format: { bold: true } },
+    ];
+    const composed = OperationalTransform.compose(ops);
+    const hasFormat = composed.some(op => op.type === 'format');
+    expect(hasFormat).toBe(true);
+  });
+
+  it('compose should not discard the first operation when second differs', () => {
+    const ops = [
+      { type: 'delete', position: 10, length: 5 },
+      { type: 'insert', position: 10, content: 'replacement' },
+    ];
+    const composed = OperationalTransform.compose(ops);
+    // BUG: compose discards first op, keeping only last
+    expect(composed.length).toBe(2);
+  });
+});
+
 describe('UndoRedoManager', () => {
   let UndoRedoManager;
 

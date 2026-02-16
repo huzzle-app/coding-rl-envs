@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .reward import RewardCalculator, BUG_TEST_MAPPING, BUG_CATEGORIES, BUG_DEPENDENCIES
+from .reward import RewardCalculator, BUG_TEST_MAPPING, BUG_DEPENDENCIES
 
 
 @dataclass

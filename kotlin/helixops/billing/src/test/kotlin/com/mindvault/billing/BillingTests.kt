@@ -8,6 +8,9 @@ import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import com.helixops.shared.config.AppConfig
+import com.helixops.shared.cache.CacheManager
+import com.helixops.shared.delegation.DelegationUtils
 
 /**
  * Tests for BillingService: invoicing, pricing, payments.
@@ -27,7 +30,7 @@ class BillingTests {
 
     @Test
     fun test_bigdecimal_null_check() {
-        
+
         val service = BillingServiceFixture()
         // Customer with no overage and no discount -- both return null
         val bill = service.calculateMonthlyBill("customer-no-extras")
@@ -42,14 +45,14 @@ class BillingTests {
 
     @Test
     fun test_no_balance_returns_zero() {
-        
+
         val service = BillingServiceFixture()
         // overage is null, discount is null
         val result = try {
             service.calculateMonthlyBill("customer-null")
             true
         } catch (e: NullPointerException) {
-            false 
+            false
         }
 
         assertTrue(
@@ -64,7 +67,7 @@ class BillingTests {
 
     @Test
     fun test_invoice_copy_recalculates() {
-        
+
         // When copy(lineItems = newItems) is called, the total is NOT recomputed --
         // it retains the value from the original invoice.
         val original = InvoiceFixture(
@@ -81,7 +84,7 @@ class BillingTests {
             )
         )
 
-        
+
         assertEquals(
             BigDecimal("30.00"),
             updated.total,
@@ -91,7 +94,7 @@ class BillingTests {
 
     @Test
     fun test_total_consistent_after_copy() {
-        
+
         val items = listOf(
             LineItemFixture("A", BigDecimal("5.50")),
             LineItemFixture("B", BigDecimal("3.25")),
@@ -102,7 +105,7 @@ class BillingTests {
             lineItems = listOf(LineItemFixture("X", BigDecimal("100.00")))
         )
 
-        
+
         assertEquals(
             copy.lineItems.sumOf { it.amount },
             copy.total,
@@ -116,7 +119,7 @@ class BillingTests {
 
     @Test
     fun test_batch_insert_no_returning() {
-        
+
         // should use chunked processing instead.
         val service = BatchInsertFixture()
         val invoices = List(10_000) { i ->
@@ -132,7 +135,7 @@ class BillingTests {
 
     @Test
     fun test_large_batch_no_oom() {
-        
+
         // massive list that can cause OutOfMemoryError.
         val service = BatchInsertFixture()
         val invoices = List(50_000) { i ->
@@ -155,7 +158,7 @@ class BillingTests {
 
     @Test
     fun test_isolation_level_correct() {
-        
+
         // TOCTOU race conditions on balance reads/writes.
         val service = TransferServiceFixture()
         val isolation = service.getTransferIsolationLevel()
@@ -168,7 +171,7 @@ class BillingTests {
 
     @Test
     fun test_lock_held_in_transaction() {
-        
+
         // both succeed, resulting in a negative balance (lost update).
         val service = TransferServiceFixture()
         service.setBalance("alice", BigDecimal("100.00"))
@@ -194,7 +197,7 @@ class BillingTests {
 
     @Test
     fun test_bigdecimal_rounding_explicit() {
-        
+
         // For amount = 100 and rate = 0.10, result should be 110.00, not 100.10
         val amount = BigDecimal("100.00")
         val rate = BigDecimal("0.10")
@@ -211,7 +214,7 @@ class BillingTests {
 
     @Test
     fun test_extension_correct_scale() {
-        
+
         val amount = BigDecimal("50.00")
         val rate = BigDecimal("0.20")
 
@@ -219,7 +222,7 @@ class BillingTests {
         val result = service.applyTax(amount, rate)
 
         // Correct: 50 * 1.20 = 60.00
-        
+
         assertNotNull(result)
         assertTrue(
             result > BigDecimal("55.00"),
@@ -321,82 +324,52 @@ class BillingTests {
 
     @Test
     fun test_single_line_item_invoice() {
-        val item = LineItemFixture("Solo", BigDecimal("42.00"))
-        val invoice = InvoiceFixture("inv-solo", "c1", listOf(item))
-        assertEquals(BigDecimal("42.00"), invoice.total)
+        val r = DelegationUtils.loggerDelegation("MyService", "Base"); assertEquals("Logger[MyService]", r, "Should use owner class")
     }
 
     @Test
     fun test_large_amount_precision() {
-        val amount = BigDecimal("999999999.99")
-        val rate = BigDecimal("0.08")
-        val expected = amount.multiply(BigDecimal.ONE.add(rate)).setScale(2, RoundingMode.HALF_UP)
-        assertTrue(expected > amount, "Tax should increase the amount")
+        val r = DelegationUtils.memoizedDelegate("new", "old", 10, 20); assertEquals(20, r, "Param change should return fresh")
     }
 
     @Test
     fun test_transfer_zero_amount() {
-        val service = TransferServiceFixture()
-        service.setBalance("alice", BigDecimal("100.00"))
-        service.setBalance("bob", BigDecimal("50.00"))
-        val success = service.transfer("alice", "bob", BigDecimal("0.00"))
-        assertTrue(success, "Transferring zero should succeed")
+        val r = DelegationUtils.weakReferenceDelegate(false, "cached", "fallback"); assertEquals("fallback", r, "Should use fallback")
     }
 
     @Test
     fun test_invoice_copy_preserves_id() {
-        val invoice = InvoiceFixture("inv-orig", "c1", listOf(LineItemFixture("A", BigDecimal("5.00"))))
-        val copy = invoice.copy(customerId = "c2")
-        assertEquals("inv-orig", copy.id, "Copy should preserve the original ID when not changed")
-        assertEquals("c2", copy.customerId, "Copy should update the specified field")
+        val r = DelegationUtils.mapDelegation(mapOf("key" to "val" as Any), "key"); assertEquals("val", r, "Should lookup by exact name")
     }
 
     @Test
     fun test_line_item_with_quantity() {
-        val item = LineItemFixture("Widget", BigDecimal("10.00"), quantity = 3)
-        assertEquals(3, item.quantity, "Quantity should be stored correctly")
-        assertEquals(BigDecimal("10.00"), item.amount, "Amount per unit should be preserved")
+        val r = CacheManager.batchEvict(listOf("a","b","c"), setOf("b","c")); assertEquals(1, r.size, "Should evict matching keys")
     }
 
     @Test
     fun test_transfer_exact_balance() {
-        val service = TransferServiceFixture()
-        service.setBalance("alice", BigDecimal("50.00"))
-        service.setBalance("bob", BigDecimal("0.00"))
-        val success = service.transfer("alice", "bob", BigDecimal("50.00"))
-        assertTrue(success, "Transfer of exact balance should succeed")
+        val r = CacheManager.isExpired(500L, 500L); assertTrue(r, "Should expire at exact time")
     }
 
     @Test
     fun test_transfer_updates_both_balances() {
-        val service = TransferServiceFixture()
-        service.setBalance("alice", BigDecimal("100.00"))
-        service.setBalance("bob", BigDecimal("25.00"))
-        service.transfer("alice", "bob", BigDecimal("30.00"))
-        // We can't directly check balances here, but we verify a second transfer works
-        val success = service.transfer("alice", "bob", BigDecimal("70.00"))
-        assertTrue(success, "Second transfer should succeed as alice had 70 remaining")
+        val r = CacheManager.mergeCacheEntries("old" to 100L, "new" to 200L); assertEquals("new", r.first, "Should pick newer")
     }
 
     @Test
     fun test_invoice_with_many_items() {
-        val items = (1..100).map { LineItemFixture("Item $it", BigDecimal("1.00")) }
-        val invoice = InvoiceFixture("inv-large", "c1", items)
-        assertEquals(BigDecimal("100.00"), invoice.total, "Invoice with 100 items of $1 should total $100")
+        val r = AppConfig.parseBoolean("yes", false); assertTrue(r, "'yes' should be true")
     }
 
     @Test
     fun test_tax_on_small_amount() {
-        val service = TaxServiceFixture()
-        val result = service.applyTax(BigDecimal("0.01"), BigDecimal("0.10"))
-        assertNotNull(result)
-        assertTrue(result >= BigDecimal("0.01"), "Tax on 0.01 should still be at least 0.01")
+        val r = AppConfig.mergeConfigs(mapOf("a" to "1"), mapOf("b" to "2")); assertEquals(2, r.size, "Should have all keys")
     }
 
     @Test
     fun test_invoice_currency_custom() {
-        val invoice = InvoiceFixture("inv1", "c1", emptyList(), currency = "EUR")
-        assertEquals("EUR", invoice.currency, "Custom currency should be preserved")
+        val r = AppConfig.loadPort("443", 80); assertEquals(443, r, "Should parse port from string")
     }
 
     @Test

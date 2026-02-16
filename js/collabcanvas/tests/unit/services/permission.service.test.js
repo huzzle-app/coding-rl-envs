@@ -14,8 +14,11 @@ describe('PermissionService', () => {
     mockDb = {
       BoardMember: {
         findOne: jest.fn(),
+        findOrCreate: jest.fn(),
         create: jest.fn(),
         destroy: jest.fn(),
+        update: jest.fn().mockResolvedValue([1]),
+        ROLE_LEVELS: { viewer: 1, editor: 2, admin: 3, owner: 4 },
       },
       Board: {
         findByPk: jest.fn(),
@@ -227,11 +230,11 @@ describe('PermissionService', () => {
       const boardId = 'board-1';
       const role = 'editor';
 
-      mockDb.BoardMember.create.mockResolvedValue({
+      mockDb.BoardMember.findOrCreate.mockResolvedValue([{
         userId,
         boardId,
         role,
-      });
+      }, true]);
 
       const result = await permissionService.addMember(boardId, userId, role);
 
@@ -239,11 +242,18 @@ describe('PermissionService', () => {
       expect(result.role).toBe(role);
     });
 
-    it('should validate role', async () => {
+    it('should validate role before adding member', async () => {
       const userId = 'user-new';
       const boardId = 'board-1';
       const invalidRole = 'superadmin';
 
+      mockDb.BoardMember.findOrCreate.mockResolvedValue([{
+        userId,
+        boardId,
+        role: invalidRole,
+      }, true]);
+
+      // BUG: addMember should reject invalid roles but doesn't validate
       await expect(
         permissionService.addMember(boardId, userId, invalidRole)
       ).rejects.toThrow(/role/i);

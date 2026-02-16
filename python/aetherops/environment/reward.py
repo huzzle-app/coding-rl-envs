@@ -23,7 +23,7 @@ BASE_TESTS = [
     "test_intake_to_policy_pipeline",
 ]
 
-TOTAL_TESTS = 7152
+TOTAL_TESTS = 7256
 
 def sparse_reward(pass_rate: float) -> float:
     for threshold, reward in zip(THRESHOLDS, REWARDS):

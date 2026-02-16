@@ -7,6 +7,6 @@ class ContractsTest < Minitest::Test
   def test_contracts_expose_required_keys
     contracts = MercuryLedger::Contracts::CONTRACTS
     assert_equal 'gateway', contracts[:gateway][:id]
-    assert_kind_of Integer, contracts[:routing][:port]
+    assert_equal 8111, contracts[:routing][:port]
   end
 end

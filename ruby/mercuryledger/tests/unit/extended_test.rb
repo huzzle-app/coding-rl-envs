@@ -125,10 +125,12 @@ class ExtendedTest < Minitest::Test
   end
 
   def test_plan_multi_leg
-    wps = [{ name: 'A', nm: 0 }, { name: 'B', nm: 100 }, { name: 'C', nm: 250 }]
+    wps = [{ name: 'A', nm: 0 }, { name: 'B', nm: 200 }, { name: 'C', nm: 50 }]
     plan = MercuryLedger::Core::Routing.plan_multi_leg(wps)
     assert_equal 2, plan[:legs].length
-    assert_equal 250.0, plan[:total_distance]
+    leg_sum = plan[:legs].sum { |l| l[:distance_nm] }
+    assert_in_delta leg_sum, plan[:total_distance], 0.01,
+      'Total distance must equal sum of legs (350), not crow-flies (50)'
   end
 
   def test_corridor_table
@@ -270,9 +272,10 @@ class ExtendedTest < Minitest::Test
 
   def test_variance_and_stddev
     v = MercuryLedger::Core::Statistics.variance([2, 4, 4, 4, 5, 5, 7, 9])
-    assert_operator v, :>, 0
+    assert_in_delta 4.571, v, 0.01,
+      'Sample variance of [2,4,4,4,5,5,7,9] should use Bessel correction (n-1)'
     s = MercuryLedger::Core::Statistics.stddev([2, 4, 4, 4, 5, 5, 7, 9])
-    assert_operator s, :>, 0
+    assert_in_delta Math.sqrt(4.571), s, 0.01
   end
 
   def test_median

@@ -11,6 +11,7 @@ This directory contains realistic debugging scenarios for the PolarisCore cold-c
 | 03 - Retry Storm | Slack Thread | Resilience, Notifications | P1 |
 | 04 - Signature Validation Bypass | Security Advisory | Security, Identity | P0 |
 | 05 - Queue Starvation | Customer Escalation | Queue, Statistics, Economics | P2 |
+| 06 - Fulfillment State Violations | Ops Escalation | Workflow, State Machine | P2 |
 
 ## How to Use These Scenarios
 

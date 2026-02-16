@@ -9,6 +9,15 @@ and recovers correctly.
 import pytest
 import hashlib
 import time
+import inspect
+import re
+
+try:
+    from shared.clients.base import CircuitBreaker, CircuitState
+    from shared.utils.distributed import DistributedLock
+    _SHARED_AVAILABLE = True
+except ImportError:
+    _SHARED_AVAILABLE = False
 
 
 # =========================================================================
@@ -539,3 +548,119 @@ class TestTimeoutChaos:
         total_processing = sum(s["processing_ms"] for s in service_chain)
         assert remaining == initial_deadline_ms - total_processing
         assert remaining == 4500, "Remaining deadline should be correctly propagated"
+
+
+# =========================================================================
+# Source-code-verifying tests for chaos-relevant bugs
+# =========================================================================
+
+
+class TestCircuitBreakerUnderChaos:
+    """Tests that CircuitBreaker correctly opens under failure scenarios (BUG C1)."""
+
+    @pytest.mark.chaos
+    def test_circuit_breaker_threshold_comparison_operator(self):
+        """record_failure must use >= for threshold check, not > (BUG C1)."""
+        import inspect
+        from shared.clients.base import CircuitBreaker
+        src = inspect.getsource(CircuitBreaker.record_failure)
+        assert ">= self.failure_threshold" in src or ">=self.failure_threshold" in src, \
+            "CircuitBreaker must use >= for failure threshold comparison"
+
+    @pytest.mark.chaos
+    def test_circuit_breaker_opens_at_threshold(self):
+        """Circuit must open when failures reach threshold exactly."""
+        from shared.clients.base import CircuitBreaker, CircuitState
+        for threshold in [3, 5, 10]:
+            cb = CircuitBreaker(failure_threshold=threshold)
+            for _ in range(threshold):
+                cb.record_failure()
+            assert cb.state == CircuitState.OPEN, \
+                f"Circuit must open at exactly {threshold} failures"
+
+    @pytest.mark.chaos
+    def test_circuit_breaker_recovery_cycle(self):
+        """Circuit breaker must go through CLOSED->OPEN->HALF_OPEN->CLOSED cycle."""
+        import time
+        from shared.clients.base import CircuitBreaker, CircuitState
+        cb = CircuitBreaker(failure_threshold=3, recovery_timeout=0.1)
+
+        # Open the circuit
+        for _ in range(3):
+            cb.record_failure()
+        assert cb.state == CircuitState.OPEN, "Should be OPEN after threshold failures"
+
+        # Wait for recovery
+        time.sleep(0.15)
+        can_exec = cb.can_execute()
+        assert cb.state == CircuitState.HALF_OPEN, "Should be HALF_OPEN after recovery timeout"
+
+        # Successful calls should close the circuit
+        for _ in range(cb.half_open_max_calls):
+            cb.record_success()
+        assert cb.state == CircuitState.CLOSED, "Should be CLOSED after successful half-open calls"
+
+
+class TestDistributedLockUnderChaos:
+    """Tests for DistributedLock timeout adequacy (BUG A3)."""
+
+    @pytest.mark.chaos
+    def test_lock_default_timeout_adequate_for_operations(self):
+        """DistributedLock default timeout must be >= 30s for long operations."""
+        import inspect
+        import re
+        from shared.utils.distributed import DistributedLock
+        src = inspect.getsource(DistributedLock.__init__)
+        match = re.search(r'timeout:\s*float\s*=\s*([\d.]+)', src)
+        assert match is not None, "DistributedLock must have timeout parameter"
+        default_timeout = float(match.group(1))
+        assert default_timeout >= 30.0, \
+            f"Default lock timeout {default_timeout}s too short for operations that may take minutes"
+
+    @pytest.mark.chaos
+    def test_lock_acquisition_sorts_names_for_deadlock_prevention(self):
+        """acquire_multiple_locks must sort lock names to prevent deadlocks (BUG D10)."""
+        import inspect
+        from shared.utils.distributed import acquire_multiple_locks
+        src = inspect.getsource(acquire_multiple_locks)
+        assert "sorted(lock_names)" in src, \
+            "acquire_multiple_locks must sort lock names to prevent deadlocks"
+
+    @pytest.mark.chaos
+    def test_leader_election_atomic_session_and_acquire(self):
+        """LeaderElection session creation and key acquisition should be atomic (BUG A2)."""
+        import inspect
+        from shared.utils.distributed import LeaderElection
+        src = inspect.getsource(LeaderElection.start_election)
+        # Session creation and kv.put should be atomic or use a check
+        # Bug: there's a gap between session.create and kv.put where another node could win
+        has_atomic = ("transaction" in src.lower() or "atomic" in src.lower() or
+                      "lock" in src.lower() or "check-and-set" in src.lower() or
+                      "cas" in src.lower())
+        assert has_atomic, \
+            "LeaderElection.start_election must make session creation and key acquisition atomic"
+
+
+class TestTimestampConsistencyUnderChaos:
+    """Tests that timestamps are timezone-aware for consistency during failures (BUG B8)."""
+
+    @pytest.mark.chaos
+    def test_parse_timestamp_returns_timezone_aware(self):
+        """parse_timestamp must return timezone-aware datetimes for unix timestamps."""
+        import inspect
+        from shared.utils.time import parse_timestamp
+        src = inspect.getsource(parse_timestamp)
+        # For int/float (unix timestamps), should use tz=timezone.utc
+        if "fromtimestamp" in src:
+            assert "tz=" in src or "timezone.utc" in src, \
+                "parse_timestamp must use timezone.utc when converting unix timestamps"
+
+    @pytest.mark.chaos
+    def test_parse_unix_timestamp_is_utc(self):
+        """A unix timestamp parsed by parse_timestamp must be timezone-aware."""
+        import time
+        from shared.utils.time import parse_timestamp
+        now = time.time()
+        dt = parse_timestamp(now)
+        assert dt.tzinfo is not None, \
+            "parse_timestamp must return timezone-aware datetime for unix timestamps"

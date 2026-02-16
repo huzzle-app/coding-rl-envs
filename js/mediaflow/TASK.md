@@ -73,13 +73,13 @@ The test suite has multiple failures across core modules. Issues appear to span 
 ## Test Categories
 
 | Category | Tests | Weight |
-| Unit | 150 | 1.0x |
-| Integration | 120 | 1.5x |
-| Contract | 50 | 2.0x |
-| Chaos | 40 | 3.0x |
-| Security | 60 | 2.5x |
-| Performance | 40 | 2.0x |
-| System | 50 | 3.0x |
+| Unit | 213 | 1.0x |
+| Integration | 124 | 1.5x |
+| Contract | 33 | 2.0x |
+| Chaos | 58 | 3.0x |
+| Security | 48 | 2.5x |
+| Performance | 35 | 2.0x |
+| System | 26 | 3.0x |
 
 ## Hints
 
@@ -114,7 +114,7 @@ Each scenario describes **symptoms only** without revealing the fixes. Use them 
 
 ## Success Criteria
 
-- All 531 tests pass
+- All 537 tests pass
 - All 10 services start without errors
 - No security vulnerabilities detected
 - Event sourcing maintains consistency
@@ -123,15 +123,15 @@ Each scenario describes **symptoms only** without revealing the fixes. Use them 
 ## Reward Function
 
 ```
-Pass Rate → Reward (Very Sparse)
-< 10% → 0.00
-10-25% → 0.05
-25-40% → 0.12
-40-55% → 0.22
-55-70% → 0.38
-70-85% → 0.55
-85-95% → 0.78
-100% → 1.00
+Pass Rate → Reward (8-Threshold, Very Sparse)
+≥ 100% → 1.00
+≥ 95%  → 0.78
+≥ 85%  → 0.55
+≥ 70%  → 0.38
+≥ 55%  → 0.22
+≥ 40%  → 0.12
+≥ 25%  → 0.05
+< 25%  → 0.00
 ```
 
 Additional bonuses:

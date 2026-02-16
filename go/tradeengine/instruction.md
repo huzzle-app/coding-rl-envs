@@ -1,10 +1,26 @@
 # TradeEngine - Go High-Frequency Trading Platform
 
- in a high-frequency trading platform with 10 Go microservices, NATS JetStream, PostgreSQL, Redis, InfluxDB, and etcd.
+Debug a distributed high-frequency trading platform with 10 Go microservices, NATS JetStream, PostgreSQL, Redis, InfluxDB, and etcd.
+
+**Difficulty**: Principal | **Language**: Go | **Bugs**: 87 | **Tests**: ~359
+
+## Bug Categories
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| L: Setup/Infrastructure | 8 | NATS state, service discovery, health checks, import cycles |
+| A: Concurrency | 12 | Deadlocks, race conditions, goroutine leaks |
+| B: Data Structures | 8 | Heap invariants, slice aliasing, bounds checks |
+| C: Event Sourcing | 8 | Event ordering, idempotency, circuit breakers |
+| D: Distributed State | 10 | Race conditions, distributed locks, split-brain |
+| E: Database | 8 | Connection pools, SQL injection, N+1 queries |
+| F: Financial Calculation | 10 | Float64 precision, rounding, overflow |
+| G: Risk Logic | 6 | Margin calculations, position limits |
+| H: Caching | 5 | Invalidation, thundering herd, TTL |
+| I: Security | 6 | Weak JWT secrets, timing attacks, SHA256 passwords |
+| J: Observability | 4 | Context propagation, metric cardinality |
 
 ## Architecture
-
-The platform consists of 10 microservices:
 
 | Service | Port | Purpose |
 |---------|------|---------|
@@ -27,38 +43,26 @@ The platform consists of 10 microservices:
 - **InfluxDB 2** - Time-series market data (port 8086)
 - **etcd 3.5** - Service discovery, distributed locks (port 2379)
 
-## Known Issues
-
-Current state: most tests broken. Areas of concern include API endpoints, background processing, and database operations.
-
 ## Getting Started
 
-1. Read `TASK.md` for detailed bug descriptions, dependencies, and testing instructions
-2. Start services: `docker compose up -d`
-3. Run tests: `go test -race -v ./...`
-4. Fix bugs to increase test pass rate
+```bash
+# Start infrastructure
+docker compose up -d
+
+# Run all tests
+go test -race -v ./...
+
+# Run specific categories
+go test ./tests/unit/... -v
+go test ./tests/integration/... -v
+go test ./tests/security/... -v
+go test ./tests/chaos/... -v
+```
 
 ## Success Criteria
 
-- All tests passing
-- No race conditions detected with `-race` flag
-- No goroutine leaks
-- No memory leaks
-- All security vulnerabilities fixed
+- All tests passing with no race conditions (`-race` flag)
+- No goroutine leaks or memory leaks
 - Financial calculations use proper decimal arithmetic
 - All distributed state operations properly synchronized
-
-Estimated time: 8-16 hours (Principal difficulty)
-
----
-
-## Related Tasks
-
-This environment supports additional task types beyond debugging:
-
-| Task File | Type | Tasks | Description |
-|-----------|------|-------|-------------|
-| [TASKS_ALTERNATIVE.md](./TASKS_ALTERNATIVE.md) | Feature/Refactor/Optimize | 5 | Stop-Loss/Take-Profit Orders, Order Book Service Extraction, Snapshot Recovery, Portfolio Analytics, Session Migration |
-| [TASKS_GREENFIELD.md](./TASKS_GREENFIELD.md) | Greenfield Implementation | 3 | Market Maker Service, Trade Reconciliation Engine, Price Alert System |
-
-These tasks test different software engineering skills while using the same codebase.
+- Security vulnerabilities fixed (bcrypt, crypto/rand, constant-time comparison)

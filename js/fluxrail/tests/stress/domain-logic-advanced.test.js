@@ -76,8 +76,11 @@ test('domain-adv-008: DCF three years', () => {
   assert.equal(result, expected);
 });
 
-test('domain-adv-009: DCF zero rate returns sum', () => {
+test('domain-adv-009: DCF zero rate returns sum and year 0 undiscounted', () => {
   assert.equal(discountedCashFlow([100, 200, 300], 0), 600);
+  // Also verify year 0 is not discounted at non-zero rate
+  assert.equal(discountedCashFlow([500], 0.2), 500,
+    'single year-0 cash flow must not be discounted at any rate');
 });
 
 test('domain-adv-010: DCF empty returns 0', () => {
@@ -307,11 +310,13 @@ test('domain-adv-040: zero breaches zero credits', () => {
 // ===== correlationCoefficient =====
 
 test('domain-adv-041: perfect positive correlation', () => {
-  assert.equal(correlationCoefficient([1, 2, 3], [1, 2, 3]), 1);
+  // Use unequal variances to expose sqrt(sum) vs sqrt(product) bug
+  assert.equal(correlationCoefficient([1, 2, 3], [2, 4, 6]), 1);
 });
 
 test('domain-adv-042: perfect negative correlation', () => {
-  assert.equal(correlationCoefficient([1, 2, 3], [3, 2, 1]), -1);
+  // Use unequal variances to expose sqrt(sum) vs sqrt(product) bug
+  assert.equal(correlationCoefficient([1, 2, 3], [6, 4, 2]), -1);
 });
 
 test('domain-adv-043: no correlation', () => {

@@ -231,14 +231,15 @@ describe('CRDT Chaos', () => {
 
 describe('Presence Chaos', () => {
   describe('Presence Under Load', () => {
-    it('high frequency cursor updates test', () => {
+    it('high frequency cursor updates test', async () => {
       jest.resetModules();
       const { PresenceTracker } = require('../../shared/realtime');
+      const mockRedis = global.testUtils.mockRedis();
 
-      const tracker = new PresenceTracker();
+      const tracker = new PresenceTracker(mockRedis, { debounceMs: 0 });
 
       for (let i = 0; i < 1000; i++) {
-        tracker.updatePresence(`user-${i % 10}`, 'doc-1', { cursor: i });
+        await tracker.updatePresence(`user-${i % 10}`, 'doc-1', { cursor: i });
       }
 
       const presence = tracker.getDocumentPresence('doc-1');

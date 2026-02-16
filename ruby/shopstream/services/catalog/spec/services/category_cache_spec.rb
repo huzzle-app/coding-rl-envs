@@ -63,7 +63,7 @@ RSpec.describe CategoryCache do
     it 'clears entire cache when called without argument' do
       cache = described_class.instance
       cache.invalidate
-      expect(cache.get_all).to be_empty rescue nil
+      expect(cache.get_all).to be_empty
     end
   end
 end
